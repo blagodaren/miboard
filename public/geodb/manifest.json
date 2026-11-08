@@ -1,0 +1,19 @@
+{
+  "format": "MIG1",
+  "provider": "DB-IP Country Lite",
+  "release": "2026-11",
+  "source": "https://download.db-ip.com/free/dbip-country-lite-2026-11.csv.gz",
+  "sourceSha256": "e5c8459d638a272ece7f4d7cfa49dce18d91b4f403f6940ba9249bf0db3781fd",
+  "sha256": "c7de4cb9e49a20da9673263e82a96a05b1f08d529216bb5efb9e4eeb535c126e",
+  "generatedAt": "2026-11-08T18:22:23.849Z",
+  "ranges": {
+    "ipv4": 362998,
+    "ipv6": 369798
+  },
+  "countries": 251,
+  "bytes": 865275,
+  "unpackedBytes": 6239102,
+  "license": "CC-BY-4.0",
+  "attribution": "IP Geolocation by DB-IP",
+  "attributionUrl": "https://db-ip.com"
+}

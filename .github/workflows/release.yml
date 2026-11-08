@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify tag and prepare release notes
+        id: metadata
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import fs from 'node:fs'
+          import path from 'node:path'
+
+          const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          assert.match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
+          assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'Tag must match package.json version')
+
+          const sections = fs.readFileSync('CHANGELOG.md', 'utf8').split(/^## /m)
+          const section = sections.find(value => value.startsWith(`[${version}]`))
+          assert.ok(section, `Missing CHANGELOG entry for ${version}`)
+          const notes = section.slice(section.indexOf('\n') + 1).trim()
+          assert.ok(notes, 'Release notes must not be empty')
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-notes.md'), `${notes}\n`)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Svelte and TypeScript
+        run: npm run check
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and check browser interfaces
+        run: npm run test:ui
+
+      - name: Package and verify release archive
+        run: npm run zip && npm run check:release
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          args=(
+            "$GITHUB_REF_NAME"
+            dist.zip
+            dist.zip.sha256
+            --verify-tag
+            --title "MIBoard $VERSION"
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          )
+          if [[ "$VERSION" == *-* ]]; then
+            args+=(--prerelease --latest=false)
+          else
+            args+=(--latest)
+          fi
+          gh release create "${args[@]}"

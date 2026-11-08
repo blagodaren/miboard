@@ -1,0 +1,17 @@
+Twemoji Country Flags
+
+Unmodified font from country-flag-emoji-polyfill 0.1.8:
+https://github.com/talkjs/country-flag-emoji-polyfill
+https://www.npmjs.com/package/country-flag-emoji-polyfill/v/0.1.8
+
+Flag artwork: Twemoji, Copyright Twitter, Inc and other contributors.
+https://github.com/twitter/twemoji
+Artwork license: Creative Commons Attribution 4.0 International (CC BY 4.0).
+https://creativecommons.org/licenses/by/4.0/
+
+The font is a subset of Mozilla's Twemoji Mozilla, prepared by TalkJS.
+https://github.com/mozilla/twemoji-colr
+
+Only the filename was changed to twemoji-country-flags.woff2.
+The font data and artwork have not been modified.
+See twemoji-country-flags-LICENSE.md for the upstream license notice.

@@ -1,0 +1,44 @@
+# Dependencies and generated releases
+/node_modules/
+/dist/
+/dist.zip
+/dist.zip.sha256
+/dist.zip.*.tmp
+/dist.zip.sha256.*.tmp
+/dist.zip.*.bak
+/dist.zip.sha256.*.bak
+
+# Local checks, screenshots, reports and caches
+/.*-check/
+/shots/
+/screenshots/
+/coverage/
+/playwright-report/
+/test-results/
+/.vite/
+/.svelte-kit/
+*.log
+*.tsbuildinfo
+npm-debug.log*
+
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+.npmrc
+*.key
+*.pem
+*.p12
+*.pfx
+# Hidden local directories; keep repository workflows
+/.*/
+!/.github/
+*.local
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
