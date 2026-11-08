@@ -7,6 +7,13 @@
 /dist.zip.sha256.*.tmp
 /dist.zip.*.bak
 /dist.zip.sha256.*.bak
+/dist-cdn-fonts/
+/dist-cdn-fonts.zip
+/dist-cdn-fonts.zip.sha256
+/dist-cdn-fonts.zip.*.tmp
+/dist-cdn-fonts.zip.sha256.*.tmp
+/dist-cdn-fonts.zip.*.bak
+/dist-cdn-fonts.zip.sha256.*.bak
 
 # Local checks, screenshots, reports and caches
 /.*-check/

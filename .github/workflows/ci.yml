@@ -43,8 +43,14 @@ jobs:
       - name: Build and check browser interfaces
         run: npm run test:ui
 
-      - name: Package and verify release archive
-        run: npm run zip && npm run check:release
+      - name: Build CDN font variant
+        run: npm run build:cdn-fonts
+
+      - name: Check local and CDN fonts
+        run: npm run test:fonts
+
+      - name: Package and verify release archives
+        run: npm run zip && npm run check:release && npm run zip:cdn-fonts && npm run check:release:cdn-fonts
 
       - name: Upload release candidate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -53,5 +59,7 @@ jobs:
           path: |
             dist.zip
             dist.zip.sha256
+            dist-cdn-fonts.zip
+            dist-cdn-fonts.zip.sha256
           if-no-files-found: error
           retention-days: 7

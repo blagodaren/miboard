@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { gzipSync } from 'node:zlib'
 import { packageRelease } from './zip.js'
-import { checkRelease, readReleaseArchive } from './check-release.mjs'
+import { checkRelease, readReleaseArchive, releaseOptionsFromArgs } from './check-release.mjs'
+import { FONT_SOURCES } from './font-sources.mjs'
 
 function fixture(t) {
   const root = mkdtempSync(path.join(tmpdir(), 'miboard-release-'))
@@ -107,4 +108,88 @@ test('packaging rejects missing built assets and a damaged offline database', t 
   writeFileSync(path.join(data.directory, 'assets/font.woff2'), 'test font')
   writeFileSync(path.join(data.directory, 'geodb/country.bin.gz'), 'damaged')
   assert.throws(() => packageRelease(data), /GeoDB does not match/)
+})
+
+const cdnCss = fonts => fonts.map((font, index) => `@font-face{font-family:Font${index};src:url("${font.cdn}")}`).join('\n')
+
+function cdnFixture(t) {
+  const data = fixture(t)
+  rmSync(path.join(data.directory, 'assets/font.woff2'))
+  writeFileSync(path.join(data.directory, 'assets/app.css'), cdnCss(FONT_SOURCES))
+  return { ...data, archivePath: path.join(data.root, 'dist-cdn-fonts.zip'), fontMode: 'cdn' }
+}
+
+test('CDN fonts are opt-in and both release archives coexist with independent checksums', t => {
+  const local = fixture(t)
+  const localResult = packageRelease(local)
+  const localBytes = readFileSync(local.archivePath)
+  const directory = path.join(local.root, 'dist-cdn-fonts')
+  cpSync(local.directory, directory, { recursive: true })
+  rmSync(path.join(directory, 'assets/font.woff2'))
+  writeFileSync(path.join(directory, 'assets/app.css'), cdnCss(FONT_SOURCES))
+  const cdn = { directory, archivePath: path.join(local.root, 'dist-cdn-fonts.zip'), fontMode: 'cdn' }
+  const result = packageRelease(cdn)
+  const names = [...readReleaseArchive(readFileSync(cdn.archivePath)).keys()]
+  assert(!names.some(name => /\.(woff2?|ttf|otf)$/i.test(name)))
+  assert.equal(checkRelease(cdn).sha256, result.sha256)
+  assert.equal(packageRelease(cdn).sha256, result.sha256, 'CDN archive is deterministic')
+  assert.equal(checkRelease(local).sha256, localResult.sha256)
+  assert.deepEqual(readFileSync(local.archivePath), localBytes)
+  assert.match(readFileSync(`${cdn.archivePath}.sha256`, 'utf8'), /^[a-f0-9]{64}  dist-cdn-fonts\.zip\n$/)
+})
+
+test('the default local build rejects even the approved CDN fonts', t => {
+  const data = fixture(t)
+  writeFileSync(path.join(data.directory, 'assets/app.css'), cdnCss(FONT_SOURCES))
+  assert.throws(() => packageRelease(data), /Release must use relative assets/)
+  assert.throws(() => packageRelease({ ...data, fontMode: 'unexpected' }), /Unknown font mode/)
+})
+
+test('CDN font releases reject bundled fonts, missing font references and unpinned or foreign URLs', t => {
+  const data = cdnFixture(t)
+  const css = path.join(data.directory, 'assets/app.css')
+  writeFileSync(path.join(data.directory, 'assets/font.woff2'), 'a bundled font')
+  assert.throws(() => packageRelease(data), /must not contain bundled fonts/)
+  rmSync(path.join(data.directory, 'assets/font.woff2'))
+  writeFileSync(css, cdnCss(FONT_SOURCES.slice(1)))
+  assert.throws(() => packageRelease(data), /Missing CDN font reference/)
+  for (const replacement of [
+    FONT_SOURCES[0].cdn.replace('@0.1.8', '@latest'),
+    FONT_SOURCES[0].cdn.replace('https://unpkg.com/', 'https://unpkg.com.evil.example/'),
+    FONT_SOURCES[0].cdn + '?redirect=1',
+  ]) {
+    writeFileSync(css, cdnCss(FONT_SOURCES).replace(FONT_SOURCES[0].cdn, replacement))
+    assert.throws(() => packageRelease(data), /Unapproved external asset/)
+  }
+})
+
+test('approved font URLs do not authorize external script or stylesheet references', t => {
+  const data = cdnFixture(t)
+  for (const tag of [
+    `<script src="${FONT_SOURCES[0].cdn}"></script>`,
+    `<link rel="stylesheet" href="${FONT_SOURCES[0].cdn}">`,
+  ]) {
+    writeFileSync(path.join(data.directory, 'index.html'), `<title>MIBoard</title>${tag}`)
+    assert.throws(() => packageRelease(data), /Unapproved external asset/)
+  }
+})
+
+test('an invalid CDN font reference preserves the previous CDN archive and checksum', t => {
+  const data = cdnFixture(t)
+  packageRelease(data)
+  const previous = readFileSync(data.archivePath)
+  const checksum = readFileSync(`${data.archivePath}.sha256`)
+  writeFileSync(path.join(data.directory, 'assets/app.css'), cdnCss(FONT_SOURCES.slice(1)))
+  assert.throws(() => packageRelease(data), /Missing CDN font reference/)
+  assert.deepEqual(readFileSync(data.archivePath), previous)
+  assert.deepEqual(readFileSync(`${data.archivePath}.sha256`), checksum)
+})
+
+test('release CLI selects CDN fonts explicitly and rejects misspelled options', () => {
+  assert.deepEqual(releaseOptionsFromArgs([]), { directory: 'dist', archivePath: 'dist.zip', fontMode: 'local' })
+  assert.deepEqual(releaseOptionsFromArgs(['--cdn-fonts']), { directory: 'dist-cdn-fonts', archivePath: 'dist-cdn-fonts.zip', fontMode: 'cdn' })
+  assert.deepEqual(releaseOptionsFromArgs(['custom', 'custom.zip', '--cdn-fonts']), { directory: 'custom', archivePath: 'custom.zip', fontMode: 'cdn' })
+  assert.throws(() => releaseOptionsFromArgs(['--cdn-font']), /Usage/)
+  assert.throws(() => releaseOptionsFromArgs(['dist', 'dist.zip', 'unexpected']), /Usage/)
+  assert.throws(() => releaseOptionsFromArgs(['--cdn-fonts', '--cdn-fonts']), /Usage/)
 })

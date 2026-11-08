@@ -9,9 +9,12 @@
     "dev": "vite",
     "prebuild": "node scripts/licenses.mjs",
     "build": "vite build",
+    "prebuild:cdn-fonts": "node scripts/licenses.mjs",
+    "build:cdn-fonts": "vite build --mode cdn-fonts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "node --test scripts/analysis.test.ts scripts/overview.test.ts scripts/rules-analytics.test.ts scripts/test-backends.mjs scripts/test-proxy-sort.ts scripts/test-proxy-batch.ts scripts/test-proxy-icon.ts scripts/test-latency.ts scripts/test-traffic-history.ts scripts/test-geography.mjs scripts/test-geodb.mjs scripts/test-geo-resolver.mjs scripts/test-release.mjs",
     "test:ui": "npm run build && node scripts/test-i18n.mjs && node scripts/test-rules.mjs && node scripts/test-latency-ui.mjs",
+    "test:fonts": "node scripts/test-fonts-ui.mjs",
     "test:theme": "node scripts/check-theme.mjs",
     "test:backends": "node --test scripts/test-backends.mjs",
     "test:proxy-sort": "node --test scripts/test-proxy-sort.ts",
@@ -30,8 +33,10 @@
     "test:rules:analytics": "node --test scripts/rules-analytics.test.ts",
     "mock": "node mock/server.js",
     "zip": "node scripts/zip.js",
+    "zip:cdn-fonts": "node scripts/zip.js dist-cdn-fonts dist-cdn-fonts.zip --cdn-fonts",
     "check:release": "node scripts/check-release.mjs",
-    "release": "npm run check && npm test && npm run build && npm run zip && npm run check:release"
+    "check:release:cdn-fonts": "node scripts/check-release.mjs dist-cdn-fonts dist-cdn-fonts.zip --cdn-fonts",
+    "release": "npm run check && npm test && npm run build && npm run build:cdn-fonts && npm run zip && npm run zip:cdn-fonts && npm run check:release && npm run check:release:cdn-fonts"
   },
   "license": "MIT",
   "devDependencies": {

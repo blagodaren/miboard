@@ -5,6 +5,23 @@
 **Версия 0.1.0-alpha** — первый предварительный релиз. Возможности и ограничения:
 [журнал изменений](CHANGELOG.md).
 
+## Скачать
+
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.0-alpha/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.0-alpha/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
+
+Для каждого архива есть контрольная сумма:
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.0-alpha/dist.zip.sha256)
+и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.0-alpha/dist-cdn-fonts.zip.sha256).
+
+CDN-варианту для загрузки шрифтов нужен доступ к `unpkg.com`. При недоступности
+CDN панель использует системные шрифты; цветные флаги на Windows могут быть
+недоступны. В обоих архивах одинаковые функции и локальная GeoDB.
+
+Версии шрифтов закреплены: Geist и Geist Mono `5.3.0`, Twemoji Country Flags
+из `country-flag-emoji-polyfill` `0.1.8`. Пять точных URL перечислены в
+[`scripts/font-sources.mjs`](scripts/font-sources.mjs).
+
 ## Подключение к mihomo
 
 Для alpha используется ссылка на конкретный тег: `/releases/latest/`
@@ -17,6 +34,8 @@ external-ui: ui
 external-ui-name: miboard
 external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.0-alpha/dist.zip"
 ```
+
+Для CDN-варианта заменить имя архива в `external-ui-url` на `dist-cdn-fonts.zip`.
 
 Открыть `http://<host>:9090/ui/miboard/` — панель возьмёт API с того же адреса и спросит secret.
 
@@ -49,30 +68,37 @@ external-controller-cors:
 | `npm run dev` | Vite на `:5173`, подключиться к `http://127.0.0.1:9090` |
 | `npm run check` / `npm test` | типы и все модульные тесты, включая упаковку релиза |
 | `npm run test:ui` | одна сборка и UI-проверки локализации, правил и задержки с изолированным mock |
-| `npm run release` | типы, модульные тесты, сборка, ZIP, SHA-256 и проверка содержимого |
+| `npm run release` | типы, модульные тесты, обе сборки, ZIP, SHA-256 и проверка содержимого |
 | `node scripts/shots.mjs <dir> [dark\|light] [mobile]` | скриншоты всех экранов с мока |
 
 Перед UI-проверками установить Chromium: `npx playwright install chromium`.
 На Linux для CI: `npx playwright install --with-deps chromium`.
 
+Отдельная сборка CDN-варианта: `npm run build:cdn-fonts`.
+Проверка загрузки шрифтов и системного fallback для обеих готовых сборок:
+`npm run test:fonts`.
+
 ## Релиз 0.1.0-alpha
 
 1. Запустить `npm run test:ui`. Проверки используют локальный mock, без подключения
    к пользовательскому контроллеру.
-2. Запустить `npm run release`. В корне появятся `dist.zip` и `dist.zip.sha256`.
-   `index.html` находится в корне архива; размер ZIP ограничен 10 МиБ.
-3. Создать публичный репозиторий GitHub и отправить проверенные исходники.
-   `node_modules/`, сборка, архивы, локальные отчёты и `.env*` исключены из Git.
-4. Создать и отправить тег `v0.1.0-alpha`. Workflow сверит тег с `package.json`,
-   повторит проверки и создаст GitHub prerelease с ZIP и контрольной суммой.
+2. Запустить `npm run release`. В корне появятся `dist.zip`, `dist-cdn-fonts.zip`
+   и их файлы `.sha256`. `index.html` находится в корне каждого архива;
+   размер каждого ZIP ограничен 10 МиБ.
+3. Запустить `npm run test:fonts` для обеих готовых сборок.
+4. Отправить проверенные исходники в `main` репозитория `blagodaren/miboard`.
+   Сборки, архивы, локальные отчёты, `node_modules/` и `.env*` исключены из Git.
+5. Создать и отправить тег `v0.1.0-alpha`. Workflow сверит тег с `package.json`,
+   повторит проверки и создаст GitHub prerelease с обоими ZIP и контрольными суммами.
 
 При подготовке следующей версии изменить `package.json`, синхронизировать lockfile
 через `npm install --package-lock-only` и добавить запись в `CHANGELOG.md`.
 Версия в интерфейсе берётся из `package.json` автоматически.
 
-Локальная проверка уже созданного архива: `npm run check:release`.
-Архив содержит только готовую панель, GeoDB и лицензии; исходники, тесты и
-настройки разработки в него не входят.
+Локальная проверка уже созданных архивов: `npm run check:release` и
+`npm run check:release:cdn-fonts`. В них входят только готовая панель, GeoDB и
+лицензии; в основной архив также включены файлы шрифтов. Исходники, тесты и
+настройки разработки в архивы не входят.
 
 ## Лицензии
 

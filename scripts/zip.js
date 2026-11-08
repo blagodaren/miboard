@@ -4,7 +4,7 @@ import { existsSync, lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { crc32, deflateRawSync } from 'node:zlib'
-import { MAX_ARCHIVE_BYTES, readDistribution } from './check-release.mjs'
+import { MAX_ARCHIVE_BYTES, readDistribution, releaseOptionsFromArgs } from './check-release.mjs'
 
 function zipBuffer(files) {
   if (files.length > 0xffff) throw new Error('Too many files for a ZIP archive')
@@ -87,12 +87,12 @@ function publishFiles(files) {
   for (const file of pending) if (file.backup) unlinkSync(file.backup)
 }
 
-export function packageRelease({ directory = 'dist', archivePath = 'dist.zip', maxBytes = MAX_ARCHIVE_BYTES } = {}) {
+export function packageRelease({ directory = 'dist', archivePath = 'dist.zip', maxBytes = MAX_ARCHIVE_BYTES, fontMode = 'local' } = {}) {
   const root = path.resolve(directory)
   const output = path.resolve(archivePath)
   const relative = path.relative(root, output)
   if (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) throw new Error('The release archive must be outside the distribution directory')
-  const files = readDistribution(root)
+  const files = readDistribution(root, { fontMode })
   const archive = zipBuffer(files)
   if (archive.length > maxBytes) throw new Error(`Archive exceeds ${(maxBytes / 1024 / 1024).toFixed(2)} MiB: ${archive.length} bytes`)
   const sha256 = createHash('sha256').update(archive).digest('hex')
@@ -107,7 +107,7 @@ export function packageRelease({ directory = 'dist', archivePath = 'dist.zip', m
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const release = packageRelease({ directory: process.argv[2], archivePath: process.argv[3] })
+    const release = packageRelease(releaseOptionsFromArgs(process.argv.slice(2)))
     console.log(`${path.basename(release.archivePath)}: ${(release.size / 1024).toFixed(0)} KiB, ${release.files} files (limit 10 MiB)`)
     console.log(`${release.sha256}  ${path.basename(release.archivePath)}`)
   } catch (error) {
