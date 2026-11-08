@@ -7,6 +7,7 @@ import {
   readProxySort,
   saveProxySort,
   saveProxySortForGroups,
+  sortableProviderNames,
   sortProxyNames,
 } from '../src/lib/proxy-sort.ts'
 import type { ProxySort, ProxySortDirection } from '../src/lib/proxy-sort.ts'
@@ -38,6 +39,48 @@ function memoryStorage(t: TestContext): Storage {
 }
 
 const storageKey = (backend: string, group: string) => 'miboard.proxy-sort.v1' + JSON.stringify([backend, group])
+
+test('HTTP, File and Inline subscriptions sort even when the controller merges their nodes into /proxies', () => {
+  const manual = node('Manual', 'Vless', [1])
+  const http = node('HTTP node', 'Vless', [300])
+  const file = node('File node', 'Trojan', [20])
+  const inline = node('Inline node', 'Vless', [90])
+  const group = { ...node('Auto', 'URLTest'), all: [http.name, file.name], now: http.name }
+  const direct = node('DIRECT', 'Direct')
+  const proxies = Object.fromEntries([manual, http, file, inline, group, direct].map((proxy) => [proxy.name, proxy]))
+  const membership = sortableProviderNames(proxies, {
+    subscription: { vehicleType: 'HTTP', proxies: [http] },
+    file: { vehicleType: 'File', proxies: [file] },
+    inline: { vehicleType: 'Inline', proxies: [inline] },
+    default: { vehicleType: 'Compatible', proxies: [manual, group, direct] },
+  })
+  const names = [http.name, group.name, manual.name, inline.name, direct.name, file.name]
+  assert.deepEqual(sortProxyNames(names, setting('latency'), (name) => proxies[name], 'en-US', undefined, (name) => membership.has(name)),
+    ['Auto', 'Manual', 'DIRECT', 'File node', 'Inline node', 'HTTP node'])
+  assert.deepEqual(sortProxyNames(names, setting('name', 'desc'), (name) => proxies[name], 'en-US', undefined, (name) => membership.has(name)),
+    ['Auto', 'Manual', 'DIRECT', 'Inline node', 'HTTP node', 'File node'])
+})
+
+test('Compatible references, groups and built-ins remain pinned even when repeated by a subscription', () => {
+  const manual = node('Manual')
+  const provider = node('Subscription')
+  const builtins = ['Direct', 'Reject', 'RejectDrop', 'Compatible', 'Pass'].map((type) => node(type, type))
+  const group = { ...node('Group', 'Selector'), all: [provider.name], now: provider.name }
+  const proxies = Object.fromEntries([manual, group, ...builtins].map((proxy) => [proxy.name, proxy]))
+  const membership = sortableProviderNames(proxies, {
+    subscription: { vehicleType: 'http', proxies: [manual, provider, group, ...builtins] },
+    explicit: { vehicleType: 'Compatible', proxies: [manual] },
+  })
+  assert.deepEqual([...membership], ['Subscription'])
+})
+
+test('legacy provider responses without vehicleType preserve manual roots and still sort provider-only nodes', () => {
+  const manual = node('Manual')
+  const provider = node('Subscription')
+  const membership = sortableProviderNames({ Manual: manual }, { legacy: { proxies: [manual, provider] }, empty: {} })
+  assert.deepEqual([...membership], ['Subscription'])
+  assert.deepEqual([...sortableProviderNames({ Manual: manual }, {})], [])
+})
 
 test('configuration order returns an independent copy and ignores sort direction', () => {
   const names = Object.freeze(['node-3', 'node-1', 'node-2'])

@@ -11,6 +11,7 @@
   import Confirm from '../components/Confirm.svelte'
   import LanguageSelect from '../components/LanguageSelect.svelte'
   import DelaySettings from '../components/DelaySettings.svelte'
+  import PrizrakSettings from '../components/PrizrakSettings.svelte'
 
   type ActionResult = { status: 'busy' } | { status: 'done' } | { status: 'error'; error: unknown }
   let done = $state<Record<string, ActionResult | undefined>>({})
@@ -62,30 +63,34 @@
 </script>
 
 {#snippet row(title: string, hint: string, control: import('svelte').Snippet)}
-  <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-line px-5 py-4 first:border-t-0">
-    <div class="min-w-0">
-      <div>{title}</div>
+  <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-line px-4 py-4 first:border-t-0 sm:px-5">
+    <div class="min-w-0 max-w-full flex-1 basis-44">
+      <div class="break-words [overflow-wrap:anywhere]">{title}</div>
       {#if hint}<div class="mt-0.5 text-[13px] text-fg-3">{hint}</div>{/if}
     </div>
-    <div class="flex items-center gap-3">{@render control()}</div>
+    <div class="flex min-w-0 max-w-full flex-wrap items-center gap-3 sm:justify-end">{@render control()}</div>
   </div>
 {/snippet}
 
+{#snippet feedback(key: string)}
+  {#if done[key]}<span class="min-w-0 max-w-full break-words font-mono text-xs [overflow-wrap:anywhere] {done[key]?.status === 'error' ? 'text-bad' : done[key]?.status === 'done' ? 'text-good' : 'text-fg-3'}" role={done[key]?.status === 'error' ? 'alert' : 'status'}>{result(key)}</span>{/if}
+{/snippet}
+
 {#snippet action(key: string, label: string, fn: () => Promise<unknown>)}
-  {#if done[key]}<span class="font-mono text-xs text-fg-3" role="status">{result(key)}</span>{/if}
+  {@render feedback(key)}
   <Button size="sm" onclick={() => run(key, fn)}>{label}</Button>
 {/snippet}
 
 <PageHeader title={t('nav.settings')} />
 
-<div class="flex max-w-3xl flex-col gap-8">
+<div class="flex max-w-3xl flex-col gap-6">
   <section>
     <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.connection')}</h2>
-    <div class="rounded-2xl border border-line bg-card">
+    <div class="rounded-panel border border-line bg-card">
       {#snippet backendCtl()}
         <Button size="sm" variant="ghost" onclick={() => router.go('setup')}><IconLogout strokeWidth={1.5} />{t('settings.change')}</Button>
       {/snippet}
-      {@render row(core.backend.url, core.version ? `mihomo ${core.version}` : '', backendCtl)}
+      {@render row(core.backend.url, core.version ? `${core.prizrak ? 'Prizrak-Core' : 'mihomo'} ${core.version}` : '', backendCtl)}
     </div>
   </section>
 
@@ -93,9 +98,9 @@
     {@const cfg = core.configs}
     <section>
       <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.core')}</h2>
-      <div class="rounded-2xl border border-line bg-card">
+      <div class="rounded-panel border border-line bg-card">
         {#snippet modeCtl()}
-          <Segmented label={t('mode.routing')} value={cfg.mode} options={modes} onchange={(m) => core.setMode(m)} />
+          <Segmented full label={t('mode.routing')} value={cfg.mode} options={modes} onchange={(m) => core.setMode(m)} />
         {/snippet}
         {@render row(t('mode.label'), t('settings.modeHint'), modeCtl)}
 
@@ -121,9 +126,13 @@
 
   <DelaySettings />
 
+  {#if core.prizrak}
+    <PrizrakSettings />
+  {/if}
+
   <section>
     <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.maintenance')}</h2>
-    <div class="rounded-2xl border border-line bg-card">
+    <div class="rounded-panel border border-line bg-card">
       {#snippet fakeIp()}{@render action('fakeip', t('settings.flush'), api.flushFakeIp)}{/snippet}
       {@render row(t('settings.fakeIpCache'), t('settings.fakeIpHint'), fakeIp)}
       {#snippet dns()}{@render action('dns', t('settings.flush'), api.flushDns)}{/snippet}
@@ -131,7 +140,7 @@
       {#snippet reload()}{@render action('reload', t('settings.reload'), () => api.reloadConfig().then(() => core.refreshConfigs()))}{/snippet}
       {@render row(t('settings.config'), t('settings.configHint'), reload)}
       {#snippet restart()}
-        {#if done.restart}<span class="font-mono text-xs text-fg-3" role="status">{result('restart')}</span>{/if}
+        {@render feedback('restart')}
         <Button size="sm" variant="ghost" class="!text-bad" onclick={() => (confirmRestart = true)}>{t('settings.restart')}</Button>
       {/snippet}
       {@render row(t('settings.core'), t('settings.restartHint'), restart)}
@@ -140,12 +149,12 @@
 
   <section>
     <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.appearance')}</h2>
-    <div class="rounded-2xl border border-line bg-card">
+    <div class="rounded-panel border border-line bg-card">
       {#snippet themeCtl()}
-        <Segmented label={t('settings.theme')} value={theme.value} options={themes} onchange={(value) => theme.set(value)} />
+        <Segmented full label={t('settings.theme')} value={theme.value} options={themes} onchange={(value) => theme.set(value)} />
       {/snippet}
       {@render row(t('settings.theme'), '', themeCtl)}
-      <div class="flex justify-between border-t border-line px-5 py-4">
+      <div class="flex justify-between border-t border-line px-4 py-4 sm:px-5">
         <LanguageSelect full />
       </div>
     </div>

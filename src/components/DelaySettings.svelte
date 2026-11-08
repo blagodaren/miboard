@@ -23,7 +23,7 @@
   ])
   const unified = $derived(core.configs?.['unified-delay'])
   const unifiedHint = $derived(t(unified === true ? 'latency.unifiedEnabled' : unified === false ? 'latency.unifiedDisabled' : 'latency.unifiedUnknown'))
-  const inputClass = 'h-10 w-full min-w-0 rounded-lg border border-field-border bg-field px-3 text-[13px] text-fg aria-invalid:border-bad focus-visible:border-accent-ink'
+  const inputClass = 'h-10 w-full min-w-0 rounded-[var(--radius-control)] border border-field-border bg-field px-3 text-[13px] text-fg transition-colors hover:border-fg-3 aria-invalid:border-bad focus-visible:border-accent-ink'
 
   function validNumber(value: number | undefined, max: number) {
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max

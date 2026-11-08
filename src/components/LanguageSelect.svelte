@@ -9,7 +9,7 @@
   <select
     value={i18n.locale}
     onchange={(event) => i18n.set(event.currentTarget.value)}
-    class="h-9 rounded-lg border border-field-border bg-field px-3 text-fg transition-colors focus-visible:border-accent-ink"
+    class="h-11 rounded-control border border-field-border bg-field px-3 text-fg transition-colors hover:border-fg-3 focus-visible:border-accent-ink sm:h-9"
   >
     {#each supportedLocales as language (language.value)}
       <option value={language.value} lang={language.value}>{language.label}</option>

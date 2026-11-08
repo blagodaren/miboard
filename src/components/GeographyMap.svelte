@@ -315,10 +315,6 @@
 <style>
   .earth-map {
     min-width: 0;
-    --map-ocean: light-dark(#eef1f4, #18181a);
-    --map-land: light-dark(#cbd0d7, #2b2b30);
-    --map-border: light-dark(#a2aab5, #45454b);
-    --map-grid: light-dark(rgb(82 95 112 / 0.18), rgb(237 237 237 / 0.09));
   }
   .map-stage { position: relative; aspect-ratio: 1000 / 560; min-height: 220px; overflow: hidden; isolation: isolate; background: var(--map-ocean); }
   svg { display: block; width: 100%; height: 100%; position: absolute; inset: 0; cursor: grab; touch-action: pan-y pinch-zoom; user-select: none; }
@@ -326,8 +322,8 @@
   .map-stage.dragging svg, .map-stage.dragging .country, .map-stage.dragging .country-marker { cursor: grabbing; }
   .ocean { fill: var(--map-ocean); stroke: var(--map-border); stroke-width: 0.8; vector-effect: non-scaling-stroke; }
   .graticule { fill: none; stroke: var(--map-grid); stroke-width: 0.6; vector-effect: non-scaling-stroke; }
-  .land path { stroke: var(--map-border); stroke-width: 0.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 180ms ease, opacity 180ms ease; }
-  .country, .country-marker { cursor: pointer; outline: none; transition: opacity 180ms ease; }
+  .land path { stroke: var(--map-border); stroke-width: 0.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 180ms var(--ease-out), opacity 180ms var(--ease-out); }
+  .country, .country-marker { cursor: pointer; outline: none; transition: opacity 180ms var(--ease-out); }
   .country.dimmed, .country-marker.dimmed, .land .dimmed { opacity: 0.55; }
   .hit-shape { fill: transparent; stroke: transparent; stroke-width: 1; vector-effect: non-scaling-stroke; }
   .point-ring { fill: color-mix(in oklab, var(--accent) 14%, transparent); stroke: color-mix(in oklab, var(--accent-ink) 50%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -335,23 +331,23 @@
   .country:hover .hit-shape, .country.selected .hit-shape, .country:focus-visible .hit-shape { stroke: var(--accent-ink); stroke-width: 1.4; }
   .country-marker.highlighted .point-ring, .country-marker.selected .point-ring, .country-marker:focus-visible .point-ring { fill: color-mix(in oklab, var(--accent) 22%, transparent); stroke: var(--accent-ink); stroke-width: 2; }
   .country-marker.highlighted .point, .country-marker:focus-visible .point { stroke: var(--text); stroke-width: 2; }
-  .map-detail { position: absolute; top: 8px; left: 16px; pointer-events: none; display: grid; gap: 2px; padding: 9px 12px; border: 1px solid transparent; border-radius: 8px; }
+  .map-detail { position: absolute; top: 8px; left: 16px; pointer-events: none; display: grid; gap: 4px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-control); }
   .map-detail.has-detail { border-color: var(--line); background: var(--card); box-shadow: var(--shadow-float); }
   .detail-name { font-size: 13px; color: var(--text); }
   .detail-value { font-family: var(--font-mono); font-size: 12px; color: var(--accent-ink); }
   .detail-label { color: var(--text-3); font-family: var(--font-sans); }
   .map-hint { font-size: 12px; color: var(--text-3); }
-  .map-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 8px 20px; border-top: 1px solid var(--line); }
-  .interaction-hint { color: var(--text-3); font-size: 11px; line-height: 16px; }
-  .zoom-controls { display: flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--card); }
-  .zoom-controls button { display: flex; width: 44px; height: 44px; flex: none; align-items: center; justify-content: center; border-radius: 7px; color: var(--text-2); cursor: pointer; transition: background-color 120ms, color 120ms; }
+  .map-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 8px 20px; border-top: 1px solid var(--line); }
+  .interaction-hint { color: var(--text-3); font-size: 12px; line-height: 16px; }
+  .zoom-controls { display: flex; align-items: center; border: 1px solid var(--field-border); border-radius: var(--radius-control); background: var(--field); }
+  .zoom-controls button { display: flex; width: 44px; height: 44px; flex: none; align-items: center; justify-content: center; border-radius: 8px; color: var(--text-2); cursor: pointer; transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out); }
   .zoom-controls button:hover:not(:disabled) { background: var(--raised); color: var(--text); }
   .zoom-controls button:active:not(:disabled) { transform: scale(0.95); }
   .zoom-controls button:disabled { opacity: 0.35; cursor: default; }
   .zoom-controls :global(svg) { position: static; width: 16px; height: 16px; cursor: inherit; }
   .zoom-value { width: 48px; text-align: center; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-2); }
   .pan-menu { position: relative; }
-  .pan-pad { position: absolute; right: -44px; bottom: calc(100% + 10px); z-index: 2; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px); gap: 4px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); padding: 6px; box-shadow: var(--shadow-float); }
+  .pan-pad { position: absolute; right: -44px; bottom: calc(100% + 8px); z-index: 2; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px); gap: 4px; border: 1px solid var(--field-border); border-radius: var(--radius-control); background: var(--field); padding: 4px; box-shadow: var(--shadow-float); }
   .pan-up { grid-column: 2; }
   .pan-left { grid-column: 1; grid-row: 2; }
   .pan-down { grid-column: 2; grid-row: 2; }
@@ -359,15 +355,14 @@
   .pan-up :global(svg) { transform: rotate(-90deg); }
   .pan-left :global(svg) { transform: rotate(180deg); }
   .pan-down :global(svg) { transform: rotate(90deg); }
-  .map-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 20px 16px; color: var(--text-3); font-size: 11px; line-height: 16px; }
+  .map-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 20px 16px; color: var(--text-3); font-size: 12px; line-height: 16px; }
   .projection { white-space: nowrap; }
-  .separator { padding: 0 5px; }
+  .separator { padding: 0 4px; }
   .legend { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); }
   .legend-scale { display: flex; gap: 2px; }
   .legend-scale span { width: 18px; height: 8px; border-radius: 1px; }
   @media (max-width: 600px) {
-    .map-detail { top: 0; left: 8px; padding: 5px 8px; }
-    .map-hint { font-size: 11px; }
+    .map-detail { top: 0; left: 8px; padding: 4px 8px; }
     .map-navigation { padding: 8px 12px; }
     .interaction-hint { width: 100%; }
     .zoom-controls { margin-left: auto; }

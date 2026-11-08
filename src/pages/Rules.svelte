@@ -71,7 +71,7 @@
 </div>
 
 {#if error}
-  <p class="rounded-xl border border-line bg-card px-4 py-3 text-[13px] text-bad" role="alert">{errorMessage(error)}</p>
+  <p class="rounded-[var(--radius-card)] border border-bad-border bg-bad-surface px-4 py-3 text-[13px] text-bad" role="alert">{errorMessage(error)}</p>
 {:else if loading}
   <p class="text-fg-3">{t('rules.loading')}</p>
 {:else}
@@ -93,7 +93,7 @@
             <td class="hidden truncate px-3 py-2 font-mono text-xs text-fg-2 sm:table-cell" title={r.type}>{r.type}</td>
             <td class="px-3 py-2" title={r.payload}>
               {#if isRuleSet(r)}
-                <button class="flex min-h-11 w-full items-center gap-2 rounded-md text-left transition-colors hover:bg-raised hover:text-accent-ink" aria-expanded={expanded === r.i} aria-controls="rules-details-{r.i}" aria-label={t(expanded === r.i ? 'rules.collapseSet' : 'rules.expandSet', { name: r.payload })} onclick={() => toggle(r, r.i)}>
+                <button class="flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-control)] text-left transition-colors hover:bg-hover {expanded === r.i ? 'text-selected-text' : 'hover:text-fg'}" aria-expanded={expanded === r.i} aria-controls="rules-details-{r.i}" aria-label={t(expanded === r.i ? 'rules.collapseSet' : 'rules.expandSet', { name: r.payload })} onclick={() => toggle(r, r.i)}>
                   <IconChevron class="size-4 shrink-0 transition-transform motion-reduce:transition-none {expanded === r.i ? 'rotate-180' : ''}" strokeWidth={1.5} />
                   <span class="min-w-0 truncate">{r.payload || '—'}</span>
                 </button>

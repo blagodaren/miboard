@@ -1,0 +1,80 @@
+[
+  {
+    "domain": "c-fra12-442178ae.discord.media",
+    "expectedCountry": null,
+    "confidence": "anycast",
+    "userClaimCountry": "US",
+    "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+    "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/"
+  },
+  {
+    "domain": "fsn1-speed.hetzner.com",
+    "expectedCountry": "DE",
+    "confidence": "provider",
+    "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+    "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: FSN1. Документация Hetzner связывает fsn1 с Falkenstein, Germany. Страна — заявленное размещение тестового endpoint, не регистрация ASN."
+  },
+  {
+    "domain": "hel1-speed.hetzner.com",
+    "expectedCountry": "FI",
+    "confidence": "provider",
+    "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+    "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: HEL1. Документация Hetzner связывает hel1 с Helsinki, Finland. Страна — заявленное размещение тестового endpoint."
+  },
+  {
+    "domain": "ash-speed.hetzner.com",
+    "expectedCountry": "US",
+    "confidence": "provider",
+    "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+    "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: ASH. Документация Hetzner связывает ash с Ashburn, Virginia, United States. Страна — заявленное размещение тестового endpoint."
+  },
+  {
+    "domain": "speedtest.ams1.nl.leaseweb.net",
+    "expectedCountry": "NL",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Amsterdam AMS-01 Data Center."
+  },
+  {
+    "domain": "speedtest.lon1.uk.leaseweb.net",
+    "expectedCountry": "GB",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком London LON-01 Data Center. Для ISO 3166-1 используется GB."
+  },
+  {
+    "domain": "speedtest.hkg12.hk.leaseweb.net",
+    "expectedCountry": "HK",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Hong Kong HKG-12 Data Center."
+  },
+  {
+    "domain": "speedtest.mtl2.ca.leaseweb.net",
+    "expectedCountry": "CA",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Montreal MTL-02(MNE) Data Center."
+  },
+  {
+    "domain": "speedtest.sin1.sg.leaseweb.net",
+    "expectedCountry": "SG",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Singapore SIN-01 Data Center."
+  },
+  {
+    "domain": "speedtest.syd12.au.leaseweb.net",
+    "expectedCountry": "AU",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Sydney SYD-12 Data Center."
+  },
+  {
+    "domain": "speedtest.tyo11.jp.leaseweb.net",
+    "expectedCountry": "JP",
+    "confidence": "provider",
+    "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+    "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Tokyo TYO-11 Data Center."
+  }
+]

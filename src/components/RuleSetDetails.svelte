@@ -46,7 +46,7 @@
   })
 </script>
 
-<section class="border-t border-line bg-deep/60 px-4 py-4 sm:px-5" aria-label={t('rules.setTitle', { name })} aria-busy={loading}>
+<section class="border-t border-line bg-raised px-4 py-4 sm:px-5" aria-label={t('rules.setTitle', { name })} aria-busy={loading}>
   {#if loading}
     <p class="text-[13px] text-fg-2" role="status">{t('rules.providerLoading')}</p>
   {:else if error}

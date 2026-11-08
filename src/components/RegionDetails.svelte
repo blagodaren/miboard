@@ -145,17 +145,18 @@
 </section>
 
 <style>
-  .regions-panel { padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .regions-panel { overflow-anchor: none; }
+  .regions-panel { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
   .regions-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-  h2 { font-size: 16px; line-height: 24px; font-weight: 500; }
+  h2 { font-size: 14px; line-height: 20px; font-weight: 500; }
   .share-hint { margin-top: 4px; color: var(--text-3); font-size: 12px; line-height: 18px; }
-  .metric-switch { display: flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--field-border); border-radius: 10px; background: var(--raised); }
-  .metric-switch button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid transparent; border-radius: 7px; color: var(--text-2); cursor: pointer; transition: color 150ms, background-color 150ms, border-color 150ms; }
+  .metric-switch { display: flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--field-border); border-radius: var(--radius-control); background: var(--raised); }
+  .metric-switch button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid transparent; border-radius: 8px; color: var(--text-2); cursor: pointer; transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out); }
   .metric-switch button:hover { color: var(--text); background: var(--hover); }
   .metric-switch button[aria-pressed='true'] { color: var(--selected-text); background: var(--selected); border-color: var(--selected-border); }
   .metric-switch :global(svg) { width: 18px; height: 18px; }
   .region-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .region-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); text-align: left; cursor: pointer; transition: background-color 150ms, border-color 150ms; }
+  .region-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); text-align: left; cursor: pointer; transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out); }
   .region-card:hover { border-color: var(--field-border); background: color-mix(in oklab, var(--raised) 35%, var(--card)); }
   .region-card.chosen { border-color: var(--selected-border); background: var(--selected); box-shadow: inset 3px 0 var(--selected-border); }
   .region-card:active, .metric-switch button:active { transform: scale(0.99); }
@@ -170,16 +171,17 @@
   .region-breakdown { display: grid; gap: 4px; margin-top: 8px; font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--text-2); font-variant-numeric: tabular-nums; }
   .region-breakdown > span { display: flex; align-items: center; gap: 6px; }
   .region-breakdown :global(svg) { width: 14px; height: 14px; flex: none; }
-  .download { color: var(--accent-ink); }
+  .download { color: var(--traffic-down-ink); }
+  .region-breakdown > span:not(.download):not(.region-count) { color: var(--traffic-up-ink); }
   .download :global(.download-icon) { transform: rotate(90deg); }
   .region-breakdown :global(.upload-icon) { transform: rotate(-90deg); }
   .region-count { color: var(--text-3); }
   .region-card.chosen .region-share, .region-card.chosen .region-count { color: var(--text-2); }
   .regions-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
-  .regions-footer button { min-height: 44px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; transition: color 150ms, background-color 150ms; }
+  .regions-footer button { min-height: 44px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out); }
   .regions-footer button:hover { color: var(--text); background: var(--hover); }
   .regions-empty { padding: 20px 0; color: var(--text-3); font-size: 13px; line-height: 20px; }
-  .region-skeleton { min-height: 194px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+  .region-skeleton { min-height: 196px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); }
   .region-skeleton > span { display: block; border-radius: 4px; background: var(--raised); }
   .skeleton-name { width: 72%; height: 20px; }
   .skeleton-value { width: 58%; height: 28px; margin-top: 16px; }

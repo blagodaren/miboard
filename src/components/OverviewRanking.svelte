@@ -26,10 +26,10 @@
 
 <section class="ranking" aria-label={title} data-testid="overview-ranking">
   <header class="ranking-header">
-    <a href={href} class="ranking-title"><Icon size={17} strokeWidth={1.7} /><h2>{title}</h2><ArrowUpRight class="open-icon" size={13} /></a>
+    <a href={href} class="ranking-title"><Icon size={18} strokeWidth={1.5} aria-hidden="true" /><h2>{title}</h2><ArrowUpRight class="open-icon" size={16} strokeWidth={1.5} aria-hidden="true" /></a>
     <div class="metric-control" role="group" aria-label={t('overview.rankBy', { title })}>
-      <button aria-label={t('overview.byTraffic')} title={t('overview.byTraffic')} aria-pressed={metric === 'traffic'} onclick={() => { metric = 'traffic' }}><ChartNoAxesColumn size={16} strokeWidth={1.7} /></button>
-      <button aria-label={t('overview.byConnections')} title={t('overview.byConnections')} aria-pressed={metric === 'connections'} onclick={() => { metric = 'connections' }}><Link2 size={16} strokeWidth={1.7} /></button>
+      <button aria-label={t('overview.byTraffic')} title={t('overview.byTraffic')} aria-pressed={metric === 'traffic'} onclick={() => { metric = 'traffic' }}><ChartNoAxesColumn size={16} strokeWidth={1.5} aria-hidden="true" /></button>
+      <button aria-label={t('overview.byConnections')} title={t('overview.byConnections')} aria-pressed={metric === 'connections'} onclick={() => { metric = 'connections' }}><Link2 size={16} strokeWidth={1.5} aria-hidden="true" /></button>
     </div>
   </header>
   {#if ranked.length}
@@ -37,12 +37,11 @@
       {#each ranked as row, index (row.id)}
         {@const rowTotal = row.download + row.upload}
         <li class="ranking-row" data-testid="overview-rank-row">
-          <span class="rank num" data-medal={index < 3 ? index + 1 : undefined}>{index + 1}</span>
+          <span class="rank num">{index + 1}</span>
           <div class="row-content">
             <div class="row-heading">
               <span class="row-name" title={row.name}>
-                {#if row.flag}<span class="country-flag" aria-hidden="true">{row.flag}</span>
-                {:else if !bars}<span class="domain-icon"><Globe size={12} strokeWidth={1.6} /></span>{/if}
+                {#if row.flag}<span class="country-flag" aria-hidden="true">{row.flag}</span>{/if}
                 <span class="name-text">{row.name}</span>
               </span>
               <strong class="row-value num">{metric === 'traffic' ? bytes(rowTotal) : count(row.connections)}</strong>
@@ -68,50 +67,47 @@
       {/each}
     </ol>
   {:else}
-    <div class="empty-ranking"><Network size={24} strokeWidth={1.3} /><p>{t('overview.noSessionData')}</p></div>
+    <div class="empty-ranking"><Network size={24} strokeWidth={1.5} aria-hidden="true" /><p>{t('overview.noSessionData')}</p></div>
   {/if}
 </section>
 
 <style>
-  .ranking { min-width: 0; }
-  .ranking-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
-  .ranking-title { display: flex; min-width: 0; align-items: center; gap: 8px; min-height: 34px; color: var(--text-2); transition: color 150ms; }
-  .ranking-title:hover { color: var(--text); }
-  h2 { font-size: 12px; line-height: 17px; font-weight: 600; letter-spacing: .055em; text-transform: uppercase; }
+  .ranking { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  .ranking-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .ranking-title { display: flex; min-width: 0; align-items: center; gap: 8px; min-height: 36px; color: var(--text); transition: color 150ms; }
+  .ranking-title:hover { color: var(--accent-ink); }
+  h2 { font-size: 14px; line-height: 20px; font-weight: 500; }
   .ranking-title :global(svg) { flex-shrink: 0; }
   .ranking-title :global(.open-icon) { opacity: 0; transition: opacity 150ms, transform 150ms; }
   .ranking-title:hover :global(.open-icon), .ranking-title:focus-visible :global(.open-icon) { opacity: 1; transform: translate(1px, -1px); }
-  .metric-control { display: flex; flex-shrink: 0; gap: 2px; padding: 2px; border-radius: 10px; background: var(--raised); }
-  .metric-control button { display: flex; align-items: center; justify-content: center; width: 31px; height: 30px; border: 1px solid transparent; border-radius: 8px; color: var(--text-3); cursor: pointer; transition: color 150ms, background 150ms, border-color 150ms; }
+  .metric-control { display: flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid var(--field-border); border-radius: var(--radius-control); background: var(--raised); }
+  .metric-control button { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: 7px; color: var(--text-2); cursor: pointer; transition: color 150ms, background 150ms, border-color 150ms; }
   .metric-control button:hover { background: var(--hover); color: var(--text); }
-  .metric-control button[aria-pressed='true'] { color: var(--traffic-down); border-color: var(--line); background: var(--card); box-shadow: var(--shadow-panel); }
+  .metric-control button[aria-pressed='true'] { color: var(--selected-text); border-color: var(--selected-border); background: var(--selected); }
   .metric-control button:active { transform: translateY(1px); }
   .ranking-list { display: flex; flex-direction: column; gap: 8px; }
-  .ranking-row { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 12px 11px 11px; border: 1px solid color-mix(in srgb, var(--line) 65%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--card) 78%, var(--page)); }
-  .rank { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); color: var(--text-3); font-size: 10px; font-weight: 600; }
-  .rank[data-medal='1'] { background: light-dark(#fff0bd, #483619); color: light-dark(#80500d, #f3cb74); }
-  .rank[data-medal='2'] { background: light-dark(#e9edf5, #2b303c); color: light-dark(#4a586c, #bfccdf); }
-  .rank[data-medal='3'] { background: light-dark(#ffe8cf, #463021); color: light-dark(#a05117, #f5b07b); }
+  .ranking-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
+  .rank { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--text-3); font-size: 12px; font-weight: 400; }
   .row-content { flex: 1; min-width: 0; }
-  .row-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; line-height: 20px; }
-  .row-name { display: inline-flex; align-items: center; min-width: 0; gap: 7px; font-size: 13px; font-weight: 450; }
+  .row-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; line-height: 20px; }
+  .row-name { display: inline-flex; align-items: center; min-width: 0; gap: 8px; font-size: 13px; font-weight: 400; }
   .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .country-flag { flex-shrink: 0; font-size: 15px; }
-  .domain-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; border-radius: 5px; background: var(--raised); color: var(--text-3); }
-  .row-value { flex-shrink: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .traffic-bar { display: flex; margin: 6px 0 5px; height: 5px; overflow: hidden; border-radius: 4px; background: var(--raised); }
+  .row-value { flex-shrink: 0; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .traffic-bar { display: flex; margin: 8px 0; height: 4px; overflow: hidden; border-radius: 4px; background: var(--raised); }
   .traffic-bar span { height: 100%; }
   .bar-down { background: var(--traffic-down-line); }
   .bar-up { background: var(--traffic-up-line); }
-  .row-meta { display: flex; align-items: center; gap: 7px; margin-top: 4px; font-size: 10px; line-height: 16px; color: var(--text-3); }
+  .row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--text-3); }
   .row-meta > span { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
-  .download { color: var(--traffic-down); }
-  .upload { color: var(--traffic-up); }
+  .download { color: var(--traffic-down-ink); }
+  .upload { color: var(--traffic-up-ink); }
   .connections { min-width: 0; }
   .row-meta :global(svg) { flex-shrink: 0; }
   .row-meta > .share { margin-left: auto; }
-  .empty-ranking { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 132px; padding: 20px; border: 1px dashed var(--line); border-radius: 14px; color: var(--text-3); font-size: 12px; text-align: center; }
-  @media (min-width: 1100px) and (max-width: 1279px) { .row-meta { flex-wrap: wrap; gap: 1px 7px; } .row-meta > .share { margin-left: 0; } }
-  @media (max-width: 767px) { .metric-control button { width: 40px; height: 38px; } .row-meta { font-size: 11px; gap: 8px; } }
+  .empty-ranking { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 132px; padding: 20px; border: 1px dashed var(--line); border-radius: var(--radius-card); color: var(--text-3); font-size: 12px; text-align: center; }
+  @media (min-width: 1100px) and (max-width: 1279px) { .row-meta { flex-wrap: wrap; gap: 4px 8px; } .row-meta > .share { margin-left: 0; } }
+  @media (max-width: 767px) { .ranking { padding: 16px; } .metric-control button { width: 44px; height: 44px; } .row-meta { gap: 8px; } }
   @media (prefers-reduced-motion: reduce) { .ranking-title, .ranking-title :global(.open-icon), .metric-control button { transition: none; } }
+  @media (max-width: 479px) { .ranking-header { flex-wrap: wrap; } .ranking-title { flex: 1 1 160px; } .row-heading { flex-wrap: wrap; gap: 4px 8px; } .row-name { flex: 1 1 120px; } }
 </style>

@@ -164,7 +164,7 @@ test('independent histories stay with the named proxy and URL, while shared hist
   }
   const proxies: Record<string, Proxy> = { group, leaf }
   const metadata = (name: string) => proxies[name]
-  assert.deepEqual(delayHistorySample('group', url, false, metadata), history(21, 22)[1])
+  assert.deepEqual(delayHistorySample('group', url, false, metadata), history(11, 12)[1])
   assert.deepEqual(delayHistorySample('group', url, true, metadata), history(81, 82)[1])
   assert.deepEqual(delayHistorySample('leaf', url, true, metadata), history(11, 12)[1])
   assert.equal(delayHistorySample('group', 'https://untested.test/', true, metadata), undefined)
@@ -173,8 +173,68 @@ test('independent histories stay with the named proxy and URL, while shared hist
   assert.deepEqual(delayHistorySample('group', url, true, metadata), history(21, 22)[1], 'Old cores fall back to the resolved leaf history')
   group.extra = {}
   assert.equal(delayHistorySample('group', url, true, metadata), undefined, 'Known URL histories must not fall back to unrelated measurements')
+  leaf.extra![url].history = history(12, 0)
+  assert.deepEqual(delayHistorySample('group', url, false, metadata), history(12, 0)[1], 'Unreachable latest results stay visible')
+})
+
+test('shared manual latency uses the selected leaf URL instead of a newer unrelated generic measurement', () => {
+  const url = DEFAULT_DELAY_SETTINGS.url
+  const otherUrl = 'https://other.test/check'
+  const measured = { time: '2026-11-08T12:00:00Z', delay: 40 }
+  const other = { time: '2026-11-08T12:00:01Z', delay: 900 }
+  const leaf: Proxy = {
+    ...node(), name: 'leaf', history: [other],
+    extra: {
+      [url]: { alive: true, history: [measured] },
+      [otherUrl]: { alive: true, history: [other] },
+    },
+  }
+  const proxies: Record<string, Proxy> = {
+    outer: { ...node(), name: 'outer', all: ['inner'], now: 'inner' },
+    inner: { ...node(), name: 'inner', all: ['leaf'], now: 'leaf' },
+    leaf,
+  }
+  const metadata = (name: string) => proxies[name]
+  for (const name of ['leaf', 'inner', 'outer']) {
+    assert.equal(delayHistorySample(name, url, false, metadata), measured, `${name}: manual 40 ms must not become 900 ms after metadata refresh`)
+    assert.equal(delayHistorySample(name, otherUrl, false, metadata), other, `${name}: each URL retains its own result`)
+  }
+  leaf.history = [{ time: '2026-11-08T12:00:02Z', delay: 1200 }]
+  assert.equal(delayHistorySample('outer', url, false, metadata), measured, 'Later unrelated generic samples do not invalidate the matching URL result')
+})
+
+test('shared URL-specific failures and empty histories never revive a generic success', () => {
+  const url = 'https://selected.test/check'
+  const leaf: Proxy = {
+    ...node([900]), name: 'leaf',
+    extra: { [url]: { alive: false, history: history(40, 0) } },
+  }
+  const metadata = (name: string) => name === 'leaf' ? leaf : undefined
+  assert.deepEqual(delayHistorySample('leaf', url, false, metadata), history(40, 0)[1], 'The latest failed URL sample stays zero')
+  leaf.extra![url].history = []
+  assert.equal(delayHistorySample('leaf', url, false, metadata), undefined, 'A known empty URL bucket is untested, even with generic success')
+  delete leaf.extra![url]
+  leaf.extra!['https://unrelated.test/check'] = { alive: true, history: history(1500) }
+  assert.deepEqual(delayHistorySample('leaf', url, false, metadata), history(900)[0], 'An absent requested bucket retains legacy generic fallback')
+  delete leaf.extra
+  assert.deepEqual(delayHistorySample('leaf', url, false, metadata), history(900)[0], 'Legacy cores without URL buckets remain supported')
+})
+
+test('an unknown shared URL retains IPv6 exclusion while an empty matching bucket stays empty', () => {
+  const url = 'https://selected.test/check'
+  const normal = { time: '2026-11-08T12:00:00Z', delay: 40 }
+  const ipv6 = { time: '2026-11-08T12:00:01Z', delay: 900 }
+  const leaf: Proxy = {
+    ...node(), name: 'leaf', history: [normal, ipv6],
+    extra: { [IPV6_TEST_URL]: { alive: true, history: [ipv6] } },
+  }
+  const metadata = (name: string) => name === 'leaf' ? leaf : undefined
+  assert.equal(delayHistorySample('leaf', url, false, metadata), normal)
+  leaf.extra![url] = { alive: false, history: [] }
+  assert.equal(delayHistorySample('leaf', url, false, metadata), undefined)
+  delete leaf.extra![url]
   leaf.history = history(22, 0)
-  assert.deepEqual(delayHistorySample('group', url, false, metadata), history(22, 0)[1], 'Unreachable latest results stay visible')
+  assert.deepEqual(delayHistorySample('leaf', url, false, metadata), history(22, 0)[1], 'Unreachable latest results stay visible')
 })
 
 test('shared latency excludes IPv6 probe samples by exact timestamp and value unless IPv6 is the main endpoint', () => {

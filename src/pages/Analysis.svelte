@@ -104,7 +104,7 @@
 
 {#snippet sortHead(key: Sort, label: string, extra = '')}
   <th class="{th} {extra}" aria-sort={sort === key ? ascending ? 'ascending' : 'descending' : 'none'}>
-    <button class="inline-flex min-h-11 items-center gap-1 whitespace-nowrap transition-colors hover:text-fg {sort === key ? 'text-fg' : ''}" onclick={() => changeSort(key)}>
+    <button class="inline-flex min-h-11 items-center gap-1 {key === 'name' ? 'text-left' : 'whitespace-nowrap'} transition-colors hover:text-fg {sort === key ? 'text-fg' : ''}" onclick={() => changeSort(key)}>
       {label}{#if sort === key}<span aria-hidden="true">{ascending ? '↑' : '↓'}</span>{/if}
     </button>
   </th>
@@ -128,16 +128,16 @@
   ] as metric, i (metric.label)}
     <div class="min-w-0 px-4 py-4 sm:px-5 {i % 2 ? 'border-l border-line' : ''} {i > 1 ? 'border-t border-line lg:border-l lg:border-t-0' : ''}">
       <h2 class="text-[13px] font-normal text-fg-2">{metric.label}</h2>
-      <div class="num mt-3 text-[26px] font-medium leading-none tracking-[-0.02em]">{metric.value}</div>
+      <div class="num mt-3 text-[28px] font-medium leading-8">{metric.value}</div>
       <p class="num mt-3 truncate font-mono text-xs text-fg-3" title={metric.caption}>{metric.caption}</p>
     </div>
   {/each}
 </section>
 
-<div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-b border-line">
-  <div class="flex gap-4 sm:gap-6" role="group" aria-label={t('analysis.viewLabel')}>
+<div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-line">
+  <div class="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6" role="group" aria-label={t('analysis.viewLabel')}>
     {#each views as item (item.value)}
-      <button class="flex min-h-11 items-center gap-2 border-b-2 pb-1 text-[13px] transition-colors {view === item.value ? 'border-accent text-fg' : 'border-transparent text-fg-3 hover:text-fg'}" aria-pressed={view === item.value} onclick={() => (view = item.value)}>
+      <button class="flex min-h-11 items-center gap-2 border-b-2 pb-1 text-[13px] transition-colors {view === item.value ? 'border-selected-border text-selected-text' : 'border-transparent text-fg-3 hover:text-fg'}" aria-pressed={view === item.value} onclick={() => (view = item.value)}>
         {item.label}<span class="num font-mono text-xs text-fg-3">{count(stats[item.value].length)}</span>
       </button>
     {/each}
@@ -146,21 +146,21 @@
 </div>
 
 {#if !core.connectionsOnline && core.connectionsReady}
-  <p role="status" class="mt-3 rounded-lg border border-line bg-card px-4 py-3 text-[13px] text-fg-2">{t('analysis.streamLost')}</p>
+  <p role="status" class="mt-3 rounded-[var(--radius-card)] border border-line bg-card px-4 py-3 text-[13px] text-fg-2">{t('analysis.streamLost')}</p>
 {/if}
 {#if stats.truncated}
-  <p role="status" class="mt-3 rounded-lg border border-line px-4 py-3 text-[13px] text-accent-ink">{t('analysis.truncated')}</p>
+  <p role="status" class="mt-3 rounded-[var(--radius-card)] border border-warning-border bg-warning-surface px-4 py-3 text-[13px] text-warning">{t('analysis.truncated')}</p>
 {/if}
 
 {#if view === 'proxies' && distribution.length}
   <section class="mt-4 rounded-2xl border border-line bg-card px-4 py-4 sm:px-5" aria-label={t('analysis.proxyDistribution')}>
-    <div class="flex items-baseline justify-between gap-3"><h2 class="font-medium">{t('analysis.exitNodeTraffic')}</h2><span class="text-xs text-fg-3">{t('analysis.sessionShare')}</span></div>
+    <div class="flex flex-wrap items-baseline justify-between gap-3"><h2 class="font-medium">{t('analysis.exitNodeTraffic')}</h2><span class="text-xs text-fg-3">{t('analysis.sessionShare')}</span></div>
     <div class="mt-4 grid gap-3 sm:grid-cols-2">
       {#each distribution.slice(0, 8) as proxy (proxy.name)}
         {@const traffic = proxy.download + proxy.upload}
-        <button class="min-w-0 rounded-md p-1 text-left transition-colors hover:bg-raised active:scale-[0.99]" onclick={() => { view = 'domains'; query = ''; proxyFilter = proxy.name }} aria-label={t('analysis.showProxyDomains', { name: proxyName(proxy.name) })}>
+        <button class="min-w-0 rounded-md p-1 text-left transition-colors hover:bg-raised" onclick={() => { view = 'domains'; query = ''; proxyFilter = proxy.name }} aria-label={t('analysis.showProxyDomains', { name: proxyName(proxy.name) })}>
           <span class="flex items-baseline justify-between gap-3 text-[13px]"><span class="truncate">{proxyName(proxy.name)}</span><span class="num shrink-0 font-mono text-xs text-fg-2">{bytes(traffic)} <span class="text-fg-3">· {percent(traffic)}%</span></span></span>
-          <span class="mt-2 block h-1 overflow-hidden rounded-full bg-raised"><span class="block h-full rounded-full bg-accent/75" style:width="{totalTraffic ? traffic / totalTraffic * 100 : 0}%"></span></span>
+          <span class="mt-2 block h-1 overflow-hidden rounded-full bg-raised"><span class="block h-full rounded-full bg-accent" style:width="{totalTraffic ? traffic / totalTraffic * 100 : 0}%"></span></span>
         </button>
       {/each}
     </div>
@@ -172,7 +172,7 @@
   {#if view !== 'proxies'}
     <label class="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <span class="sr-only">{t('analysis.exitNode')}</span>
-      <select bind:value={proxyFilter} aria-label={t('analysis.exitNodeFilter')} class="h-8 max-w-[220px] rounded-lg border border-field-border bg-field px-2 text-[13px] text-fg focus-visible:border-accent-ink">
+      <select bind:value={proxyFilter} aria-label={t('analysis.exitNodeFilter')} class="h-8 max-w-[220px] rounded-[var(--radius-control)] border border-field-border bg-field px-2 text-[13px] text-fg transition-colors hover:border-fg-3 focus-visible:border-accent-ink">
         <option value="">{t('analysis.allExitNodes')}</option>
         {#each stats.proxies as proxy (proxy.name)}<option value={proxy.name}>{proxyName(proxy.name)}</option>{/each}
       </select>
@@ -199,15 +199,15 @@
         <th class="{th} hidden w-[18%] text-left lg:table-cell">{view === 'ips' ? t('analysis.regionASN') : t('analysis.associations')}</th>
         {@render sortHead('download', t('analysis.downloaded'), 'hidden text-right xl:table-cell')}
         {@render sortHead('upload', t('analysis.uploaded'), 'hidden text-right xl:table-cell')}
-        {@render sortHead('total', t('analysis.traffic'), 'w-[100px] text-right sm:w-[120px] xl:w-auto')}
-        {@render sortHead('connections', t('analysis.connectionsShort'), 'w-[88px] text-right sm:w-[100px] xl:w-auto')}
-        <th class="w-9 sm:w-11"><span class="sr-only">{t('analysis.details')}</span></th>
+        {@render sortHead('total', t('analysis.traffic'), 'w-[88px] text-right sm:w-[120px] xl:w-auto')}
+        {@render sortHead('connections', t('analysis.connectionsShort'), 'w-[72px] text-right sm:w-[100px] xl:w-auto')}
+        <th class="w-8 sm:w-11"><span class="sr-only">{t('analysis.details')}</span></th>
       </tr></thead>
       <tbody>
         {#each rows as row, index (row.name)}
           <tr class="border-t border-line transition-colors {selected === row.name ? 'bg-selected' : 'hover:bg-hover'}">
             <td class="min-w-0 px-3 py-3">
-              <button class="max-w-full text-left hover:text-accent-ink" aria-expanded={selected === row.name} aria-controls="analysis-details-{index}" onclick={() => (selected = selected === row.name ? '' : row.name)}>
+              <button class="max-w-full text-left {selected === row.name ? 'text-selected-text' : 'hover:text-fg'}" aria-expanded={selected === row.name} aria-controls="analysis-details-{index}" onclick={() => (selected = selected === row.name ? '' : row.name)}>
                 <span class="block break-all font-mono text-xs leading-5">{rowName(row)}</span>
               </button>
               <span class="mt-0.5 block truncate text-xs text-fg-3">{related(row)}{#if view === 'ips' && 'countries' in row && row.countries.length}{' · '}{row.countries.join(', ')}{/if}</span>
@@ -221,8 +221,8 @@
                 <div class="mt-1 truncate text-fg-3" title={'proxies' in row ? row.proxies.map(proxyName).join(', ') : ''}>{'proxies' in row ? row.proxies.map(proxyName).join(', ') : 'ips' in row ? t('analysis.ipCount', { count: row.ips.length }) : ''}</div>
               {/if}
             </td>
-            <td class="num hidden whitespace-nowrap px-3 py-3 text-right font-mono text-xs text-fg-2 xl:table-cell">{bytes(row.download)}</td>
-            <td class="num hidden whitespace-nowrap px-3 py-3 text-right font-mono text-xs text-fg-2 xl:table-cell">{bytes(row.upload)}</td>
+            <td class="num hidden whitespace-nowrap px-3 py-3 text-right font-mono text-xs text-traffic-down-ink xl:table-cell">{bytes(row.download)}</td>
+            <td class="num hidden whitespace-nowrap px-3 py-3 text-right font-mono text-xs text-traffic-up-ink xl:table-cell">{bytes(row.upload)}</td>
             <td class="num px-3 py-3 text-right font-mono text-xs"><div>{bytes(row.download + row.upload)}</div>{#if view === 'proxies'}<div class="mt-1 text-fg-3">{percent(row.download + row.upload)}%</div>{/if}</td>
             <td class="num whitespace-nowrap px-1 py-3 text-right font-mono text-xs sm:px-3"><div>{count(row.connections)}</div><div class="mt-1 text-fg-3" title={t('analysis.activeConnections')}>{t('analysis.activeShort', { count: row.active })}</div></td>
             <td class="pr-1">
@@ -236,7 +236,7 @@
       </tbody>
     </table>
     {#if pages > 1}
-      <div class="flex items-center justify-between gap-2 border-t border-line px-3 py-3"><span class="font-mono text-xs text-fg-3">{count(currentPage)} / {count(pages)}</span><div class="flex gap-2"><Button size="sm" disabled={currentPage === 1} onclick={() => (page = currentPage - 1)}>{t('analysis.previous')}</Button><Button size="sm" disabled={currentPage === pages} onclick={() => (page = currentPage + 1)}>{t('analysis.next')}</Button></div></div>
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-3"><span class="font-mono text-xs text-fg-3">{count(currentPage)} / {count(pages)}</span><div class="flex flex-wrap gap-2"><Button size="sm" disabled={currentPage === 1} onclick={() => (page = currentPage - 1)}>{t('analysis.previous')}</Button><Button size="sm" disabled={currentPage === pages} onclick={() => (page = currentPage + 1)}>{t('analysis.next')}</Button></div></div>
     {/if}
   </div>
 {/if}

@@ -5,5 +5,7 @@ import { en as geography } from './geography'
 import { en as analysis } from './analysis'
 import { en as backends } from './backends'
 import { en as latency } from './latency'
+import { en as prizrak } from './prizrak'
+import { en as devices } from './devices'
 
-export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency }
+export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices }

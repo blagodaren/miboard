@@ -31,6 +31,7 @@ class Core {
     return errorMessage(error)
   }
   version = $state('')
+  prizrak = $state(false)
   backend = $state<Backend>({ url: '', secret: '' })
 
   up = $state(0)
@@ -96,6 +97,7 @@ class Core {
       this.status = 'lost'
       this.#start(generation)
       void this.refreshConfigs()
+      void this.#detectPrizrak(generation, b)
       return true
     } catch (e) {
       if (generation !== this.#generation) return false
@@ -123,9 +125,27 @@ class Core {
     const generation = this.#generation
     try {
       const configs = await api.configs()
-      if (generation === this.#generation) this.configs = configs
+      if (generation === this.#generation) {
+        this.configs = configs
+        // Version strings may be identical to mihomo; use the advertised API fields.
+        if (typeof configs['lgbm-auto-update'] === 'boolean' ||
+          typeof configs['lgbm-update-interval'] === 'number' || typeof configs['lgbm-url'] === 'string' ||
+          typeof configs['smart-collector-size'] === 'number') {
+          this.prizrak = true
+        }
+      }
     } catch {
       /* не критично */
+    }
+  }
+
+  async #detectPrizrak(generation: number, b: Backend) {
+    try {
+      const data = await api.proxies(b)
+      if (generation === this.#generation && data?.proxies && typeof data.proxies === 'object' &&
+        !Array.isArray(data.proxies) && Object.values(data.proxies).some((proxy) => proxy?.type === 'Smart')) this.prizrak = true
+    } catch {
+      // Optional metadata must not affect connection status. Avoid unsupported-endpoint probes on mihomo.
     }
   }
 
@@ -230,6 +250,7 @@ class Core {
     this.downTotal = 0
     this.memory = 0
     this.version = ''
+    this.prizrak = false
     this.conns = []
     this.connectionsReady = false
     this.configs = null
@@ -252,7 +273,7 @@ export const core = new Core()
 
 // ——— маршрутизация по hash ———
 
-export const ROUTES = ['overview', 'proxies', 'connections', 'analysis', 'geography', 'rules', 'logs', 'settings', 'setup'] as const
+export const ROUTES = ['overview', 'proxies', 'devices', 'connections', 'analysis', 'geography', 'rules', 'logs', 'settings', 'setup'] as const
 export type Route = (typeof ROUTES)[number]
 
 function parseRoute(): Route {

@@ -503,3 +503,97 @@ test('смена сервера сбрасывает трафик и игнор�
   assert.equal(core.backend.url, 'http://new.test')
   core.disconnect()
 })
+
+test('Prizrak API кодирует сегменты и использует явный backend с правильными HTTP методами', async () => {
+  const s = session({}, 'https://dashboard.test/', async () => new Response(null, { status: 204 }))
+  s.api.useBackend({ url: 'http://other.test', secret: 'other' })
+  const backend = { url: 'https://prizrak.test/api', secret: 'prizrak-secret' }
+  const name = 'Smart / Москва?#%'
+  await s.api.api.smartWeights(backend)
+  await s.api.api.smartGroupWeights(name, backend)
+  await s.api.api.flushSmart(undefined, backend)
+  await s.api.api.flushSmart(name, backend)
+  await s.api.api.upgradeLightGBM(backend)
+  await s.api.api.closeSmartConnection(name, backend)
+  assert.deepEqual(s.requests.map(({ url, init }) => [url, init.method]), [
+    ['https://prizrak.test/api/group/weights', 'GET'],
+    [`https://prizrak.test/api/group/${encodeURIComponent(name)}/weights`, 'GET'],
+    ['https://prizrak.test/api/cache/smart/flush', 'POST'],
+    [`https://prizrak.test/api/cache/smart/flush/${encodeURIComponent(name)}`, 'POST'],
+    ['https://prizrak.test/api/upgrade/lgbm', 'POST'],
+    [`https://prizrak.test/api/connections/smart/${encodeURIComponent(name)}`, 'DELETE'],
+  ])
+  assert(s.requests.every(({ init }) => init.headers.Authorization === 'Bearer prizrak-secret'))
+})
+
+test('Prizrak API сохраняет PascalCase веса и сообщает error из неуспешного ответа', async () => {
+  const ranking = { weights: [{ Name: 'Node A', Rank: 'MostUsed', Weight: 92.5 }] }
+  const s = session({}, 'https://dashboard.test/', async (url) => (
+    new URL(url).pathname === '/upgrade/lgbm'
+      ? new Response(JSON.stringify({ error: 'Smart cache not available' }), { status: 503 })
+      : new Response(JSON.stringify(ranking))
+  ))
+  s.api.useBackend({ url: 'http://prizrak.test', secret: '' })
+  assert.deepEqual(plain(await s.api.api.smartGroupWeights('Smart')), ranking)
+  await assert.rejects(s.api.api.upgradeLightGBM(), (error) => (
+    error instanceof s.api.ApiError && error.status === 503 && error.message === 'Smart cache not available'
+  ))
+})
+
+const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((resolve) => setImmediate(resolve)) }
+
+test('Core определяет Prizrak по параметрам /configs или типу Smart без имени в версии и unsupported API запросов', async () => {
+  for (const [config, proxies, expected] of [
+    [{ mode: 'rule', 'lgbm-auto-update': false }, null, true],
+    [{ mode: 'rule', 'smart-collector-size': 0 }, null, true],
+    [{ mode: 'rule', 'lgbm-update-interval': 0 }, null, true],
+    [{ mode: 'rule', 'lgbm-url': '' }, null, true],
+    [{ mode: 'rule' }, { proxies: { Smart: { type: 'Smart' } } }, true],
+    [{ mode: 'rule' }, { proxies: { Auto: { type: 'URLTest' } } }, false],
+    [{ mode: 'rule' }, { proxies: { Invalid: null } }, false],
+    [{ mode: 'rule' }, { mode: 'rule' }, false],
+    [{ mode: 'rule' }, { proxies: [{ type: 'Smart' }] }, false],
+    [{ mode: 'rule', 'lgbm-auto-update': 'true', 'smart-collector-size': '100' }, null, false],
+    [{ mode: 'rule' }, null, false],
+  ]) {
+    const s = session({}, 'https://dashboard.test/', async (url) => {
+      const pathname = new URL(url).pathname
+      if (pathname === '/version') return new Response(JSON.stringify({ version: 'v1.19.33' }))
+      if (pathname === '/configs') return new Response(JSON.stringify(config))
+      return new Response(JSON.stringify(proxies))
+    })
+    const core = s.core()
+    assert.equal(await core.connect({ url: 'http://core.test', secret: '' }), true)
+    await settle()
+    assert.equal(core.prizrak, expected, JSON.stringify({ config, proxies }))
+    assert(s.requests.every(({ url }) => !new URL(url).pathname.includes('/weights')), 'Detection never requests an unsupported Smart endpoint')
+    core.disconnect()
+    assert.equal(core.prizrak, false, 'Disconnect clears advertised capabilities')
+  }
+})
+
+test('поздние Prizrak config и capability ответы не включают функции на следующем mihomo', async () => {
+  const pending = []
+  const s = session({}, 'https://dashboard.test/', async (url) => {
+    const parsed = new URL(url)
+    if (parsed.pathname === '/version') return new Response(JSON.stringify({ version: 'v1.19.33' }))
+    if (parsed.hostname === 'old.test') return new Promise((resolve) => pending.push({ path: parsed.pathname, resolve }))
+    if (parsed.pathname === '/configs') return new Response(JSON.stringify({ mode: 'direct' }))
+    return new Response(JSON.stringify({ proxies: {} }))
+  })
+  const core = s.core()
+  assert.equal(await core.connect({ url: 'http://old.test', secret: '' }), true)
+  await settle()
+  assert(pending.length > 0, 'Old core has a pending configuration or capability response')
+  assert.equal(await core.connect({ url: 'http://new.test', secret: '' }), true)
+  await settle()
+  assert.equal(core.prizrak, false)
+  for (const request of pending) request.resolve(new Response(JSON.stringify(
+    request.path === '/configs' ? { mode: 'rule', 'lgbm-auto-update': true } : { proxies: { Smart: { type: 'Smart' } } },
+  )))
+  await settle()
+  assert.equal(core.prizrak, false)
+  assert.equal(core.configs.mode, 'direct')
+  assert.equal(core.backend.url, 'http://new.test')
+  core.disconnect()
+})

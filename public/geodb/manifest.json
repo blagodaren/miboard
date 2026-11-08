@@ -15,5 +15,6 @@
   "unpackedBytes": 6239102,
   "license": "CC-BY-4.0",
   "attribution": "IP Geolocation by DB-IP",
-  "attributionUrl": "https://db-ip.com"
+  "attributionUrl": "https://db-ip.com",
+  "attributionRequired": true
 }

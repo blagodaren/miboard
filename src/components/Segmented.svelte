@@ -16,7 +16,7 @@
   {value}
   onValueChange={(v) => v && onchange(v as T)}
   aria-label={label}
-  class="inline-flex h-8 items-center gap-0.5 rounded-lg border border-field-border bg-raised p-0.5 {full ? 'w-full' : ''}"
+  class="inline-flex h-11 items-center gap-0.5 rounded-control border border-field-border bg-raised p-0.5 sm:h-8 {full ? 'w-full' : ''}"
 >
   {#each options as o (o.value)}
     <ToggleGroup.Item

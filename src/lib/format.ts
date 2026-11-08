@@ -53,7 +53,7 @@ export function since(iso: string, now = Date.now()): string {
 
 export type DelayBand = 'fast' | 'ok' | 'slow' | 'dead' | 'none'
 export function delayBand(ms: number | undefined, yellow = 300, red = 800): DelayBand {
-  if (ms === undefined) return 'none'
+  if (ms === undefined || !Number.isFinite(ms)) return 'none'
   if (ms <= 0) return 'dead'
   if (ms < yellow) return 'fast'
   if (ms < red) return 'ok'

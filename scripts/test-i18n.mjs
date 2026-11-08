@@ -13,6 +13,7 @@ const routes = {
   overview: ['Overview', 'Обзор'],
   proxies: ['Proxies', 'Прокси'],
   connections: ['Connections', 'Соединения'],
+  devices: ['Devices', 'Устройства'],
   analysis: ['IP & Domain analysis', 'IP и домены'],
   geography: ['Geography', 'География'],
   rules: ['Rules', 'Правила'],
@@ -209,9 +210,24 @@ try {
   await language(page, 'ru')
   await route(page, 'settings', 'ru')
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile Settings overflows horizontally')
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.reload()
   await page.getByRole('heading', { name: 'Настройки', exact: true }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Язык', exact: true }).inputValue(), 'ru')
+  const mobileNavigation = page.getByRole('navigation').filter({ visible: true })
+  await poll(() => mobileNavigation.evaluate((element) => {
+    const current = element.querySelector('[aria-current="page"]')?.getBoundingClientRect()
+    const strip = element.getBoundingClientRect()
+    return current && current.left >= strip.left && current.right <= strip.right
+  }), 'selected mobile section remains visible after reload')
+  assert.equal(await page.evaluate(() => scrollY), 0, 'Revealing the mobile section must not scroll the page')
+  await page.evaluate(() => window.scrollTo(0, 300))
+  await mobileNavigation.getByRole('link', { name: 'Прокси', exact: true }).click()
+  await page.getByRole('heading', { name: 'Прокси', exact: true }).waitFor()
+  await poll(async () => await page.evaluate(() => scrollY === 0), 'a different mobile screen starts at its heading')
+  await mobileNavigation.getByRole('link', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('heading', { name: 'Настройки', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => scrollY), 0, 'Returning to Settings starts at the heading')
   await context.close()
 
   for (const blockedStorage of [false, true]) {

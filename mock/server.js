@@ -8,6 +8,8 @@ import { WebSocketServer } from 'ws'
 
 const PORT = Number(process.env.PORT ?? 9090)
 const SECRET = process.env.SECRET ?? 'test'
+// PRIZRAK=1 включает дополнительные API; обычный mock остаётся mihomo.
+const PRIZRAK = process.env.PRIZRAK === '1'
 const DIST = path.resolve(process.env.MIBOARD_UI_DIR ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist'))
 
 const rnd = (a, b) => Math.floor(a + Math.random() * (b - a))
@@ -61,6 +63,16 @@ group('Россия', 'Selector', ['DIRECT', 'Прокси'])
 group('Реклама', 'Selector', ['REJECT', 'DIRECT'])
 group('Остальное', 'Selector', ['Прокси', 'DIRECT'])
 group('GLOBAL', 'Selector', ['Прокси', 'Авто', 'YouTube', 'Telegram', 'Россия', 'Реклама', 'Остальное', ...names, 'DIRECT', 'REJECT'], 'Прокси')
+
+if (PRIZRAK) {
+  group('Smart', 'Smart', names, 'fi-hel-01')
+  Object.assign(proxies.Smart, {
+    useLightGBM: true, collectData: true, sampleRate: 1, preferASN: true,
+    tolerance: 0, 'policy-priority': '',
+  })
+  proxies.GLOBAL.all.unshift('Smart')
+}
+const smartWeights = [{ Name: 'fi-hel-01', Rank: 'MostUsed', Weight: 95 }, { Name: 'nl-ams-01', Rank: 'OccasionalUsed', Weight: 62.5 }]
 
 // Иконки конфигурации для локальной проверки: остальные группы используют fallback.
 proxies['Прокси'].icon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#e8a33d"/><path d="M6 7h12M6 12h8M6 17h12" stroke="#1a1204" stroke-width="2" stroke-linecap="round"/></svg>')
@@ -168,6 +180,7 @@ function spawnConn(target = pick(targets)) {
 }
 // Одна частная цель гарантирует проверяемое состояние «без геоданных».
 spawnConn(targets.at(-1))
+if (PRIZRAK) spawnConn(['smart.miboard.example.com', 443, 'Match', '', 'Smart', 'tcp', 4000, 'FI', '95.216.0.1'])
 for (let i = 1; i < 38; i++) spawnConn()
 
 let upTotal = 312 * 1024 * 1024
@@ -189,7 +202,11 @@ setInterval(() => {
   }
   downTotal += lastDown
   upTotal += lastUp
-  if (Math.random() < 0.3 && conns.length > 20) conns.splice(rnd(0, conns.length), 1)
+  if (Math.random() < 0.3 && conns.length > 20) {
+    const index = rnd(0, conns.length)
+    // Smart fixture stays available until the explicit switch-node action.
+    if (!PRIZRAK || !conns[index].chains.includes('Smart')) conns.splice(index, 1)
+  }
   if (Math.random() < 0.4 && conns.length < 60) spawnConn()
 }, 1000)
 
@@ -202,6 +219,12 @@ const configs = {
   mode: 'rule',
   'log-level': 'info',
   tun: { enable: true, stack: 'mixed' },
+  ...(PRIZRAK ? {
+    'lgbm-auto-update': true,
+    'lgbm-update-interval': 72,
+    'lgbm-url': 'https://example.test/Model.bin',
+    'smart-collector-size': 100,
+  } : {}),
 }
 
 // ——— HTTP ———
@@ -268,6 +291,15 @@ const server = http.createServer(async (req, res) => {
   if (m('PUT', /^\/configs$/)) return json(res, 204)
   if (m('GET', /^\/proxies$/)) return json(res, 200, { proxies })
   if (m('GET', /^\/providers\/proxies$/)) return json(res, 200, { providers: proxyProviders })
+  if (m('GET', /^\/group\/weights$/)) return PRIZRAK
+    ? json(res, 200, { weights: { Smart: smartWeights }, errors: {} })
+    : json(res, 404, { message: 'Not Found' })
+  if ((r = m('GET', /^\/group\/(.+)\/weights$/))) {
+    if (!PRIZRAK) return json(res, 404, { message: 'Not Found' })
+    return proxies[r[1]]?.type === 'Smart'
+      ? json(res, 200, { weights: smartWeights })
+      : json(res, 400, { error: 'Group is not Smart' })
+  }
   if ((r = m('PUT', /^\/proxies\/(.+)$/))) {
     const b = await readBody(req)
     proxies[r[1]].now = b.name
@@ -295,6 +327,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (m('GET', /^\/rules$/)) return json(res, 200, { rules })
   if (m('GET', /^\/providers\/rules$/)) return json(res, 200, { providers: ruleProviders })
+  if ((r = m('DELETE', /^\/connections\/smart\/(.+)$/))) {
+    if (!PRIZRAK) return json(res, 404, { message: 'Not Found' })
+    conns = conns.filter((c) => c.id !== r[1])
+    return json(res, 204)
+  }
   if ((r = m('DELETE', /^\/connections\/(.+)$/))) {
     conns = conns.filter((c) => c.id !== r[1])
     return json(res, 204)
@@ -304,6 +341,8 @@ const server = http.createServer(async (req, res) => {
     return json(res, 204)
   }
   if (m('POST', /^\/cache\/(fakeip|dns)\/flush$/)) return json(res, 204)
+  if (m('POST', /^\/cache\/smart\/flush(?:\/.+)?$/)) return json(res, PRIZRAK ? 204 : 404, PRIZRAK ? undefined : { message: 'Not Found' })
+  if (m('POST', /^\/upgrade\/lgbm$/)) return PRIZRAK ? json(res, 200, { status: 'ok' }) : json(res, 404, { message: 'Not Found' })
   if (m('POST', /^\/restart$/)) return json(res, 200, { status: 'ok' })
   json(res, 404, { message: 'Not Found' })
 })

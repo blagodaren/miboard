@@ -1,0 +1,1048 @@
+{
+  "generatedAt": "2026-11-08T20:52:23.027Z",
+  "dnsCapturedAt": "2026-11-08T20:48:55.929Z",
+  "method": "Both local databases receive exactly the same public DNS A/AAAA addresses. Only provider-documented reference countries are scored. This is a small targeted sample, not a global accuracy measurement. Anycast and user-claimed countries are excluded from the score.",
+  "before": {
+    "format": "MIG1",
+    "provider": "DB-IP Country Lite",
+    "release": "2026-11",
+    "source": "https://download.db-ip.com/free/dbip-country-lite-2026-11.csv.gz",
+    "sourceSha256": "e5c8459d638a272ece7f4d7cfa49dce18d91b4f403f6940ba9249bf0db3781fd",
+    "sha256": "c7de4cb9e49a20da9673263e82a96a05b1f08d529216bb5efb9e4eeb535c126e",
+    "generatedAt": "2026-11-08T18:22:23.849Z",
+    "ranges": {
+      "ipv4": 362998,
+      "ipv6": 369798
+    },
+    "countries": 251,
+    "bytes": 865275,
+    "unpackedBytes": 6239102,
+    "license": "CC-BY-4.0",
+    "attribution": "IP Geolocation by DB-IP",
+    "attributionUrl": "https://db-ip.com"
+  },
+  "after": {
+    "format": "MIG1",
+    "provider": "sapics/ip-location-db server-country",
+    "release": "latest",
+    "source": "https://github.com/sapics/ip-location-db",
+    "sourceCommit": "8eae95237bac34c00074ec3a9bb13d4d5cb842b7",
+    "sourceCommitRole": "Repository HEAD observed at download; release asset identity is pinned by each source SHA-256",
+    "sources": [
+      {
+        "family": "ipv4",
+        "url": "https://github.com/sapics/ip-location-db/releases/download/latest/server-country-ipv4.csv",
+        "checksumUrl": "https://github.com/sapics/ip-location-db/releases/download/checksum/server-country-ipv4.csv.sha256",
+        "sha256": "a60e730717dbe1a2dbddaadbe494e118cd1b80163817f3f2625f77fb64d34f41",
+        "bytes": 8807752,
+        "checksumVerified": true
+      },
+      {
+        "family": "ipv6",
+        "url": "https://github.com/sapics/ip-location-db/releases/download/latest/server-country-ipv6.csv",
+        "checksumUrl": "https://github.com/sapics/ip-location-db/releases/download/checksum/server-country-ipv6.csv.sha256",
+        "sha256": "8798851fc65d92e6e8bdf0600ed0da209ce7324f819b97afcd23ad0860ca7b51",
+        "bytes": 15638268,
+        "checksumVerified": true
+      }
+    ],
+    "sourceMode": "local-files",
+    "generatedAt": "2026-11-08T20:47:47.963Z",
+    "ranges": {
+      "ipv4": 294884,
+      "ipv6": 335703
+    },
+    "sourceRows": {
+      "ipv4": 287137,
+      "ipv6": 267786
+    },
+    "countries": 254,
+    "bytes": 731256,
+    "unpackedBytes": 5255720,
+    "sha256": "61e0c632ab45742f7e18bf13488c6581cebb7e62923ec6ada4854ded350bf513",
+    "license": "PDDL-1.0",
+    "attribution": "sapics/ip-location-db server-country",
+    "attributionUrl": "https://github.com/sapics/ip-location-db",
+    "attributionRequired": false
+  },
+  "summary": {
+    "domains": 11,
+    "addresses": 30,
+    "changed": 12,
+    "before": {
+      "correct": 20,
+      "total": 20,
+      "unknown": 0,
+      "domainsCorrect": 10,
+      "domainsTotal": 10
+    },
+    "after": {
+      "correct": 18,
+      "total": 20,
+      "unknown": 0,
+      "domainsCorrect": 8,
+      "domainsTotal": 10
+    },
+    "families": {
+      "4": {
+        "before": {
+          "correct": 10,
+          "total": 10
+        },
+        "after": {
+          "correct": 10,
+          "total": 10
+        }
+      },
+      "6": {
+        "before": {
+          "correct": 10,
+          "total": 10
+        },
+        "after": {
+          "correct": 8,
+          "total": 10
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "addresses": 10,
+      "error": null
+    },
+    {
+      "domain": "fsn1-speed.hetzner.com",
+      "expectedCountry": "DE",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: FSN1. Документация Hetzner связывает fsn1 с Falkenstein, Germany. Страна — заявленное размещение тестового endpoint, не регистрация ASN.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "hel1-speed.hetzner.com",
+      "expectedCountry": "FI",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: HEL1. Документация Hetzner связывает hel1 с Helsinki, Finland. Страна — заявленное размещение тестового endpoint.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "ash-speed.hetzner.com",
+      "expectedCountry": "US",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: ASH. Документация Hetzner связывает ash с Ashburn, Virginia, United States. Страна — заявленное размещение тестового endpoint.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.ams1.nl.leaseweb.net",
+      "expectedCountry": "NL",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Amsterdam AMS-01 Data Center.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.lon1.uk.leaseweb.net",
+      "expectedCountry": "GB",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком London LON-01 Data Center. Для ISO 3166-1 используется GB.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.hkg12.hk.leaseweb.net",
+      "expectedCountry": "HK",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Hong Kong HKG-12 Data Center.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.mtl2.ca.leaseweb.net",
+      "expectedCountry": "CA",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Montreal MTL-02(MNE) Data Center.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.sin1.sg.leaseweb.net",
+      "expectedCountry": "SG",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Singapore SIN-01 Data Center.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.syd12.au.leaseweb.net",
+      "expectedCountry": "AU",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Sydney SYD-12 Data Center.",
+      "addresses": 2,
+      "error": null
+    },
+    {
+      "domain": "speedtest.tyo11.jp.leaseweb.net",
+      "expectedCountry": "JP",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Tokyo TYO-11 Data Center.",
+      "addresses": 2,
+      "error": null
+    }
+  ],
+  "rows": [
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "162.159.129.235",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "162.159.137.234",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "162.159.130.235",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "162.159.128.235",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "162.159.138.234",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "2606:4700:7:0:0:0:a29f:8aea",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "2606:4700:7:0:0:0:a29f:80eb",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "2606:4700:7:0:0:0:a29f:89ea",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "2606:4700:7:0:0:0:a29f:81eb",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "expectedCountry": null,
+      "confidence": "anycast",
+      "userClaimCountry": "US",
+      "referenceUrl": "https://discord.com/blog/how-we-moved-discord-voice-to-the-edge",
+      "notes": "Страна конкретного голосового сервера независимо не подтверждена. Google DNS и Cloudflare DNS 2026-11-08 дали одинаковые A/AAAA из опубликованных диапазонов Cloudflare 162.158.0.0/15 и 2606:4700::/32. Discord официально описывает размещение voice на распределённом Cloudflare edge; ни fra в имени, ни американский адрес registrant Cloudflare в ARIN не доказывают физическую страну этого узла. ARIN указывает geofeed https://api.cloudflare.com/local-ip-ranges.csv; его чтение здесь получило HTTP 403, поэтому совпадение с geofeed не установлено. Системный DNS вернул 198.18.0.9: этот fake-IP не использовать при сравнении. Описание anycast: https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/",
+      "ip": "2606:4700:7:0:0:0:a29f:82eb",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "US",
+      "scored": false
+    },
+    {
+      "domain": "fsn1-speed.hetzner.com",
+      "expectedCountry": "DE",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: FSN1. Документация Hetzner связывает fsn1 с Falkenstein, Germany. Страна — заявленное размещение тестового endpoint, не регистрация ASN.",
+      "ip": "78.46.170.2",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "DE",
+      "after": "DE",
+      "scored": true
+    },
+    {
+      "domain": "fsn1-speed.hetzner.com",
+      "expectedCountry": "DE",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: FSN1. Документация Hetzner связывает fsn1 с Falkenstein, Germany. Страна — заявленное размещение тестового endpoint, не регистрация ASN.",
+      "ip": "2a01:4f8:0:a232:0:0:0:2",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "DE",
+      "after": "DE",
+      "scored": true
+    },
+    {
+      "domain": "hel1-speed.hetzner.com",
+      "expectedCountry": "FI",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: HEL1. Документация Hetzner связывает hel1 с Helsinki, Finland. Страна — заявленное размещение тестового endpoint.",
+      "ip": "95.217.255.81",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "FI",
+      "after": "FI",
+      "scored": true
+    },
+    {
+      "domain": "hel1-speed.hetzner.com",
+      "expectedCountry": "FI",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: HEL1. Документация Hetzner связывает hel1 с Helsinki, Finland. Страна — заявленное размещение тестового endpoint.",
+      "ip": "2a01:4f9:0:a010:0:0:0:20",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "FI",
+      "after": "DE",
+      "scored": true
+    },
+    {
+      "domain": "ash-speed.hetzner.com",
+      "expectedCountry": "US",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: ASH. Документация Hetzner связывает ash с Ashburn, Virginia, United States. Страна — заявленное размещение тестового endpoint.",
+      "ip": "5.161.7.195",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "US",
+      "after": "US",
+      "scored": true
+    },
+    {
+      "domain": "ash-speed.hetzner.com",
+      "expectedCountry": "US",
+      "confidence": "provider",
+      "referenceUrl": "https://docs.hetzner.com/cloud/general/locations/",
+      "notes": "Официальная страница самого endpoint вернула HTTP 200 и Region: ASH. Документация Hetzner связывает ash с Ashburn, Virginia, United States. Страна — заявленное размещение тестового endpoint.",
+      "ip": "2a01:4ff:ef:0:0:0:fa57:1",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "US",
+      "after": "DE",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.ams1.nl.leaseweb.net",
+      "expectedCountry": "NL",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Amsterdam AMS-01 Data Center.",
+      "ip": "95.211.20.80",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "NL",
+      "after": "NL",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.ams1.nl.leaseweb.net",
+      "expectedCountry": "NL",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Amsterdam AMS-01 Data Center.",
+      "ip": "2001:1af8:5300:a018:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "NL",
+      "after": "NL",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.lon1.uk.leaseweb.net",
+      "expectedCountry": "GB",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком London LON-01 Data Center. Для ISO 3166-1 используется GB.",
+      "ip": "23.106.58.162",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "GB",
+      "after": "GB",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.lon1.uk.leaseweb.net",
+      "expectedCountry": "GB",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком London LON-01 Data Center. Для ISO 3166-1 используется GB.",
+      "ip": "2a0d:3002:2100:a016:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "GB",
+      "after": "GB",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.hkg12.hk.leaseweb.net",
+      "expectedCountry": "HK",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Hong Kong HKG-12 Data Center.",
+      "ip": "64.120.117.34",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "HK",
+      "after": "HK",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.hkg12.hk.leaseweb.net",
+      "expectedCountry": "HK",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Hong Kong HKG-12 Data Center.",
+      "ip": "2402:a7c1:2010:a019:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "HK",
+      "after": "HK",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.mtl2.ca.leaseweb.net",
+      "expectedCountry": "CA",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Montreal MTL-02(MNE) Data Center.",
+      "ip": "70.38.95.143",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "CA",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.mtl2.ca.leaseweb.net",
+      "expectedCountry": "CA",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Montreal MTL-02(MNE) Data Center.",
+      "ip": "2607:f748:203:131:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "CA",
+      "after": "CA",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.sin1.sg.leaseweb.net",
+      "expectedCountry": "SG",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Singapore SIN-01 Data Center.",
+      "ip": "23.108.99.54",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "SG",
+      "after": "SG",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.sin1.sg.leaseweb.net",
+      "expectedCountry": "SG",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Singapore SIN-01 Data Center.",
+      "ip": "2402:a7c0:8100:a013:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "SG",
+      "after": "SG",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.syd12.au.leaseweb.net",
+      "expectedCountry": "AU",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Sydney SYD-12 Data Center.",
+      "ip": "23.106.244.70",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "AU",
+      "after": "AU",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.syd12.au.leaseweb.net",
+      "expectedCountry": "AU",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Sydney SYD-12 Data Center.",
+      "ip": "2401:d040:1001:101:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "AU",
+      "after": "AU",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.tyo11.jp.leaseweb.net",
+      "expectedCountry": "JP",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Tokyo TYO-11 Data Center.",
+      "ip": "23.106.226.75",
+      "family": 4,
+      "resolver": "https://dns.google",
+      "before": "JP",
+      "after": "JP",
+      "scored": true
+    },
+    {
+      "domain": "speedtest.tyo11.jp.leaseweb.net",
+      "expectedCountry": "JP",
+      "confidence": "provider",
+      "referenceUrl": "https://www.leaseweb.com/en/why-leaseweb/platform/network",
+      "notes": "Leaseweb помещает прямые ссылки на этот endpoint под заголовком Tokyo TYO-11 Data Center.",
+      "ip": "2001:df3:2680:4a01:0:0:0:77",
+      "family": 6,
+      "resolver": "https://dns.google",
+      "before": "JP",
+      "after": "JP",
+      "scored": true
+    }
+  ],
+  "dns": [
+    {
+      "domain": "c-fra12-442178ae.discord.media",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=c-fra12-442178ae.discord.media&type=A",
+          "capturedAt": "2026-11-08T20:48:55.957Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 1,
+              "TTL": 42,
+              "data": "162.159.129.235"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 1,
+              "TTL": 42,
+              "data": "162.159.137.234"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 1,
+              "TTL": 42,
+              "data": "162.159.130.235"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 1,
+              "TTL": 42,
+              "data": "162.159.128.235"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 1,
+              "TTL": 42,
+              "data": "162.159.138.234"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=c-fra12-442178ae.discord.media&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.935Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 28,
+              "TTL": 300,
+              "data": "2606:4700:7::a29f:8aea"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 28,
+              "TTL": 300,
+              "data": "2606:4700:7::a29f:80eb"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 28,
+              "TTL": 300,
+              "data": "2606:4700:7::a29f:89ea"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 28,
+              "TTL": 300,
+              "data": "2606:4700:7::a29f:81eb"
+            },
+            {
+              "name": "c-fra12-442178ae.discord.media.",
+              "type": 28,
+              "TTL": 300,
+              "data": "2606:4700:7::a29f:82eb"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "fsn1-speed.hetzner.com",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=fsn1-speed.hetzner.com&type=A",
+          "capturedAt": "2026-11-08T20:48:55.942Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "fsn1-speed.hetzner.com.",
+              "type": 1,
+              "TTL": 3513,
+              "data": "78.46.170.2"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=fsn1-speed.hetzner.com&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.935Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "fsn1-speed.hetzner.com.",
+              "type": 28,
+              "TTL": 2882,
+              "data": "2a01:4f8:0:a232::2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "hel1-speed.hetzner.com",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=hel1-speed.hetzner.com&type=A",
+          "capturedAt": "2026-11-08T20:48:55.930Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "hel1-speed.hetzner.com.",
+              "type": 1,
+              "TTL": 5250,
+              "data": "95.217.255.81"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=hel1-speed.hetzner.com&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.936Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "hel1-speed.hetzner.com.",
+              "type": 28,
+              "TTL": 3278,
+              "data": "2a01:4f9:0:a010::20"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "ash-speed.hetzner.com",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=ash-speed.hetzner.com&type=A",
+          "capturedAt": "2026-11-08T20:48:55.929Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "ash-speed.hetzner.com.",
+              "type": 1,
+              "TTL": 5891,
+              "data": "5.161.7.195"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=ash-speed.hetzner.com&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.929Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "ash-speed.hetzner.com.",
+              "type": 28,
+              "TTL": 503,
+              "data": "2a01:4ff:ef::fa57:1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.ams1.nl.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.ams1.nl.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:55.963Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.ams1.nl.leaseweb.net.",
+              "type": 1,
+              "TTL": 1441,
+              "data": "95.211.20.80"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.ams1.nl.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.963Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.ams1.nl.leaseweb.net.",
+              "type": 28,
+              "TTL": 1205,
+              "data": "2001:1af8:5300:a018::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.lon1.uk.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.lon1.uk.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:55.997Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.lon1.uk.leaseweb.net.",
+              "type": 1,
+              "TTL": 3600,
+              "data": "23.106.58.162"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.lon1.uk.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.998Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.lon1.uk.leaseweb.net.",
+              "type": 28,
+              "TTL": 3600,
+              "data": "2a0d:3002:2100:a016::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.hkg12.hk.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.hkg12.hk.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:56.053Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.hkg12.hk.leaseweb.net.",
+              "type": 1,
+              "TTL": 3600,
+              "data": "64.120.117.34"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.hkg12.hk.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:56.011Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.hkg12.hk.leaseweb.net.",
+              "type": 28,
+              "TTL": 3600,
+              "data": "2402:a7c1:2010:a019::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.mtl2.ca.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.mtl2.ca.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:56.058Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.mtl2.ca.leaseweb.net.",
+              "type": 1,
+              "TTL": 3600,
+              "data": "70.38.95.143"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.mtl2.ca.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:56.052Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.mtl2.ca.leaseweb.net.",
+              "type": 28,
+              "TTL": 3600,
+              "data": "2607:f748:203:131::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.sin1.sg.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.sin1.sg.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:56.008Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.sin1.sg.leaseweb.net.",
+              "type": 1,
+              "TTL": 3371,
+              "data": "23.108.99.54"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.sin1.sg.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:55.997Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.sin1.sg.leaseweb.net.",
+              "type": 28,
+              "TTL": 3414,
+              "data": "2402:a7c0:8100:a013::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.syd12.au.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.syd12.au.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:56.067Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.syd12.au.leaseweb.net.",
+              "type": 1,
+              "TTL": 3600,
+              "data": "23.106.244.70"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.syd12.au.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:56.068Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.syd12.au.leaseweb.net.",
+              "type": 28,
+              "TTL": 3600,
+              "data": "2401:d040:1001:101::77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "domain": "speedtest.tyo11.jp.leaseweb.net",
+      "queries": [
+        {
+          "type": "A",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.tyo11.jp.leaseweb.net&type=A",
+          "capturedAt": "2026-11-08T20:48:56.070Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.tyo11.jp.leaseweb.net.",
+              "type": 1,
+              "TTL": 3600,
+              "data": "23.106.226.75"
+            }
+          ]
+        },
+        {
+          "type": "AAAA",
+          "resolver": "https://dns.google",
+          "query": "https://dns.google/resolve?name=speedtest.tyo11.jp.leaseweb.net&type=AAAA",
+          "capturedAt": "2026-11-08T20:48:56.072Z",
+          "status": 0,
+          "answers": [
+            {
+              "name": "speedtest.tyo11.jp.leaseweb.net.",
+              "type": 28,
+              "TTL": 3600,
+              "data": "2001:df3:2680:4a01::77"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

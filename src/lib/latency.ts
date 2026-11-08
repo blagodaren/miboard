@@ -92,6 +92,11 @@ export function delayHistorySample(name: string, url: string, independent: boole
   if (independent && proxy?.extra) return proxyDelaySample(proxy, url)
   const leaf = resolveProxyLeaf(name, metadata)
   const leafProxy = leaf ? metadata(leaf) : undefined
+  // A shared result still belongs to the requested URL. Background checks for
+  // another URL can replace generic history after a manual request completes.
+  if (!independent && leafProxy?.extra && Object.hasOwn(leafProxy.extra, url)) {
+    return proxyDelaySample(leafProxy, url)
+  }
   const history = leafProxy?.history
   // The optional IPv6 probe also updates mihomo's generic history. It is never
   // a substitute for the normal delay, including after a failed main request.

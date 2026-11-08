@@ -26,22 +26,22 @@
   })
 </script>
 
-<div class="border-t border-line bg-deep/60 px-4 py-4 sm:px-5">
-  <div class="flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs text-fg-2">
-    <span>↓ {bytes(row.download)}</span>
-    <span>↑ {bytes(row.upload)}</span>
+<div class="border-t border-line bg-raised px-4 py-4 sm:px-5">
+  <div class="num flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs text-fg-2">
+    <span class="text-traffic-down-ink">↓ {bytes(row.download)}</span>
+    <span class="text-traffic-up-ink">↑ {bytes(row.upload)}</span>
     <span>{t('analysis.activeOfTotal', { active: row.active, total: row.connections })}</span>
   </div>
-  <div class="mt-4 grid gap-5 sm:grid-cols-2">
+  <div class="mt-4 grid gap-6 sm:grid-cols-2">
     {#each groups as group (group.title)}
       <section class="min-w-0">
         <h3 class="mb-2 text-xs text-fg-3">{group.title}</h3>
         {#if group.values.length}
-          <ul class="flex max-h-52 flex-wrap gap-1.5 overflow-y-auto">
+          <ul class="flex max-h-52 flex-wrap gap-2 overflow-y-auto">
             {#each group.values.slice(0, limits[group.title] ?? 100) as value (value)}
               <li class="max-w-full">
                 {#if group.view}
-                  <button class="min-h-11 max-w-full break-all rounded-md border border-line bg-card px-2.5 py-1.5 text-left font-mono text-xs transition-colors hover:border-line-strong hover:text-accent-ink active:scale-[0.98]" onclick={() => onnavigate(group.view!, value)}>{group.view === 'proxies' ? proxyName(value) : value}</button>
+                  <button class="min-h-11 max-w-full break-all rounded-[var(--radius-control)] border border-field-border bg-field px-3 py-2 text-left font-mono text-xs transition-colors hover:bg-hover hover:text-fg" onclick={() => onnavigate(group.view!, value)}>{group.view === 'proxies' ? proxyName(value) : value}</button>
                 {:else}
                   <span class="inline-block break-all py-1.5 font-mono text-xs text-fg-2">{value}</span>
                 {/if}

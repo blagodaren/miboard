@@ -10,6 +10,7 @@ const base = process.env.MIBOARD_SCREENSHOT_URL ?? 'http://127.0.0.1:9090/ui/'
 const routes = [
   ['overview', 'Overview', 'Overview'],
   ['proxies', 'Proxies', 'Proxies'],
+  ['devices', 'Devices', 'Devices'],
   ['connections', 'Connections', 'Connections'],
   ['analysis', 'IP & Domain analysis', 'IP & Domain'],
   ['geography', 'Geography', 'Geography'],

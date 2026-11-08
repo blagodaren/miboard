@@ -1,0 +1,44 @@
+{
+  "format": "MIG1",
+  "provider": "sapics/ip-location-db server-country",
+  "release": "latest",
+  "source": "https://github.com/sapics/ip-location-db",
+  "sourceCommit": "8eae95237bac34c00074ec3a9bb13d4d5cb842b7",
+  "sourceCommitRole": "Repository HEAD observed at download; release asset identity is pinned by each source SHA-256",
+  "sources": [
+    {
+      "family": "ipv4",
+      "url": "https://github.com/sapics/ip-location-db/releases/download/latest/server-country-ipv4.csv",
+      "checksumUrl": "https://github.com/sapics/ip-location-db/releases/download/checksum/server-country-ipv4.csv.sha256",
+      "sha256": "a60e730717dbe1a2dbddaadbe494e118cd1b80163817f3f2625f77fb64d34f41",
+      "bytes": 8807752,
+      "checksumVerified": true
+    },
+    {
+      "family": "ipv6",
+      "url": "https://github.com/sapics/ip-location-db/releases/download/latest/server-country-ipv6.csv",
+      "checksumUrl": "https://github.com/sapics/ip-location-db/releases/download/checksum/server-country-ipv6.csv.sha256",
+      "sha256": "8798851fc65d92e6e8bdf0600ed0da209ce7324f819b97afcd23ad0860ca7b51",
+      "bytes": 15638268,
+      "checksumVerified": true
+    }
+  ],
+  "sourceMode": "local-files",
+  "generatedAt": "2026-11-08T20:47:47.963Z",
+  "ranges": {
+    "ipv4": 294884,
+    "ipv6": 335703
+  },
+  "sourceRows": {
+    "ipv4": 287137,
+    "ipv6": 267786
+  },
+  "countries": 254,
+  "bytes": 731256,
+  "unpackedBytes": 5255720,
+  "sha256": "61e0c632ab45742f7e18bf13488c6581cebb7e62923ec6ada4854ded350bf513",
+  "license": "PDDL-1.0",
+  "attribution": "sapics/ip-location-db server-country",
+  "attributionUrl": "https://github.com/sapics/ip-location-db",
+  "attributionRequired": false
+}

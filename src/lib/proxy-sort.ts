@@ -1,4 +1,4 @@
-import type { Proxy } from './api'
+import type { Proxy, ProxyProvider } from './api'
 
 export type ProxySortKey = 'config' | 'latency' | 'name' | 'protocol'
 export type ProxySortDirection = 'asc' | 'desc'
@@ -43,6 +43,31 @@ export function saveProxySort(backendUrl: string, group: string, settings: Proxy
 export function saveProxySortForGroups(backendUrl: string, groups: readonly string[], settings: ProxySort): void {
   const value = validSettings(settings) ? { key: settings.key, direction: settings.direction } : { ...DEFAULT_PROXY_SORT }
   for (const group of new Set(groups)) saveProxySort(backendUrl, group, value)
+}
+
+/** Older controllers also include subscription nodes in /proxies. */
+export function sortableProviderNames(
+  proxies: Readonly<Record<string, Proxy>>,
+  providers: Readonly<Record<string, ProxyProvider>>,
+): Set<string> {
+  const candidates = new Map<string, Proxy>()
+  const manual = new Set<string>()
+  for (const provider of Object.values(providers)) {
+    const vehicle = provider.vehicleType?.toLowerCase()
+    for (const node of provider.proxies ?? []) {
+      if (vehicle === 'compatible') manual.add(node.name)
+      else if (vehicle === 'http' || vehicle === 'file' || vehicle === 'inline'
+        || (!vehicle && !Object.hasOwn(proxies, node.name))) candidates.set(node.name, node)
+    }
+  }
+  const result = new Set<string>()
+  for (const [name, node] of candidates) {
+    const proxy = proxies[name] ?? node
+    if (manual.has(name) || Array.isArray(proxy.all)
+      || /^(?:direct|reject|rejectdrop|compatible|pass)$/i.test(proxy.type)) continue
+    result.add(name)
+  }
+  return result
 }
 
 function comparableName(name: string): string {

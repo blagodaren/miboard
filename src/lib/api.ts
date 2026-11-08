@@ -344,7 +344,7 @@ export async function request<T = unknown>(
     let msg = res.statusText
     try {
       const j = await res.json()
-      msg = j.message ?? msg
+      msg = (typeof j.message === 'string' ? j.message : typeof j.error === 'string' ? j.error : '') || msg
     } catch {
       /* тело не JSON */
     }
@@ -420,9 +420,23 @@ export type Proxy = {
   hidden?: boolean
   icon?: string
   testUrl?: string
+  useLightGBM?: boolean
+  collectData?: boolean
+  sampleRate?: number
+  preferASN?: boolean
+  tolerance?: number
+  'policy-priority'?: string
 }
 
-export type ProxyProvider = { proxies?: Proxy[] }
+/** Prizrak serializes these Go fields without JSON tags (PascalCase). */
+export type SmartWeight = { Name: string; Rank: string; Weight: number }
+export type SmartWeights = {
+  weights: Record<string, SmartWeight[] | null>
+  errors?: Record<string, string>
+  message?: string
+}
+
+export type ProxyProvider = { vehicleType?: string; proxies?: Proxy[] }
 
 export type ConnMeta = {
   network: string
@@ -480,6 +494,10 @@ export type Configs = {
   'allow-lan'?: boolean
   'unified-delay'?: boolean
   tun?: { enable: boolean }
+  'lgbm-auto-update'?: boolean
+  'lgbm-update-interval'?: number
+  'lgbm-url'?: string
+  'smart-collector-size'?: number
 }
 
 export type LogLine = { type: string; payload: string }
@@ -499,8 +517,11 @@ export const api = {
   patchConfigs: (body: Partial<Configs> | Record<string, unknown>) => request('/configs', { method: 'PATCH', body }),
   proxies: (b?: Backend) => request<{ proxies: Record<string, Proxy> }>('/proxies', {}, b),
   proxyProviders: (b?: Backend) => request<{ providers: Record<string, ProxyProvider> }>('/providers/proxies', {}, b),
-  select: (group: string, name: string) =>
-    request(`/proxies/${encodeURIComponent(group)}`, { method: 'PUT', body: { name } }),
+  smartWeights: (b?: Backend) => request<SmartWeights>('/group/weights', { timeout: 5000 }, b),
+  smartGroupWeights: (group: string, b?: Backend, signal?: AbortSignal) =>
+    request<{ weights: SmartWeight[] | null }>(`/group/${encodeURIComponent(group)}/weights`, { signal }, b),
+  select: (group: string, name: string, b?: Backend, signal?: AbortSignal) =>
+    request(`/proxies/${encodeURIComponent(group)}`, { method: 'PUT', body: { name }, signal }, b),
   groupDelay: (group: string, url: string, timeout = 5000, b?: Backend, signal?: AbortSignal) =>
     request<Record<string, number>>(`/group/${encodeURIComponent(group)}/delay`, {
       query: { url, timeout },
@@ -521,10 +542,15 @@ export const api = {
     }, b),
   rules: () => request<{ rules: Rule[] }>('/rules'),
   ruleProviders: () => request<{ providers: Record<string, RuleProvider> }>('/providers/rules'),
-  closeConnection: (id: string) => request(`/connections/${id}`, { method: 'DELETE' }),
+  closeConnection: (id: string) => request(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  closeSmartConnection: (id: string, b?: Backend) =>
+    request(`/connections/smart/${encodeURIComponent(id)}`, { method: 'DELETE' }, b),
   closeAll: () => request('/connections', { method: 'DELETE' }),
   flushFakeIp: () => request('/cache/fakeip/flush', { method: 'POST' }),
   flushDns: () => request('/cache/dns/flush', { method: 'POST' }),
+  flushSmart: (config?: string, b?: Backend) =>
+    request(`/cache/smart/flush${config ? '/' + encodeURIComponent(config) : ''}`, { method: 'POST' }, b),
+  upgradeLightGBM: (b?: Backend) => request('/upgrade/lgbm', { method: 'POST', timeout: 120000 }, b),
   restart: () => request('/restart', { method: 'POST', body: { path: '', payload: '' } }),
   reloadConfig: () => request('/configs', { method: 'PUT', query: { force: 'true' }, body: { path: '', payload: '' } }),
 }

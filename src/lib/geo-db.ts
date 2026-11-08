@@ -201,7 +201,7 @@ async function readLimited(stream: ReadableStream<Uint8Array>, limit: number): P
 export function loadGeoDatabase(): Promise<GeoDatabase> {
   if (!loading) loading = (async () => {
     const base = new URL(import.meta.env?.BASE_URL ?? './', document.baseURI)
-    const response = await fetch(new URL('geodb/country.bin.gz', base), { signal: AbortSignal.timeout(15_000) })
+    const response = await fetch(new URL('geodb/country.bin.gz', base), { signal: AbortSignal.timeout(15_000), cache: 'no-cache' })
     if (!response.ok || !response.body) throw new Error('Cannot load the offline GeoIP database')
     // Some hosts (including Vite) attach Content-Encoding: gzip to .gz assets;
     // fetch has already decompressed those responses. Plain static hosts do not.

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { api } from '../lib/api'
+  import { onDestroy } from 'svelte'
+  import { api, errorMessage } from '../lib/api'
   import { core, type ConnRow } from '../lib/core.svelte'
   import { bytes, speed, since, count } from '../lib/format'
   import { t, i18n } from '../lib/i18n.svelte'
-  import { IconClose, IconPause, IconPlay } from '../lib/icons'
+  import { IconClose, IconPause, IconPlay, IconRefresh, IconChevron } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
   import Button from '../components/Button.svelte'
   import SearchInput from '../components/SearchInput.svelte'
@@ -16,8 +17,45 @@
   let paused = $state(false)
   let frozen = $state.raw<ConnRow[]>([])
   let sort = $state<SortKey>('rate')
+  let sortDirection = $state<'asc' | 'desc'>('desc')
   let confirmAll = $state(false)
   let now = $state(Date.now())
+  const backend = { ...core.backend }
+  let active = true
+  let smartGroups = $state<string[]>([])
+  let switching = $state<Record<string, boolean>>({})
+  let switchResult = $state.raw<{ host: string; error?: unknown } | null>(null)
+
+  onDestroy(() => { active = false })
+
+  $effect(() => {
+    if (!core.prizrak) return
+    let current = true
+    void api.proxies(backend).then(({ proxies }) => {
+      if (current && active) smartGroups = Object.values(proxies).filter((p) => p.type === 'Smart').map((p) => p.name)
+    }).catch(() => { /* Optional actions stay hidden if group metadata is unavailable. */ })
+    return () => { current = false }
+  })
+
+  const usesSmart = (c: ConnRow) => core.prizrak && c.chains.some((name) => smartGroups.includes(name))
+  const canSwitch = (c: ConnRow) => usesSmart(c) && core.connectionsOnline && core.conns.some((live) => live.id === c.id)
+  const currentBackend = () => active && core.backend.url === backend.url && core.backend.secret === backend.secret
+
+  async function switchNode(c: ConnRow) {
+    const key = JSON.stringify(c.id)
+    if (switching[key] || !currentBackend() || !canSwitch(c)) return
+    switching[key] = true
+    switchResult = null
+    const name = host(c)
+    try {
+      await api.closeSmartConnection(c.id, backend)
+      if (currentBackend()) switchResult = { host: name }
+    } catch (error) {
+      if (currentBackend()) switchResult = { host: name, error }
+    } finally {
+      if (active) switching[key] = false
+    }
+  }
 
   $effect(() => {
     const t = setInterval(() => (now = Date.now()), 1000)
@@ -32,6 +70,15 @@
   const host = (c: ConnRow) => c.metadata.host || c.metadata.sniffHost || c.metadata.destinationIP
   const chain = (c: ConnRow) => [...c.chains].reverse().join(' / ')
 
+  function changeSort(key: SortKey) {
+    if (sort === key) {
+      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
+    } else {
+      sort = key
+      sortDirection = key === 'host' ? 'asc' : 'desc'
+    }
+  }
+
   const rows = $derived.by(() => {
     const src = paused ? frozen : core.conns
     const q = query.trim().toLowerCase()
@@ -44,12 +91,13 @@
         )
       : [...src]
     const by: Record<SortKey, (a: ConnRow, b: ConnRow) => number> = {
-      rate: (a, b) => b.dl + b.ul - (a.dl + a.ul) || b.download - a.download,
-      total: (a, b) => b.download + b.upload - (a.download + a.upload),
-      start: (a, b) => b.start.localeCompare(a.start),
+      rate: (a, b) => a.dl + a.ul - (b.dl + b.ul) || a.download - b.download,
+      total: (a, b) => a.download + a.upload - (b.download + b.upload),
+      // Ascending age means newer connections first, independently of ISO offsets.
+      start: (a, b) => Date.parse(b.start) - Date.parse(a.start),
       host: (a, b) => host(a).localeCompare(host(b), i18n.intlLocale),
     }
-    return list.sort(by[sort])
+    return list.sort((a, b) => by[sort](a, b) * (sortDirection === 'desc' ? -1 : 1))
   })
 
   async function close(id: string) {
@@ -64,8 +112,11 @@
 </script>
 
 {#snippet sortHead(key: SortKey, label: string, right = false)}
-  <th class="{th} {right ? 'text-right' : 'text-left'}" aria-sort={sort === key ? 'descending' : 'none'}>
-    <button class="transition-colors hover:text-fg {sort === key ? 'text-fg' : ''}" onclick={() => (sort = key)}>{label}</button>
+  <th class="{th} {right ? 'text-right' : 'text-left'}" aria-sort={sort === key ? (sortDirection === 'desc' ? 'descending' : 'ascending') : undefined}>
+    <button type="button" class="inline-flex min-h-11 items-center gap-1 transition-colors hover:text-fg sm:min-h-6 {sort === key ? 'text-fg' : ''}" onclick={() => changeSort(key)}>
+      {label}
+      <IconChevron class="size-4 shrink-0 {sort === key ? '' : 'invisible'} {sort === key && sortDirection === 'asc' ? 'rotate-180' : ''}" strokeWidth={1.5} aria-hidden="true" />
+    </button>
   </th>
 {/snippet}
 
@@ -79,7 +130,18 @@
   {/snippet}
 </PageHeader>
 
-<div class="relative overflow-x-auto rounded-2xl border border-line bg-card">
+{#if core.prizrak && smartGroups.length}
+  <p class="mb-3 text-[13px] text-fg-3">{t('prizrak.switchHint')}</p>
+{/if}
+{#if switchResult}
+  {#if switchResult.error}
+    <p class="mb-3 break-words rounded-[var(--radius-card)] border border-bad-border bg-bad-surface px-4 py-3 text-[13px] text-bad" role="alert">{t('prizrak.switchError', { host: switchResult.host, message: errorMessage(switchResult.error) })}</p>
+  {:else}
+    <p class="mb-3 rounded-[var(--radius-card)] border border-line bg-card px-4 py-3 text-[13px] text-good" role="status">{t('prizrak.switchDone', { host: switchResult.host })}</p>
+  {/if}
+{/if}
+
+<div class="relative overflow-x-auto rounded-panel border border-line bg-card">
   <table class="w-full min-w-[960px] text-[13px]">
     <thead>
       <tr>
@@ -90,7 +152,7 @@
         {@render sortHead('rate', t('connections.speed'), true)}
         {@render sortHead('total', t('connections.total'), true)}
         {@render sortHead('start', t('connections.time'), true)}
-        <th class="w-12"><span class="sr-only">{t('connections.close')}</span></th>
+        <th class={core.prizrak ? 'w-24' : 'w-12'}><span class="sr-only">{t('connections.close')}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -109,22 +171,40 @@
           </td>
           <td class="max-w-[240px] truncate px-3 py-2 text-fg-2" title={chain(c)}>{chain(c)}</td>
           <td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
-            <div class={c.dl ? 'text-fg' : 'text-fg-3'}>↓ {speed(c.dl)}</div>
-            <div class="mt-0.5 text-fg-3">↑ {speed(c.ul)}</div>
+            <div class={c.dl ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {speed(c.dl)}</div>
+            <div class="mt-0.5 {c.ul ? 'text-traffic-up-ink' : 'text-fg-3'}">↑ {speed(c.ul)}</div>
           </td>
           <td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
-            <div class="text-fg-2">↓ {bytes(c.download)}</div>
-            <div class="mt-0.5 text-fg-3">↑ {bytes(c.upload)}</div>
+            <div class={c.download ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {bytes(c.download)}</div>
+            <div class="mt-0.5 {c.upload ? 'text-traffic-up-ink' : 'text-fg-3'}">↑ {bytes(c.upload)}</div>
           </td>
           <td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs text-fg-2">{since(c.start, now)}</td>
-          <td class="pr-3 text-right">
-            <button
-              class="inline-flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-raised hover:text-fg"
+          <td class="whitespace-nowrap pr-3 text-right">
+            {#if usesSmart(c)}
+              <Button
+                size="sm"
+                variant="ghost"
+                type="button"
+                class="w-11 !px-0 sm:w-8"
+                aria-label={t('prizrak.switchNode', { host: host(c) })}
+                title={t('prizrak.switchNode', { host: host(c) })}
+                aria-busy={!!switching[JSON.stringify(c.id)]}
+                disabled={!!switching[JSON.stringify(c.id)] || !canSwitch(c)}
+                onclick={() => switchNode(c)}
+              >
+                <IconRefresh class="size-4" strokeWidth={1.5} aria-hidden="true" />
+              </Button>
+            {/if}
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              class="w-11 !px-0 sm:w-8"
               aria-label={t('connections.closeHost', { host: host(c) })}
               onclick={() => close(c.id)}
             >
-              <IconClose class="size-4" strokeWidth={1.5} />
-            </button>
+              <IconClose class="size-4" strokeWidth={1.5} aria-hidden="true" />
+            </Button>
           </td>
         </tr>
       {:else}

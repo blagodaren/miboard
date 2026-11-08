@@ -112,6 +112,38 @@ async function noOverflow(page, label) {
     `${label}: горизонтальный скролл ${JSON.stringify(widths)}`)
 }
 
+async function checkCountryPanelLayout(page, width, mapHeight) {
+  const bounds = await page.evaluate(() => {
+    const rect = (selector) => {
+      const { top, bottom, height } = document.querySelector(selector).getBoundingClientRect()
+      return { top, bottom, height }
+    }
+    const list = document.querySelector('.country-list')
+    return {
+      map: rect('.map-panel'), panel: rect('.country-panel'),
+      heading: rect('.country-panel > .panel-heading'), list: rect('.country-list'),
+      footer: rect('.country-footer'), listClient: list.clientHeight, listScroll: list.scrollHeight,
+    }
+  })
+  const label = `Список стран, ${width}px`
+  assert.ok(Math.abs(bounds.map.height - mapHeight) <= 1,
+    `${label}: число стран изменило высоту карты: ${JSON.stringify(bounds)}`)
+  assert.ok(Math.abs(bounds.footer.bottom - (bounds.panel.bottom - 1)) <= 1,
+    `${label}: под итогом осталась пустота: ${JSON.stringify(bounds)}`)
+  assert.ok(Math.abs(bounds.list.top - bounds.heading.bottom) <= 1 && Math.abs(bounds.list.bottom - bounds.footer.top) <= 1,
+    `${label}: список не заполняет место между заголовком и итогом: ${JSON.stringify(bounds)}`)
+  if (width >= 1200) {
+    assert.ok(Math.abs(bounds.panel.height - bounds.map.height) <= 1,
+      `${label}: панель не совпадает с картой по высоте: ${JSON.stringify(bounds)}`)
+  } else {
+    assert.ok(bounds.panel.top >= bounds.map.bottom && bounds.list.height <= 281,
+      `${label}: сложенная панель потеряла ограничение высоты: ${JSON.stringify(bounds)}`)
+  }
+  assert.ok(bounds.listScroll > bounds.listClient,
+    `${label}: длинный список не прокручивается: ${JSON.stringify(bounds)}`)
+  await noOverflow(page, label)
+}
+
 async function checkDenseMarkers(page, label) {
   for (const code of ['DE', 'NL']) {
     const country = page.locator(`g.country[data-country="${code}"]`)
@@ -210,6 +242,25 @@ async function checkRegionDetails(page, sendSnapshot) {
   assert.equal(await traffic.getAttribute('aria-pressed'), 'true')
   assert.equal((await page.locator('.country-code').first().textContent()).trim(), 'US',
     'Рейтинг карточек изменил независимый показатель карты')
+
+  // Resolving the last unknown address must not move the details panel or its rows.
+  const panelGeometry = () => panel.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    return { top: bounds.top + window.scrollY, height: bounds.height }
+  })
+  sendSnapshot(known)
+  await eventually(async () => await page.locator('.unknown-stat').isDisabled(), 'Не применился снимок без неизвестных адресов')
+  const stableGeometry = await panelGeometry()
+  for (let iteration = 0; iteration < 3; iteration++) {
+    sendSnapshot([...known, sample('layout-private', '', null, 42_000, '192.168.1.1')])
+    await eventually(async () => await page.locator('.unknown-stat').isEnabled(), 'Не применился временный неизвестный адрес')
+    assert.deepEqual(await panelGeometry(), stableGeometry, 'Новый неизвестный адрес сдвинул детали стран')
+    sendSnapshot(known)
+    await eventually(async () => await page.locator('.unknown-stat').isDisabled(), 'Неизвестный адрес не исчез из снимка')
+    assert.deepEqual(await panelGeometry(), stableGeometry, 'Исчезновение неизвестного адреса сдвинуло детали стран')
+  }
+  sendSnapshot(regionFixture)
+  await eventually(async () => await page.locator('.unknown-stat').isEnabled(), 'Не восстановился снимок для проверки деталей стран')
 
   const us = panel.locator('[data-testid="region-card"][data-country="US"]')
   const initialUS = (await regionCards(page)).find((country) => country.code === 'US')
@@ -657,6 +708,43 @@ try {
     assert.equal(await page.getByRole('radio', { name: 'Connections', exact: true }).getAttribute('aria-checked'), 'true')
     await context.close()
     console.log('✓ Английская локализация: заголовок, страны и переключение показателя')
+  }
+
+  {
+    const denseCodes = 'US AE IE AG AU GB NL DE FR JP BR ZA CA SG CN IN IT ES PL SE NO FI CH AT BE DK CZ PT NZ KR TR MX'.split(' ')
+    const dense = denseCodes.map((code, index) => sample(`resize-${code}`, `resize-${code.toLowerCase()}.example.test`, code, 1_000_000 + index))
+    const sparse = dense.slice(0, 2)
+    const { context, page } = await newPage({ width: 1530, height: 1244 }, 'dark')
+    let socket
+    await page.routeWebSocket(/\/connections(?:\?|$)/, (ws) => { socket = ws; ws.send(snapshot(sparse)) })
+    await page.goto(entry.href)
+    await page.locator('.country-row').first().waitFor()
+    await page.evaluate(() => document.fonts.ready)
+    const selectedCountry = page.locator('.country-row').filter({ has: page.locator('.country-code', { hasText: /^US$/ }) })
+    for (const width of [1200, 1530, 1920, 1199, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1244 })
+      socket.send(snapshot(sparse))
+      await eventually(async () => await page.locator('.country-row').count() === sparse.length, `Не показан короткий список при ${width}px`)
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      const mapHeight = (await page.locator('.map-panel').boundingBox()).height
+      if (await selectedCountry.getAttribute('aria-pressed') !== 'true') await selectedCountry.click()
+      socket.send(snapshot(dense))
+      await eventually(async () => await page.locator('.country-row').count() === dense.length, `Не показан длинный список при ${width}px`)
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      await checkCountryPanelLayout(page, width, mapHeight)
+      assert.equal(await selectedCountry.getAttribute('aria-pressed'), 'true', `Изменение ширины ${width}px сбросило выбранную страну`)
+      await page.locator('.country-list').evaluate((element) => { element.scrollTop = element.scrollHeight })
+      const list = await page.locator('.country-list').boundingBox()
+      const last = await page.locator('.country-row').last().boundingBox()
+      assert.ok(last.y >= list.y - 1 && last.y + last.height <= list.y + list.height + 1,
+        `${width}px: последняя страна недоступна после прокрутки`)
+      if (width === 1530) {
+        await page.locator('.country-list').evaluate((element) => { element.scrollTop = 0 })
+        await page.locator('.geo-layout').screenshot({ path: path.join(out, 'geography-country-panel-1530.png') })
+      }
+    }
+    await context.close()
+    console.log('✓ Список стран: 1200→1530→1920→1199→390px, высота карты/итога, прокрутка 32 стран и сохранение выбора')
   }
 
   for (const colorScheme of ['light', 'dark']) {

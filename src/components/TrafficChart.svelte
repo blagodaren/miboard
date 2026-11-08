@@ -52,7 +52,7 @@
     const up = css('--traffic-up') || css('--text-3')
     const axis = {
       stroke: css('--text-3'),
-      font: '11px "Geist", ui-sans-serif, sans-serif',
+      font: '11px "Geist Mono", ui-monospace, monospace',
       grid: { stroke: css('--line'), width: 1, dash: [3, 4] },
       ticks: { show: false },
     }
@@ -83,7 +83,7 @@
         series: [
           {},
           { label: t('chart.download'), stroke: down, width: 1.7, fill: `color-mix(in srgb, ${down} 7%, transparent)`, points: { show: () => data.t.length === 1, size: 5, fill: down, stroke: down }, spanGaps: false },
-          { label: t('chart.upload'), stroke: up, width: 1.7, points: { show: () => data.t.length === 1, size: 5, fill: up, stroke: up }, spanGaps: false },
+          { label: t('chart.upload'), stroke: up, width: 1.7, dash: [5, 4], points: { show: () => data.t.length === 1, size: 5, fill: up, stroke: up }, spanGaps: false },
         ],
         hooks: { setCursor: [showCursor] },
       },
@@ -155,13 +155,13 @@
   .traffic-chart { position: relative; min-width: 0; }
   .traffic-tooltip {
     position: absolute; z-index: 2; top: 16px; width: 188px; padding: 12px;
-    border: 1px solid var(--line); border-radius: 10px;
+    border: 1px solid var(--line); border-radius: var(--radius-control);
     background: var(--card); box-shadow: var(--shadow-float); pointer-events: none;
     font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums;
   }
-  .traffic-tooltip > div { display: flex; justify-content: space-between; gap: 10px; }
+  .traffic-tooltip > div { display: flex; justify-content: space-between; gap: 12px; }
   .traffic-tooltip .tooltip-time { margin-bottom: 4px; color: var(--text-2); }
   .traffic-tooltip strong { font-weight: 500; }
-  .download { color: var(--traffic-down, var(--accent)); }
-  .upload { color: var(--traffic-up, var(--text-3)); }
+  .download { color: var(--traffic-down-ink); }
+  .upload { color: var(--traffic-up-ink); }
 </style>

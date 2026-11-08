@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick } from 'svelte'
+  import type { Action } from 'svelte/action'
   import type { Snippet } from 'svelte'
   import { core, router, type Route } from '../lib/core.svelte'
   import type { Mode } from '../lib/api'
@@ -8,6 +10,7 @@
     IconOverview,
     IconProxies,
     IconConnections,
+    IconDevices,
     IconAnalysis,
     IconGeography,
     IconRules,
@@ -23,6 +26,7 @@
   const nav: { route: Exclude<Route, 'setup'>; icon: typeof IconOverview }[] = [
     { route: 'overview', icon: IconOverview },
     { route: 'proxies', icon: IconProxies },
+    { route: 'devices', icon: IconDevices },
     { route: 'connections', icon: IconConnections },
     { route: 'analysis', icon: IconAnalysis },
     { route: 'geography', icon: IconGeography },
@@ -38,6 +42,26 @@
 
   const host = $derived(core.backend.url.replace(/^https?:\/\//, ''))
   const linkUp = $derived(core.status === 'ok')
+
+  // A deep link or reload must leave the selected mobile section on screen.
+  // Scroll only this strip: scrollIntoView would also move the page content.
+  const revealSection: Action<HTMLElement, Route> = (element) => {
+    let disposed = false
+    const reveal = async () => {
+      await tick()
+      if (disposed || !element.clientWidth) return
+      const selected = element.querySelector<HTMLElement>('[aria-current="page"]')
+      if (!selected) return
+      element.scrollLeft = selected.offsetLeft - (element.clientWidth - selected.offsetWidth) / 2
+    }
+    const observer = new ResizeObserver(reveal)
+    observer.observe(element)
+    void reveal()
+    return {
+      update: reveal,
+      destroy() { disposed = true; observer.disconnect() },
+    }
+  }
 </script>
 
 {#snippet brand()}
@@ -109,7 +133,8 @@
 
     <!-- Нижние вкладки: мобильный -->
     <nav
-      class="fixed inset-x-0 bottom-0 z-20 flex overflow-x-auto border-t border-line bg-deep pb-[env(safe-area-inset-bottom)] md:hidden"
+      use:revealSection={router.route}
+      class="mobile-sections fixed inset-x-0 bottom-0 z-20 flex overflow-x-auto border-t border-line bg-deep pb-[env(safe-area-inset-bottom)] md:hidden"
       aria-label={t('nav.sections')}
     >
       {#each nav as item (item.route)}
@@ -117,7 +142,7 @@
         <a
           href="#/{item.route}"
           aria-current={active ? 'page' : undefined}
-          class="flex h-14 min-w-[76px] flex-1 shrink-0 flex-col items-center justify-center gap-1 border-t-2 text-[11px] leading-none transition-colors
+          class="flex h-14 min-w-[88px] flex-1 shrink-0 flex-col items-center justify-center gap-1 border-t-2 text-xs leading-none transition-colors
             {active ? 'border-accent-ink bg-nav-active font-medium text-fg' : 'border-transparent text-fg-3 hover:bg-hover'}"
         >
           <item.icon class="size-[18px]" strokeWidth={1.5} />
@@ -130,4 +155,5 @@
 
 <style>
   .sidebar-link[aria-current='page'] { box-shadow: inset 3px 0 var(--accent); }
+  .mobile-sections { scrollbar-width: thin; scrollbar-color: var(--line-strong) var(--deep); }
 </style>

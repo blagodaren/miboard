@@ -2,6 +2,7 @@
 export { default as IconOverview } from '@lucide/svelte/icons/activity'
 export { default as IconProxies } from '@lucide/svelte/icons/waypoints'
 export { default as IconConnections } from '@lucide/svelte/icons/cable'
+export { default as IconDevices } from '@lucide/svelte/icons/monitor-smartphone'
 export { default as IconAnalysis } from '@lucide/svelte/icons/scan-search'
 export { default as IconGeography } from '@lucide/svelte/icons/earth'
 export { default as IconRules } from '@lucide/svelte/icons/list-filter'

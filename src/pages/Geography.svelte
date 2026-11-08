@@ -173,14 +173,14 @@
 </div>
 
 {#if databaseError}
-  <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-[13px] text-fg-2" data-testid="geo-db-error" role="status">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-warning-border bg-warning-surface px-4 py-3 text-[13px] text-fg-2" data-testid="geo-db-error" role="status">
     <span>{t('geography.databaseError')}</span>
     <Button size="sm" onclick={loadDatabase}>{t('geography.retry')}</Button>
   </div>
 {/if}
 
 {#if !core.connectionsOnline && core.connectionsReady && !paused}
-  <p class="mb-4 rounded-lg border border-line px-4 py-3 text-[13px] text-fg-2" role="status">
+  <p class="mb-4 rounded-card border border-warning-border bg-warning-surface px-4 py-3 text-[13px] text-fg-2" role="status">
     {t('geography.streamLost')}
   </p>
 {/if}
@@ -243,7 +243,7 @@
 </div>
 
 <div
-  class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-fg-3"
+  class="geo-sources text-xs text-fg-3"
   data-testid="geo-sources"
   data-pending={pending}
   data-metadata={sourceCounts.metadata}
@@ -253,18 +253,13 @@
   <span>{t('geography.sourceMetadata', { count: sourceCounts.metadata })}</span>
   <span>{t('geography.sourceIp', { count: sourceCounts.ip })}</span>
   <span>{t('geography.sourceDns', { count: sourceCounts.dns })}</span>
-  {#if pending}<span role="status">{t('geography.dnsLoading', { count: pending })}</span>{/if}
+  <span role="status">{t('geography.dnsPendingCount', { count: pending })}</span>
   <a href="https://db-ip.com" target="_blank" rel="noreferrer" class="underline decoration-line-strong underline-offset-4 hover:text-fg">IP Geolocation by DB-IP</a>
 </div>
-{#if sourceCounts.dns}
-  <p class="mt-2 max-w-[90ch] text-xs leading-5 text-fg-3">{t('geography.dnsHint')}</p>
-{/if}
-
-{#if summary.unknown}
-  <p class="mt-4 max-w-[80ch] text-xs leading-5 text-fg-3">
-    {t('geography.unknownHint', { count: summary.unknown })}
-  </p>
-{/if}
+<div class="geo-notes" data-testid="geo-notes">
+  <p>{t('geography.dnsHint')}</p>
+  <p>{t('geography.unknownExplanation')}</p>
+</div>
 
 <div class="mt-6">
   <RegionDetails
@@ -318,29 +313,38 @@
 </section>
 
 <style>
+  .geo-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 8px 20px; margin-top: 16px; font-variant-numeric: tabular-nums; }
+  .geo-sources > span { white-space: nowrap; }
+  .geo-sources > a { grid-column: 1 / -1; width: fit-content; }
+  .geo-notes { display: grid; gap: 4px; max-width: 90ch; margin-top: 8px; color: var(--text-3); font-size: 12px; line-height: 20px; }
+  @media (min-width: 1100px) { .geo-sources { grid-template-columns: repeat(4, max-content) minmax(0, 1fr); } .geo-sources > a { grid-column: auto; } }
   .geo-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin-bottom: 24px; padding: 0 0 24px; border-bottom: 1px solid var(--line); }
   .stat-value { display: block; margin-top: 8px; font-family: var(--font-mono); font-size: 24px; line-height: 32px; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-  .unknown-stat { display: block; text-align: left; border-radius: 6px; cursor: pointer; }
+  .unknown-stat { display: block; margin: -8px; padding: 8px; border: 1px solid transparent; text-align: left; border-radius: var(--radius-control); cursor: pointer; }
+  .unknown-stat:not(:disabled):hover { background: var(--hover); }
+  .unknown-stat.chosen { border-color: var(--selected-border); background: var(--selected); }
   .unknown-stat:not(:disabled):hover .stat-value, .unknown-stat.chosen .stat-value { color: var(--accent-ink); }
   .unknown-stat:disabled { cursor: default; }
   .geo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: stretch; gap: 16px; }
-  .map-panel, .country-panel { overflow: hidden; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .map-panel, .country-panel { overflow: hidden; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
   .map-panel { display: flex; flex-direction: column; }
   .panel-heading { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-  .country-panel { display: flex; flex-direction: column; }
-  .country-list { flex: 1; min-height: 280px; max-height: 390px; overflow-y: auto; padding: 8px; }
-  .country-row { display: flex; width: 100%; min-height: 54px; align-items: center; gap: 12px; border-radius: 8px; padding: 10px 8px; text-align: left; cursor: pointer; transition: background-color 150ms, color 150ms; }
+  /* Let the map set the grid row height; long country lists scroll inside that height. */
+  .country-panel { display: flex; flex-direction: column; min-height: 0; contain: size; }
+  .country-panel > .panel-heading, .country-footer { flex-shrink: 0; }
+  .country-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+  .country-row { display: flex; width: 100%; min-height: 56px; align-items: center; gap: 12px; border-radius: 8px; padding: 12px 8px; text-align: left; cursor: pointer; transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out); }
   .country-row:hover { background: var(--raised); }
   .country-row.chosen { background: var(--selected); color: var(--selected-text); box-shadow: inset 3px 0 var(--selected-border); }
   .country-row:active { transform: scale(0.99); }
-  .country-code { width: 28px; flex: none; color: var(--text-3); font-family: var(--font-mono); font-size: 11px; }
+  .country-code { width: 28px; flex: none; color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
   .country-bar { display: block; overflow: hidden; height: 2px; margin-top: 8px; background: var(--line); border-radius: 1px; }
   .country-bar > span { display: block; height: 100%; background: var(--accent); transform-origin: left; }
   .country-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 12px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3); }
   .map-message { margin: auto 16px 16px; padding: 12px 0 0; font-size: 12px; line-height: 20px; color: var(--text-3); }
   .clear-selection { display: inline-flex; min-width: 44px; min-height: 40px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border-radius: 6px; color: var(--text-2); font-size: 12px; cursor: pointer; }
   .clear-selection:hover { background: var(--raised); color: var(--text); }
-  @media (max-width: 1199px) { .geo-layout { grid-template-columns: minmax(0, 1fr); } .country-list { min-height: 0; max-height: 280px; } }
+  @media (max-width: 1199px) { .geo-layout { grid-template-columns: minmax(0, 1fr); } .country-panel { contain: none; } .country-list { max-height: 280px; } }
   @media (max-width: 639px) { .geo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; } .stat-value { font-size: 22px; } }
   @media (prefers-reduced-motion: reduce) { .country-row { transition: none; } }
 </style>
