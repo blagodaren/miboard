@@ -1,6 +1,6 @@
 <script lang="ts">
   import { version as appVersion } from '../../package.json'
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy, tick, untrack } from 'svelte'
   import { core, router, theme, type Theme } from '../lib/core.svelte'
   import { normalizeUrl, completeBackendUrl, servedByCore, savedBackends, createSavedBackend, updateSavedBackend, removeSavedBackend, BackendProfileError, type Backend, type SavedBackend } from '../lib/api'
   import { t, type MessageKey } from '../lib/i18n.svelte'
@@ -10,7 +10,9 @@
   import Confirm from '../components/Confirm.svelte'
   import LanguageSelect from '../components/LanguageSelect.svelte'
   import Brand from '../components/Brand.svelte'
+  import AppSettings from '../components/AppSettings.svelte'
   import { count } from '../lib/format'
+  import { notifications } from '../lib/notifications.svelte'
 
   const initialProfiles = savedBackends()
   const initialProfile = initialProfiles.find((p) => p.url === core.backend.url)
@@ -25,10 +27,21 @@
   let localError = $state<MessageKey | null>(null)
   let confirmRemove = $state(false)
   let removing = $state<SavedBackend | null>(null)
-  let savedMessage = $state(false)
+  let lastConnectionError = ''
   let nameInput: HTMLInputElement
+  let appDetails: HTMLDetailsElement
+  let appDetailsOpen = $state(router.route === 'settings')
+  let active = true
 
   onMount(() => window.scrollTo(0, 0))
+  onDestroy(() => { active = false })
+  $effect(() => {
+    if (router.route !== 'settings') return
+    appDetailsOpen = true
+    void tick().then(() => {
+      if (active && router.route === 'settings' && appDetails?.isConnected) appDetails.scrollIntoView({ block: 'start' })
+    })
+  })
 
   const busy = $derived(core.status === 'connecting')
   const hasConnection = $derived(core.status === 'ok' || core.status === 'lost')
@@ -39,7 +52,20 @@
   const addressError = $derived(localError !== null && [
     'backends.errorProtocol', 'backends.errorAddress', 'backends.errorParameters', 'backends.errorUrl', 'backends.errorDuplicate',
   ].includes(localError))
-  const error = $derived(localError ? t(localError) : core.error)
+  const error = $derived(localError ? t(localError) : '')
+  $effect(() => {
+    const message = core.error
+    const address = core.backend.url
+    if (!message) { lastConnectionError = ''; return }
+    untrack(() => {
+      const key: MessageKey | null = message === t('error.invalidSecret') ? 'error.invalidSecret'
+        : message === t('error.connection', { url: address }) ? 'error.connection' : null
+      const identity = JSON.stringify([address, key ?? message])
+      if (identity === lastConnectionError) return
+      lastConnectionError = identity
+      notifications.show({ id: 'backend-connect', tone: 'error', scope: address, message: key ? () => t(key, { url: address }) : () => message })
+    })
+  })
   const themes: { value: Theme; label: string }[] = $derived([
     { value: 'system', label: t('settings.theme.system') },
     { value: 'light', label: t('settings.theme.light') },
@@ -55,8 +81,8 @@
 
   function clearError() {
     localError = null
-    savedMessage = false
     core.clearError()
+    notifications.dismiss('backend-connect')
   }
 
   function select(profile: SavedBackend) {
@@ -80,8 +106,12 @@
 
   function remove() {
     if (!removing) return
-    removeSavedBackend(removing.id)
+    const target = removing
+    const label = target.name || host(target.url)
+    removeSavedBackend(target.id)
     profiles = savedBackends()
+    const failed = profiles.some(profile => profile.id === target.id)
+    notifications.show({ id: 'backend-profile-remove', tone: failed ? 'error' : 'success', message: () => t(failed ? 'backends.removeError' : 'backends.removedMessage', { name: label }) })
     if (selectedId === removing.id) add()
     removing = null
   }
@@ -120,14 +150,16 @@
       const updated = selectedId ? updateSavedBackend(selectedId, candidate) : createSavedBackend(candidate)
       profiles = savedBackends()
       select(updated)
-      savedMessage = true
+      notifications.show({ id: 'backend-profile-save', tone: 'success', message: () => t('backends.savedMessage') })
     } catch (e) {
-      localError = e instanceof BackendProfileError ? {
+      const key = e instanceof BackendProfileError ? {
         duplicate: 'backends.errorDuplicate',
         missing: 'backends.errorMissing',
         invalid: 'backends.errorUrl',
         storage: 'backends.errorStorage',
       }[e.code] as MessageKey : 'backends.errorStorage'
+      if (key === 'backends.errorDuplicate' || key === 'backends.errorUrl') localError = key
+      else notifications.show({ id: 'backend-profile-save', tone: 'error', message: () => t(key) })
     }
   }
 
@@ -243,7 +275,7 @@
                   placeholder={t('setup.secretPlaceholder')}
                   autocomplete="current-password"
                   aria-invalid={core.error === t('error.invalidSecret') ? true : undefined}
-                  aria-describedby={core.error ? 'connection-error' : 'secret-hint'}
+                  aria-describedby="secret-hint"
                   disabled={busy}
                 />
                 <button
@@ -268,9 +300,6 @@
               </Button>
             </div>
             <p class="text-xs text-fg-2">{t(selectedId ? 'backends.saveHint' : 'backends.createHint')}</p>
-            {#if savedMessage}
-              <p class="flex items-center gap-2 text-[13px] text-fg-2" role="status"><IconCheck class="size-4 shrink-0" strokeWidth={1.5} />{t('backends.savedMessage')}</p>
-            {/if}
           </form>
           <details class="group mt-6 border-t border-line pt-4">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-[13px] text-fg-2 transition-colors hover:text-fg">
@@ -289,6 +318,16 @@ external-ui-name: miboard</pre>
       </div>
     </div>
   </main>
+  <div class="mx-auto w-full max-w-[960px] pb-4">
+    <details id="app-settings-details" bind:this={appDetails} bind:open={appDetailsOpen} class="group rounded-panel border border-line bg-card" data-testid="setup-app-settings">
+      <summary class="flex min-h-12 cursor-pointer list-none items-center gap-3 rounded-panel px-4 py-3 text-[13px] marker:content-none sm:px-5">
+        <IconChevron class="size-4 shrink-0 -rotate-90 text-fg-3 transition-transform group-open:rotate-0" strokeWidth={1.5} aria-hidden="true" />
+        <span>{t('pwa.title')}</span>
+        <span class="ml-auto break-all font-mono text-xs text-fg-3">MIBoard {appVersion}</span>
+      </summary>
+      <div class="border-t border-line"><AppSettings embedded /></div>
+    </details>
+  </div>
   <footer class="mx-auto flex w-full max-w-[1040px] flex-wrap items-center justify-between gap-4 py-5">
     <span class="text-xs text-fg-3">{t('backends.footer')} · <span class="font-mono">MIBoard {appVersion}</span></span>
     <Segmented label={t('settings.theme')} value={theme.value} options={themes} onchange={(v) => theme.set(v)} />

@@ -419,8 +419,8 @@ test('overlapping groups share an in-flight measurement and both receive its res
   const a: unknown[] = []
   const b: unknown[] = []
   const shared = target('shared', 'provider')
-  const first = tester.testGroup('a', [shared], panel(), (...result) => { a.push(result) })
-  const second = tester.testGroup('b', [shared], panel(), (...result) => { b.push(result) })
+  const first = tester.testGroup('a', [shared], panel(), (name, value) => { a.push([name, value]) })
+  const second = tester.testGroup('b', [shared], panel(), (name, value) => { b.push([name, value]) })
   await tick()
   assert.equal(calls, 1)
   gate.resolve({ delay: 123 })
@@ -544,7 +544,7 @@ test('a single ping probes the resolved provider leaf at 2000ms before its named
       return { delay: 73 }
     },
   })
-  assert.deepEqual(await tester.testNode(main, preferences, (...result) => { statuses.push(result) }, leaf), { delay: 73 })
+  assert.deepEqual(await tester.testNode(main, preferences, (name, value) => { statuses.push([name, value]) }, leaf), { delay: 73 })
   assert.deepEqual(calls, [[leaf, IPV6_TEST_URL, 2000], [main, preferences.url, 500]])
 })
 
@@ -620,7 +620,7 @@ test('bulk node testing caps only the main timeout and keeps provider-aware IPv6
   const selected = { ...target('main'), ipv6Target: target('leaf', 'provider') }
   for (const timeout of [500, 15000]) {
     calls.length = 0
-    await tester.testNodes([selected], settings({ timeout, ipv6: true }), (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+    await tester.testNodes([selected], settings({ timeout, ipv6: true }), (name, value) => { results.push([name, value]) }, (name, value) => { statuses.push([name, value]) })
     assert.deepEqual(calls, [[target('leaf', 'provider'), IPV6_TEST_URL, 2000], [target('main'), DEFAULT_DELAY_SETTINGS.url, Math.min(2000, timeout)]])
   }
   assert.deepEqual(statuses, [['leaf', true], ['leaf', true]])
@@ -643,7 +643,7 @@ test('core IPv6 uses the group endpoint before the main request and reports each
     async proxyDelay() { assert.fail('A core group cannot issue individual IPv6 or main requests') },
   })
   await tester.testGroup('automatic', ['a', 'b', 'missing'].map(name => target(name)), preferences,
-    (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+    (name, value) => { results.push([name, value]) }, (name, value) => { statuses.push([name, value]) })
   assert.deepEqual(calls, [['automatic', IPV6_TEST_URL, 5000], ['automatic', preferences.url, 5000]])
   assert.deepEqual(results, [['a', 72], ['b', 0], ['missing', 0]])
 })
@@ -659,7 +659,7 @@ test('failed core IPv6 reports false without preventing the main group measureme
     async proxyDelay() { assert.fail('Unexpected node request') },
   })
   await tester.testGroup('core', [target('node')], settings({ ipv6: true }),
-    (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+    (name, value) => { results.push([name, value]) }, (name, value) => { statuses.push([name, value]) })
   assert.deepEqual(statuses, [['node', false]])
   assert.deepEqual(results, [['node', 48]])
 })
@@ -712,7 +712,7 @@ test('campaigns reuse the complete probe/main pipeline while replaying status to
   const preferences = panel({ ipv6: true })
   const finish = tester.beginBatch()
   for (let index = 0; index < 2; index++) {
-    await tester.testNode(target('node'), preferences, (...result) => { statuses.push(result) })
+    await tester.testNode(target('node'), preferences, (name, value) => { statuses.push([name, value]) })
   }
   assert.deepEqual(calls, [IPV6_TEST_URL, preferences.url])
   assert.deepEqual(statuses, [['node', true], ['node', true]])
@@ -823,7 +823,7 @@ test('a single-node test and an overlapping panel group share one in-flight requ
   })
   const selected = target('shared', 'provider')
   const single = tester.testNode(selected, settings())
-  const group = tester.testGroup('group', [selected], panel(), (...result) => { results.push(result) })
+  const group = tester.testGroup('group', [selected], panel(), (name, value) => { results.push([name, value]) })
   await tick()
   assert.equal(calls, 1, 'Orchestration mode must not prevent sharing the same node/URL measurement')
   gate.resolve({ delay: 63 })
@@ -919,8 +919,8 @@ test('a batch reuses settled node results across sequential overlapping groups a
     async proxyDelay(selected) { calls.push(selected.name); return { delay: calls.length * 10 } },
   })
   const finish = tester.beginBatch()
-  await tester.testGroup('first', [target('first'), target('shared', 'subscription')], panel(), (...result) => { results.push(result) })
-  await tester.testGroup('second', [target('shared', 'subscription'), target('second')], panel(), (...result) => { results.push(result) })
+  await tester.testGroup('first', [target('first'), target('shared', 'subscription')], panel(), (name, value) => { results.push([name, value]) })
+  await tester.testGroup('second', [target('shared', 'subscription'), target('second')], panel(), (name, value) => { results.push([name, value]) })
   assert.deepEqual(calls, ['first', 'shared', 'second'])
   assert.deepEqual(results, [['first', 10], ['shared', 20], ['shared', 20], ['second', 30]])
   assert.deepEqual(await tester.testNode(target('shared', 'subscription'), settings()), { delay: 20 })
@@ -957,7 +957,7 @@ test('failed probes are reused only within the campaign and are retried after cl
   })
   const finish = tester.beginBatch()
   await assert.rejects(tester.testNode(target('shared'), settings()), (error) => error === failure)
-  await assert.rejects(tester.testGroup('group', [target('shared')], panel(), (...result) => { results.push(result) }), (error) => error === failure)
+  await assert.rejects(tester.testGroup('group', [target('shared')], panel(), (name, value) => { results.push([name, value]) }), (error) => error === failure)
   assert.equal(calls, 1)
   assert.deepEqual(results, [['shared', 0]])
   finish()
@@ -997,7 +997,7 @@ test('campaigns cache IPv6 probes while leaving core group requests uncached', a
   assert.equal(groups, 2, 'Core mode keeps its original group endpoint semantics')
   const statuses: unknown[] = []
   for (let index = 0; index < 2; index++) {
-    await tester.testIPv6([target('node', 'subscription')], 15000, (...result) => { statuses.push(result) })
+    await tester.testIPv6([target('node', 'subscription')], 15000, (name, value) => { statuses.push([name, value]) })
   }
   assert.deepEqual(calls, [{ target: target('node', 'subscription'), url: IPV6_TEST_URL, timeout: 2000 }])
   assert.deepEqual(statuses, [['node', true], ['node', true]])

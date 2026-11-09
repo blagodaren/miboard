@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshotDir = await mkdtemp(path.join(os.tmpdir(), 'miboard-rules-'))
@@ -46,12 +47,14 @@ async function launchBrowser() {
   throw new Error('No browser available. Run: npx playwright install chromium')
 }
 
-async function openRules(intercept, controlledConnections) {
+async function openRules(intercept, controlledConnections, prepare) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  await stubAppUpdates(context)
   const page = await context.newPage()
   page.setDefaultTimeout(10_000)
   page.on('pageerror', (error) => errors.push(error.message))
   if (intercept) await page.route(`${origin}/providers/rules`, intercept)
+  if (prepare) await prepare(page)
   let connectionsSocket
   const sendConnections = (connections) => connectionsSocket.send(JSON.stringify({
     connections,
@@ -71,9 +74,25 @@ async function openRules(intercept, controlledConnections) {
 const expand = (page, name) => page.getByRole('button', { name: `Expand rule set ${name}`, exact: true })
 const collapse = (page, name) => page.getByRole('button', { name: `Collapse rule set ${name}`, exact: true })
 const region = (page, name) => page.getByRole('region', { name: `Rule set ${name}`, exact: true })
+const providersPanel = (page) => page.getByTestId('rule-providers')
+const providerSearch = (page) => page.getByRole('searchbox', { name: 'Find a rule provider', exact: true })
+
+async function openProviders(page) {
+  await page.getByRole('tab', { name: /^Rule providers(?:\s|$)/ }).click()
+  await providersPanel(page).waitFor()
+  return providersPanel(page)
+}
+
+async function showInline(page, name) {
+  const details = region(page, name)
+  const show = details.getByRole('button', { name: `Show rules in ${name}`, exact: true })
+  if (await show.isVisible()) await show.click()
+  return details
+}
 
 async function openSet(page, name) {
-  await expand(page, name).click()
+  await openProviders(page)
+  await providerSearch(page).fill(name)
   const details = region(page, name)
   await details.waitFor()
   return details
@@ -389,6 +408,576 @@ async function checkAnalytics() {
   console.log('PASS: deterministic rule traffic/domains, merged graph nodes and directed edges, route hover/focus, all routes beyond twelve, pause/resume, policy filter/reset, zoom, empty/recovery and 320/390/700/1400px overflow')
 }
 
+async function checkRuleProviderUpdates() {
+  const originalTime = '2025-05-06T07:08:09Z'
+  const updatedTime = '2025-06-07T08:09:10Z'
+  const latestTime = '2025-07-08T09:10:11Z'
+  const encodedName = 'remote / rules?#'
+  const provider = (name, vehicleType, updatedAt = originalTime) => ({
+    name, type: 'Rule', behavior: 'Domain', format: 'yaml', vehicleType, ruleCount: 12, updatedAt,
+    ...(vehicleType === 'Inline' ? { payload: ['example.com'] } : {}),
+  })
+  const providers = {
+    ads: provider('ads', 'HTTP'),
+    'ru-domains': provider('ru-domains', 'File'),
+    telegram: provider('telegram', 'Inline'),
+    [encodedName]: provider(encodedName, 'HTTP'),
+  }
+  let metadataRequests = 0
+  const puts = []
+  let nextPutError = null
+  let nextReadError = null
+  let serverTime = updatedTime
+  let finishPending
+  const pending = new Promise((resolve) => { finishPending = resolve })
+  let holdFirstPut = true
+  const test = await openRules(async (route) => {
+    metadataRequests++
+    if (nextReadError) {
+      const message = nextReadError
+      nextReadError = null
+      await route.fulfill({ status: 503, json: { message } })
+    } else {
+      await route.fulfill({ json: { providers } })
+    }
+  }, undefined, async (page) => {
+    await page.route(`${origin}/rules`, (route) => route.fulfill({ json: {
+      rules: Object.keys(providers).map((name) => ({ type: 'RuleSet', payload: name, proxy: 'DIRECT' })),
+    } }))
+    await page.route(`${origin}/providers/rules/**`, async (route) => {
+      const request = route.request()
+      assert.equal(request.method(), 'PUT', 'A rule provider is refreshed by PUT; readback uses the collection endpoint')
+      const pathname = new URL(request.url()).pathname
+      const name = decodeURIComponent(pathname.slice('/providers/rules/'.length))
+      assert(Object.hasOwn(providers, name), 'The requested provider name must survive URL encoding')
+      puts.push({ name, pathname })
+      if (holdFirstPut) {
+        holdFirstPut = false
+        await pending
+      }
+      if (nextPutError) {
+        const message = nextPutError
+        nextPutError = null
+        await route.fulfill({ status: 502, json: { message } })
+        return
+      }
+      providers[name] = { ...providers[name], updatedAt: serverTime, ruleCount: providers[name].ruleCount + 1 }
+      await route.fulfill({ status: 204 })
+    })
+  })
+  const page = test.page
+  const update = (name) => region(page, name).getByRole('button', { name: `Update rule provider ${name}`, exact: true })
+  const timestamp = (name) => region(page, name).locator('time').getAttribute('datetime')
+  const updated = (name) => region(page, name).getByRole('status').filter({ hasText: /^Provider updated\.?$/ })
+  try {
+    assert.equal(metadataRequests, 0, 'Adding update controls must preserve lazy metadata loading')
+    await openSet(page, 'ads')
+    await update('ads').waitFor()
+    assert.equal(await timestamp('ads'), originalTime)
+    await update('ads').click()
+    await poll(() => puts.length === 1, 'the first provider update starts')
+    assert(await update('ads').isDisabled(), 'Updating disables the provider button')
+    await region(page, 'ads').getByRole('status').filter({ hasText: /^Updating…$/ }).waitFor()
+    assert.equal(await timestamp('ads'), originalTime, 'Pending updates retain the last confirmed server timestamp')
+    await update('ads').evaluate((button) => button.click())
+    assert.equal(puts.length, 1, 'Native disabled activation cannot submit a duplicate update')
+
+    await page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
+    await page.getByRole('table', { name: 'Rules', exact: true }).waitFor()
+    await openSet(page, 'ru-domains')
+    assert(await update('ru-domains').isEnabled(), 'Another provider must not inherit the pending provider state')
+    await openSet(page, 'ads')
+    assert(await update('ads').isDisabled(), 'Switching tabs and filtering providers must preserve its in-flight request')
+    assert.equal(metadataRequests, 1, 'Tab and search changes should not refetch cached provider metadata')
+    finishPending()
+    await updated('ads').waitFor()
+    assert.equal(await timestamp('ads'), updatedTime, 'Successful refresh displays updatedAt returned by the API, not local completion time')
+    assert.equal(metadataRequests, 2, 'A successful PUT must reload provider metadata')
+    assert.equal(puts.length, 1)
+
+    nextPutError = 'Provider download failed'
+    await update('ads').click()
+    await region(page, 'ads').getByRole('alert').filter({ hasText: 'Provider download failed' }).waitFor()
+    assert.equal(await timestamp('ads'), updatedTime, 'Failed refreshes preserve the confirmed timestamp')
+    assert.equal(metadataRequests, 2, 'A failed PUT must not claim a successful metadata refresh')
+    assert(await update('ads').isEnabled(), 'An update error must allow retry')
+    await update('ads').click()
+    await updated('ads').waitFor()
+    assert.equal(await timestamp('ads'), updatedTime, 'A successful check may return the same updatedAt when the content did not change')
+    assert.equal(puts.length, 3, 'Retry issues one new PUT after a failed update')
+
+    serverTime = latestTime
+    nextReadError = 'Metadata temporarily unavailable'
+    await update('ads').click()
+    await region(page, 'ads').getByRole('alert').filter({
+      hasText: 'Provider updated, but its details could not be reloaded: Metadata temporarily unavailable',
+    }).waitFor()
+    assert.equal(await timestamp('ads'), updatedTime, 'Readback failure must not invent an updated timestamp')
+    const reload = region(page, 'ads').getByRole('button', { name: 'Reload rule provider ads', exact: true })
+    await reload.waitFor()
+    const putsBeforeReload = puts.length
+    const readsBeforeReload = metadataRequests
+    await reload.click()
+    await updated('ads').waitFor()
+    assert.equal(puts.length, putsBeforeReload, 'Retrying metadata after successful PUT must not download the provider again')
+    assert.equal(metadataRequests, readsBeforeReload + 1)
+    assert.equal(await timestamp('ads'), latestTime)
+
+    await openSet(page, 'ru-domains')
+    assert.equal(await timestamp('ru-domains'), originalTime, 'Another provider retains its own timestamp')
+    await update('ru-domains').click()
+    await updated('ru-domains').waitFor()
+    assert.equal(puts.at(-1).name, 'ru-domains', 'File providers support explicit refresh as well as HTTP providers')
+    assert.equal(await timestamp('ru-domains'), latestTime)
+
+    await openSet(page, 'telegram')
+    assert(await update('telegram').isDisabled(), 'Inline providers cannot be downloaded independently of configuration')
+    await region(page, 'telegram').getByText('Inline rules are part of the configuration. Change them in the configuration and reload it.', { exact: true }).waitFor()
+    const putsBeforeInline = puts.length
+    await update('telegram').evaluate((button) => button.click())
+    assert.equal(puts.length, putsBeforeInline, 'Inline provider controls must not issue PUT requests')
+    await showInline(page, 'telegram')
+    await region(page, 'telegram').getByRole('listitem').filter({ hasText: 'example.com' }).waitFor()
+
+    await openSet(page, encodedName)
+    await update(encodedName).click()
+    await updated(encodedName).waitFor()
+    assert.equal(puts.at(-1).pathname, `/providers/rules/${encodeURIComponent(encodedName)}`,
+      'Slashes, spaces and query/hash characters in provider names must stay inside one encoded path segment')
+    assert.equal(await timestamp(encodedName), latestTime)
+    console.log('PASS: rule provider update, server timestamps, unchanged content, busy/dedup, tab/filter persistence, failure/retry, readback-only retry, File/Inline and encoded names')
+  } finally {
+    finishPending()
+    await test.context.close()
+  }
+}
+
+async function checkRuleProviderBatchUpdates() {
+  const originalTime = '2025-05-06T07:08:09Z'
+  const updatedTime = '2025-06-07T08:09:10Z'
+  const latestTime = '2025-07-08T09:10:11Z'
+  const provider = (name, vehicleType) => ({
+    name, type: 'Rule', behavior: 'Domain', format: 'yaml', vehicleType,
+    ruleCount: 12, updatedAt: originalTime,
+    ...(vehicleType === 'Inline' ? { payload: ['example.com'] } : {}),
+  })
+  // API order deliberately interleaves inline and downloadable providers.
+  const providers = {
+    'inline-first': provider('inline-first', 'Inline'),
+    ads: provider('ads', 'HTTP'),
+    'inline-second': provider('inline-second', 'Inline'),
+    'file-provider': provider('file-provider', 'File'),
+    'hidden-http': provider('hidden-http', 'HTTP'),
+  }
+  const puts = []
+  const pending = new Map()
+  let activePuts = 0
+  let maxActivePuts = 0
+  let automatic = false
+  let metadataRequests = 0
+  let holdReadback = false
+  let finishReadback
+  let failReadback = false
+  let serverTime = updatedTime
+  const failedPuts = new Set(['file-provider'])
+  const test = await openRules(async (route) => {
+    metadataRequests++
+    if (holdReadback) await new Promise(resolve => { finishReadback = resolve })
+    if (failReadback) {
+      failReadback = false
+      await route.fulfill({ status: 503, json: { message: 'Batch metadata unavailable' } })
+    } else await route.fulfill({ json: { providers } })
+  }, undefined, async (page) => {
+    await page.route(`${origin}/providers/rules/**`, async (route) => {
+      const request = route.request()
+      assert.equal(request.method(), 'PUT')
+      const name = decodeURIComponent(new URL(request.url()).pathname.slice('/providers/rules/'.length))
+      assert(Object.hasOwn(providers, name), 'Bulk updates must target actual API providers')
+      assert.notEqual(providers[name].vehicleType, 'Inline', 'Inline providers must never receive bulk PUT requests')
+      puts.push(name)
+      activePuts++
+      maxActivePuts = Math.max(maxActivePuts, activePuts)
+      try {
+        if (!automatic) await new Promise(resolve => { pending.set(name, resolve) })
+        if (failedPuts.has(name)) await route.fulfill({ status: 502, json: { message: `${name} download failed` } })
+        else {
+          providers[name] = { ...providers[name], updatedAt: serverTime }
+          await route.fulfill({ status: 204 })
+        }
+      } finally {
+        pending.delete(name)
+        activePuts--
+      }
+    })
+  })
+  const page = test.page
+  const panel = providersPanel(page)
+  const batch = page.getByTestId('rule-provider-batch')
+  const bulk = page.getByTestId('rule-providers-update-all')
+  const progress = () => page.getByRole('progressbar', { name: 'Rule provider update progress', exact: true })
+  const update = (name) => region(page, name).getByRole('button', { name: `Update rule provider ${name}`, exact: true })
+  const timestamp = (name) => region(page, name).locator('time').getAttribute('datetime')
+  const visibleNames = () => panel.getByRole('region').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))
+  const finishPut = (name) => {
+    assert(pending.has(name), `Expected an active PUT for ${name}`)
+    pending.get(name)()
+  }
+  try {
+    await openProviders(page)
+    await region(page, 'hidden-http').waitFor()
+    assert.deepEqual(await visibleNames(), ['Rule set ads', 'Rule set file-provider', 'Rule set hidden-http', 'Rule set inline-first', 'Rule set inline-second'],
+      'Inline providers come last while API order within both partitions stays stable')
+    await providerSearch(page).fill('ads')
+    holdReadback = true
+    await bulk.click()
+    await poll(() => pending.size === 2, 'the first two bulk provider requests start')
+    assert.equal(puts.length, 2, 'A bulk update starts at most two requests concurrently')
+    assert(await bulk.isDisabled(), 'A running batch cannot be started again')
+    assert(await panel.getByRole('button', { name: 'Reload list', exact: true }).isDisabled(), 'List refresh is locked during batch writes')
+    assert(await update('ads').isDisabled(), 'Individual updates are locked during a batch')
+    assert.equal(await progress().getAttribute('aria-valuenow'), '0')
+    assert.equal(await progress().getAttribute('aria-valuemax'), '3')
+    await batch.getByText('Updating providers: 0/3', { exact: true }).waitFor()
+    await bulk.evaluate(button => button.click())
+    assert.equal(puts.length, 2, 'Disabled bulk activation must not enqueue duplicate work')
+    assert.equal(metadataRequests, 1, 'No provider metadata is reloaded before all batch writes finish')
+
+    await page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
+    await page.getByRole('table', { name: 'Rules', exact: true }).waitFor()
+    await openProviders(page)
+    assert.equal(await progress().getAttribute('aria-valuenow'), '0', 'Pending batch state survives tab switches')
+    assert.equal(await providerSearch(page).inputValue(), 'ads')
+    await panel.getByRole('button', { name: 'Clear search', exact: true }).click()
+    assert(await update('file-provider').isDisabled())
+    assert(await update('hidden-http').isDisabled(), 'Queued provider controls must be locked too')
+
+    finishPut('ads')
+    await poll(() => pending.has('hidden-http'), 'a completed request releases a slot for a provider hidden by the original search')
+    await poll(async () => (await progress().getAttribute('aria-valuenow')) === '1', 'progress counts the first completed request')
+    finishPut('file-provider')
+    await poll(async () => (await progress().getAttribute('aria-valuenow')) === '2', 'a failed provider still advances batch progress')
+    finishPut('hidden-http')
+    await poll(() => metadataRequests === 2 && !!finishReadback, 'one shared metadata request follows all three writes')
+    assert.equal(await progress().getAttribute('aria-valuenow'), '3')
+    await batch.getByText('Loading updated provider details…', { exact: true }).waitFor()
+    assert(await bulk.isDisabled(), 'Batch controls remain locked until the shared metadata readback completes')
+    assert.equal(await timestamp('ads'), originalTime, 'Finishing must keep the last confirmed API timestamp')
+    holdReadback = false
+    finishReadback()
+    await batch.getByText('Finished: 2/3 · Failed: 1', { exact: true }).waitFor()
+    assert.equal(maxActivePuts, 2, 'Bulk concurrency must never exceed two requests')
+    assert.deepEqual(puts, ['ads', 'file-provider', 'hidden-http'], 'A failure must not stop later providers or exclude providers hidden by search')
+    assert.equal(metadataRequests, 2, 'The batch uses one collection readback, not one read per provider')
+    assert.equal(await timestamp('ads'), updatedTime)
+    assert.equal(await timestamp('hidden-http'), updatedTime)
+    assert.equal(await timestamp('file-provider'), originalTime)
+    await region(page, 'file-provider').getByRole('alert').filter({ hasText: 'file-provider download failed' }).waitFor()
+    assert(await bulk.isEnabled())
+    assert(await update('file-provider').isEnabled(), 'A failed provider remains individually retryable after the batch')
+
+    automatic = true
+    failedPuts.clear()
+    await providerSearch(page).fill('ads')
+    const retryFailed = page.getByTestId('rule-providers-retry-failed')
+    await retryFailed.click()
+    await batch.getByText('Updated: 1/1', { exact: true }).waitFor()
+    assert.deepEqual(puts.slice(3), ['file-provider'], 'Retry failed uses the failed batch snapshot, independently of the visible search')
+    assert.equal(metadataRequests, 3, 'Retry failed uses one shared metadata readback')
+    await panel.getByRole('button', { name: 'Clear search', exact: true }).click()
+    assert.equal(await timestamp('file-provider'), updatedTime)
+    assert.equal(await retryFailed.count(), 0, 'A successful retry clears the failed-target action')
+
+    serverTime = latestTime
+    failReadback = true
+    await bulk.click()
+    await region(page, 'ads').getByRole('alert').filter({ hasText: 'Batch metadata unavailable' }).waitFor()
+    await batch.getByText('Updated: 3/3', { exact: true }).waitFor()
+    assert.equal(puts.length, 7, 'The next batch starts each eligible provider exactly once')
+    assert.equal(metadataRequests, 4, 'Failed metadata readback is still shared by the whole batch')
+    assert.equal(await retryFailed.count(), 0, 'A metadata-only failure must not offer another PUT batch')
+    assert.equal(await timestamp('ads'), updatedTime, 'Failed batch readback must not replace the confirmed timestamp')
+    for (const name of ['ads', 'file-provider', 'hidden-http']) {
+      await region(page, name).getByRole('button', { name: `Reload rule provider ${name}`, exact: true }).waitFor()
+    }
+    const putsBeforeRetry = puts.length
+    await region(page, 'ads').getByRole('button', { name: 'Reload rule provider ads', exact: true }).click()
+    await region(page, 'ads').getByRole('status').filter({ hasText: /^Provider updated\.?$/ }).waitFor()
+    assert.equal(puts.length, putsBeforeRetry, 'A successful bulk PUT with failed readback retries metadata only')
+    assert.equal(metadataRequests, 5)
+    assert.equal(await timestamp('ads'), latestTime)
+    console.log('PASS: stable Inline-last ordering, unfiltered bulk targets, concurrency 2, progress, tab persistence, control locks, partial failure, shared readback and GET-only recovery')
+  } finally {
+    automatic = true
+    holdReadback = false
+    finishReadback?.()
+    for (const finish of pending.values()) finish()
+    await test.context.close()
+  }
+
+  const inlineOnly = await openRules(route => route.fulfill({ json: { providers: { telegram: provider('telegram', 'Inline') } } }))
+  try {
+    await openProviders(inlineOnly.page)
+    await region(inlineOnly.page, 'telegram').waitFor()
+    assert(await inlineOnly.page.getByTestId('rule-providers-update-all').isDisabled(), 'A collection with only Inline providers has no bulk update action')
+  } finally { await inlineOnly.context.close() }
+}
+
+async function checkRuleProviderBatchCancellation() {
+  const originalTime = '2025-05-06T07:08:09Z'
+  const updatedTime = '2025-06-07T08:09:10Z'
+  const names = ['ads', 'first-bad', 'second-bad', 'held-fourth', 'held-fifth', 'queued-sixth']
+  const providers = Object.fromEntries(names.map(name => [name, {
+    name, type: 'Rule', vehicleType: 'HTTP', behavior: 'Domain', format: 'yaml', ruleCount: 12, updatedAt: originalTime,
+  }]))
+  const puts = []
+  const pending = new Map()
+  const failedPuts = new Set(['first-bad', 'second-bad'])
+  let automatic = false
+  let metadataRequests = 0
+  let holdMetadata = false
+  let pendingMetadata
+  const stoppedHint = 'Requests already sent may still finish in the core. Reload the list to check their status.'
+  const test = await openRules(async (route) => {
+    metadataRequests++
+    const request = route.request()
+    try {
+      if (holdMetadata) await new Promise(resolve => { pendingMetadata = { request, resolve } })
+      if (!request.failure()) await route.fulfill({ json: { providers } })
+    } catch (error) {
+      if (!request.failure()) throw error
+    } finally {
+      if (pendingMetadata?.request === request) pendingMetadata = null
+    }
+  }, undefined, async (page) => {
+    // Release deliberately paused handlers when their fetch is aborted, as a server could still finish it.
+    page.on('requestfailed', request => {
+      for (const pendingRequest of pending.values()) {
+        if (pendingRequest.request === request) pendingRequest.resolve()
+      }
+      if (pendingMetadata?.request === request) pendingMetadata.resolve()
+    })
+    await page.route(`${origin}/providers/rules/**`, async (route) => {
+      const request = route.request()
+      const name = decodeURIComponent(new URL(request.url()).pathname.slice('/providers/rules/'.length))
+      assert.equal(request.method(), 'PUT')
+      assert(Object.hasOwn(providers, name))
+      puts.push(name)
+      try {
+        if (!automatic) await new Promise(resolve => { pending.set(name, { request, resolve }) })
+        if (request.failure()) return
+        if (failedPuts.has(name)) await route.fulfill({ status: 502, json: { message: `${name} download failed` } })
+        else {
+          providers[name] = { ...providers[name], updatedAt: updatedTime }
+          await route.fulfill({ status: 204 })
+        }
+      } catch (error) {
+        if (!request.failure()) throw error
+      } finally {
+        if (pending.get(name)?.request === request) pending.delete(name)
+      }
+    })
+  })
+  const page = test.page
+  const panel = providersPanel(page)
+  const bulk = page.getByTestId('rule-providers-update-all')
+  const cancel = page.getByTestId('rule-providers-cancel')
+  const retryFailed = page.getByTestId('rule-providers-retry-failed')
+  const resume = page.getByTestId('rule-providers-resume')
+  const batch = page.getByTestId('rule-provider-batch')
+  const update = name => region(page, name).getByRole('button', { name: `Update rule provider ${name}`, exact: true })
+  const finishPut = name => {
+    assert(pending.has(name), `Expected a held PUT for ${name}`)
+    pending.get(name).resolve()
+  }
+  try {
+    await openProviders(page)
+    await region(page, 'queued-sixth').waitFor()
+    await bulk.click()
+    await poll(() => pending.has('ads') && pending.has('first-bad'), 'cancellable batch starts its first two requests')
+    finishPut('ads')
+    await poll(() => pending.has('second-bad'), 'first success releases the next worker slot')
+    finishPut('first-bad')
+    await poll(() => pending.has('held-fourth'), 'first actual failure releases the next slot')
+    finishPut('second-bad')
+    await poll(() => pending.has('held-fifth'), 'second actual failure releases the next slot')
+    await page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
+    await page.getByRole('table', { name: 'Rules', exact: true }).waitFor()
+    await openProviders(page)
+    await batch.getByText('Updating providers: 3/6', { exact: true }).waitFor()
+    await cancel.click()
+    await batch.getByText('Stopped · Updated: 1/6 · Failed: 2', { exact: true }).waitFor()
+    await batch.getByText(stoppedHint, { exact: true }).waitFor()
+    await poll(() => pending.size === 0, 'in-flight provider fetches are aborted on cancellation')
+    assert.deepEqual(puts, ['ads', 'first-bad', 'second-bad', 'held-fourth', 'held-fifth'], 'Cancellation must stop the remaining queued provider')
+    assert.equal(metadataRequests, 1, 'Cancelling writes must not start a new metadata request')
+    assert.equal(await cancel.count(), 0, 'The stop control disappears once the batch has settled')
+    assert(await bulk.isEnabled(), 'Cancelling releases the bulk action lock')
+    assert(await panel.getByRole('button', { name: 'Reload list', exact: true }).isEnabled(), 'Cancelling releases the metadata reload lock')
+    for (const name of names) {
+      const action = region(page, name).getByRole('button', { name: /^(?:Update|Reload) rule provider / })
+      assert(await action.isEnabled(), `${name}: no provider action may remain busy after cancellation`)
+      assert.notEqual(await action.getAttribute('aria-busy'), 'true')
+    }
+    for (const name of ['held-fourth', 'held-fifth', 'queued-sixth']) {
+      assert.equal(await region(page, name).getByRole('alert').count(), 0, 'Interrupted and unstarted providers are not download failures')
+    }
+    await region(page, 'first-bad').getByRole('alert').filter({ hasText: 'first-bad download failed' }).waitFor()
+    await region(page, 'second-bad').getByRole('alert').filter({ hasText: 'second-bad download failed' }).waitFor()
+    assert(await retryFailed.isEnabled())
+    assert(await resume.isEnabled())
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 3', 'Remaining work includes interrupted and queued targets, excluding known successes and real failures')
+    await page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
+    await openProviders(page)
+    await batch.getByText('Stopped · Updated: 1/6 · Failed: 2', { exact: true }).waitFor()
+
+    automatic = true
+    failedPuts.clear()
+    await update('first-bad').click()
+    await region(page, 'first-bad').getByRole('status').filter({ hasText: /^Provider updated\.?$/ }).waitFor()
+    const beforeRetry = puts.length
+    await providerSearch(page).fill('ads')
+    await retryFailed.click()
+    await batch.getByText('Updated: 1/1', { exact: true }).waitFor()
+    assert.deepEqual(puts.slice(beforeRetry), ['second-bad'], 'Retry excludes manually recovered, interrupted and queued providers, regardless of the visible search')
+    assert.equal(await retryFailed.count(), 0)
+    await panel.getByRole('button', { name: 'Clear search', exact: true }).click()
+    assert(await bulk.isEnabled(), 'A new batch can complete after cancellation without inheriting an aborted page signal')
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 3', 'Retrying actual failures must preserve the separate remaining-work snapshot')
+
+    await update('held-fourth').click()
+    await region(page, 'held-fourth').getByRole('status').filter({ hasText: /^Provider updated\.?$/ }).waitFor()
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 2', 'A manually recovered interrupted provider leaves the remaining-work snapshot')
+    automatic = false
+    const beforeResume = puts.length
+    await providerSearch(page).fill('ads')
+    await resume.click()
+    await poll(() => pending.has('held-fifth') && pending.has('queued-sixth'), 'Resume starts only interrupted and unstarted providers, independently of search')
+    assert.deepEqual(puts.slice(beforeResume), ['held-fifth', 'queued-sixth'])
+    finishPut('held-fifth')
+    await batch.getByText('Updating providers: 1/2', { exact: true }).waitFor()
+    await cancel.click()
+    await batch.getByText('Stopped · Updated: 1/2 · Failed: 0', { exact: true }).waitFor()
+    await poll(() => pending.size === 0, 'cancelling Resume releases its active request')
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 1', 'A second cancellation retains only unfinished work from Resume')
+    assert.equal(await retryFailed.count(), 0, 'Interrupted Resume requests are not failed downloads')
+    automatic = true
+    const beforeSecondResume = puts.length
+    await resume.click()
+    await batch.getByText('Updated: 1/1', { exact: true }).waitFor()
+    assert.deepEqual(puts.slice(beforeSecondResume), ['queued-sixth'], 'Repeated Resume never repeats confirmed successful PUTs whose metadata was not reloaded')
+    assert.equal(await resume.count(), 0, 'Finishing the remaining work removes the Resume action')
+    await panel.getByRole('button', { name: 'Clear search', exact: true }).click()
+
+    holdMetadata = true
+    const beforeMetadataCancellation = puts.length
+    await bulk.click()
+    await poll(() => !!pendingMetadata, 'successful batch enters the shared metadata readback')
+    await batch.getByText('Loading updated provider details…', { exact: true }).waitFor()
+    await cancel.click()
+    await batch.getByText('Stopped · Updated: 6/6 · Failed: 0', { exact: true }).waitFor()
+    await poll(() => pendingMetadata === null, 'cancelling aborts the shared metadata request')
+    assert.equal(puts.length - beforeMetadataCancellation, names.length)
+    assert.equal(await retryFailed.count(), 0, 'An interrupted GET is not a failed provider download')
+    assert.equal(await resume.count(), 0, 'Cancelling only metadata readback leaves no unfinished PUTs to resume')
+    assert(await bulk.isEnabled())
+    holdMetadata = false
+    const putsBeforeReload = puts.length
+    const readsBeforeReload = metadataRequests
+    await panel.getByRole('button', { name: 'Reload list', exact: true }).click()
+    await poll(async () => metadataRequests === readsBeforeReload + 1 && await panel.getByRole('button', { name: 'Reload list', exact: true }).isEnabled(), 'Reload list completes the authoritative metadata readback after cancellation')
+    assert.equal(await region(page, 'queued-sixth').locator('time').getAttribute('datetime'), updatedTime)
+    assert.equal(metadataRequests, readsBeforeReload + 1)
+    assert.equal(puts.length, putsBeforeReload, 'Rechecking cancelled metadata must not repeat any successful PUT')
+    assert(await update('queued-sixth').isEnabled(), 'Successful metadata recovery clears readback-only states')
+    console.log('PASS: cancel active/queued requests and metadata GET, release locks, preserve separate retry/resume snapshots, manual recovery, filtered Resume, repeated cancellation and no repeated successful PUTs')
+  } finally {
+    automatic = true
+    holdMetadata = false
+    for (const request of pending.values()) request.resolve()
+    pendingMetadata?.resolve()
+    await test.context.close()
+  }
+}
+
+async function checkRuleProviderCancelledRetryQueue() {
+  const names = ['ads', 'retry-b', 'retry-c', 'retry-d']
+  const providers = Object.fromEntries(names.map(name => [name, {
+    name, type: 'Rule', vehicleType: 'HTTP', behavior: 'Domain', format: 'yaml', ruleCount: 12,
+    updatedAt: '2025-05-06T07:08:09Z',
+  }]))
+  const puts = []
+  const pending = new Map()
+  let phase = 'fail'
+  const test = await openRules(route => route.fulfill({ json: { providers } }), undefined, async page => {
+    page.on('requestfailed', request => {
+      for (const held of pending.values()) if (held.request === request) held.resolve()
+    })
+    await page.route(`${origin}/providers/rules/**`, async route => {
+      const request = route.request()
+      const name = decodeURIComponent(new URL(request.url()).pathname.slice('/providers/rules/'.length))
+      assert.equal(request.method(), 'PUT')
+      assert(Object.hasOwn(providers, name))
+      puts.push(name)
+      const requestPhase = phase
+      try {
+        if (requestPhase === 'hold') await new Promise(resolve => { pending.set(name, { request, resolve }) })
+        if (request.failure()) return
+        if (requestPhase === 'fail') await route.fulfill({ status: 502, json: { message: `${name} initial failure` } })
+        else {
+          providers[name] = { ...providers[name], updatedAt: '2025-06-07T08:09:10Z' }
+          await route.fulfill({ status: 204 })
+        }
+      } catch (error) {
+        if (!request.failure()) throw error
+      } finally {
+        if (pending.get(name)?.request === request) pending.delete(name)
+      }
+    })
+  })
+  const page = test.page
+  const batch = page.getByTestId('rule-provider-batch')
+  const retry = page.getByTestId('rule-providers-retry-failed')
+  const resume = page.getByTestId('rule-providers-resume')
+  try {
+    await openProviders(page)
+    await region(page, 'retry-d').waitFor()
+    await page.getByTestId('rule-providers-update-all').click()
+    await batch.getByText('Finished: 0/4 · Failed: 4', { exact: true }).waitFor()
+    assert.equal(puts.length, 4)
+    assert.equal(await retry.getAttribute('title'), 'Retry only failed updates: 4')
+
+    phase = 'hold'
+    await retry.click()
+    await poll(() => pending.has('ads') && pending.has('retry-b'), 'retry starts its first two failed providers')
+    await page.getByTestId('rule-providers-cancel').click()
+    await batch.getByText('Stopped · Updated: 0/4 · Failed: 0', { exact: true }).waitFor()
+    await poll(() => pending.size === 0, 'cancelled retry releases its active requests')
+    assert.deepEqual(puts.slice(4), ['ads', 'retry-b'], 'Cancellation must leave the remaining retry queue unstarted')
+    assert(await retry.isEnabled(), 'Failures still queued when retry is cancelled must remain retryable')
+    assert.equal(await retry.getAttribute('title'), 'Retry only failed updates: 2')
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 4', 'Cancelled retry retains both interrupted and queued work for Resume')
+    for (const name of ['retry-c', 'retry-d']) {
+      await region(page, name).getByRole('alert').filter({ hasText: `${name} initial failure` }).waitFor()
+    }
+    for (const name of ['ads', 'retry-b']) {
+      assert.equal(await region(page, name).getByRole('alert').count(), 0, 'A started then interrupted retry has unknown status, not its previous failure')
+    }
+
+    phase = 'success'
+    await providerSearch(page).fill('ads')
+    await retry.click()
+    await batch.getByText('Updated: 2/2', { exact: true }).waitFor()
+    assert.deepEqual(puts.slice(6), ['retry-c', 'retry-d'], 'The next retry must include only known failures that never started during the cancelled retry')
+    assert.equal(await retry.count(), 0)
+    assert.equal(await resume.getAttribute('title'), 'Resume interrupted and not-started updates: 2', 'Successful retry removes the overlap from remaining work without losing the interrupted providers')
+    console.log('PASS: cancelling Retry failed preserves unstarted failures while excluding interrupted retries')
+  } finally {
+    phase = 'success'
+    for (const held of pending.values()) held.resolve()
+    await test.context.close()
+  }
+}
+
 try {
   const port = await freePort()
   origin = `http://127.0.0.1:${port}`
@@ -411,32 +1000,97 @@ try {
   }, 'mock startup')
   browser = await launchBrowser()
   await checkAnalytics()
+  await checkRuleProviderUpdates()
+  await checkRuleProviderBatchUpdates()
+  await checkRuleProviderBatchCancellation()
+  await checkRuleProviderCancelledRetryQueue()
 
   let providerRequests = 0
   const main = await openRules(async (route) => {
     providerRequests++
-    await route.continue()
+    const response = await route.fetch()
+    const data = await response.json()
+    data.providers['unreferenced-provider'] = {
+      name: 'unreferenced-provider', type: 'Rule', vehicleType: 'HTTP', behavior: 'Domain',
+      ruleCount: 42, format: 'yaml', updatedAt: '2026-11-08T09:00:00Z',
+    }
+    await route.fulfill({ response, json: data })
   })
   const page = main.page
-  assert.equal(providerRequests, 0, 'Provider metadata should load only after expanding a rule set')
+  const rulesTab = page.getByRole('tab', { name: /^Rules(?:\s|$)/ })
+  const providerTab = page.getByRole('tab', { name: /^Rule providers(?:\s|$)/ })
+  await page.getByRole('tablist', { name: 'Rules sections', exact: true }).waitFor()
+  assert.equal(await rulesTab.getAttribute('aria-selected'), 'true')
+  assert.equal(providerRequests, 0, 'Provider metadata stays lazy on the routing rules tab')
   const adsButton = expand(page, 'ads')
   assert.equal(await adsButton.getAttribute('aria-expanded'), 'false')
   await adsButton.focus()
   await adsButton.press('Enter')
+  const controls = await collapse(page, 'ads').getAttribute('aria-controls')
+  assert(controls, 'Rule disclosure must expose aria-controls')
+  assert.equal(await page.locator(`[id="${controls}"]`).count(), 1)
+  assert.equal(await collapse(page, 'ads').getAttribute('aria-expanded'), 'true')
+  assert.equal(providerRequests, 0, 'Opening rule statistics must not load provider metadata')
+  assert.equal(await region(page, 'ads').count(), 0, 'Provider details no longer live inside routing rule rows')
+  await collapse(page, 'ads').press('Space')
+  assert.equal(await adsButton.getAttribute('aria-expanded'), 'false')
+  await adsButton.click()
+  await page.getByRole('button', { name: 'Open rule provider ads', exact: true }).click()
   const ads = region(page, 'ads')
   await ads.getByText(/^HTTP$/i).waitFor()
-  const controls = await collapse(page, 'ads').getAttribute('aria-controls')
-  assert(controls, 'Disclosure must expose aria-controls')
-  assert.equal(await page.locator(`[id="${controls}"]`).count(), 1, 'Disclosure target must exist')
-  assert.equal(await collapse(page, 'ads').getAttribute('aria-expanded'), 'true')
-  assert.equal(await ads.getByRole('searchbox').count(), 0, 'Remote provider must not advertise payload search')
-  await collapse(page, 'ads').press('Space')
-  await ads.waitFor({ state: 'hidden' })
-  console.log('PASS: provider metadata loads lazily; disclosure works with Enter/Space and ARIA state')
+  const providerHeading = ads.getByRole('heading', { name: 'Rule set ads', exact: true })
+  const providerName = providerHeading.getByText('ads', { exact: true })
+  const providerPrefix = providerHeading.getByText('Rule set', { exact: true })
+  await providerName.waitFor()
+  assert.notEqual(await providerName.evaluate(node => getComputedStyle(node).color),
+    await providerPrefix.evaluate(node => getComputedStyle(node).color), 'Provider names have accent color while the Rule set prefix is subdued')
+  assert.equal(await providerTab.getAttribute('aria-selected'), 'true')
+  assert.equal(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('tab'), 'providers')
+  assert.equal(await providerSearch(page).inputValue(), 'ads', 'The rule shortcut filters the matching provider')
+  assert.equal(await ads.getByRole('searchbox').count(), 0, 'Remote providers must not advertise payload search')
+  await providersPanel(page).getByRole('button', { name: 'Clear search', exact: true }).click()
+  await region(page, 'unreferenced-provider').waitFor()
+  assert.equal(await providersPanel(page).getByRole('region').count(), 4, 'All API providers must appear, including providers absent from rule rows')
+  assert.equal(providerRequests, 1)
+  assert.equal(await page.locator('.rules-analytics').isVisible(), false, 'Provider management must not keep the routing graph visible')
+  console.log('PASS: separate accessible tabs, lazy provider data, rule shortcut and providers not referenced by rules')
+
+  await rulesTab.click()
+  const rulesSearch = page.getByRole('searchbox', { name: 'Domain, type, proxy', exact: true })
+  await rulesSearch.fill('youtube.com')
+  await providerTab.click()
+  await providerSearch(page).fill('ru-domains')
+  await rulesTab.click()
+  assert.equal(await rulesSearch.inputValue(), 'youtube.com', 'Routing-rule search survives tab switches')
+  await page.goBack()
+  await providersPanel(page).waitFor()
+  assert.equal(await providerSearch(page).inputValue(), 'ru-domains', 'Provider search is independent and survives Back')
+  await page.goForward()
+  await page.getByRole('table', { name: 'Rules', exact: true }).waitFor()
+  assert.equal(await rulesSearch.inputValue(), 'youtube.com')
+  await rulesSearch.fill('')
+  await rulesTab.focus()
+  await rulesTab.press('ArrowRight')
+  await providersPanel(page).waitFor()
+  assert.equal(await providerTab.getAttribute('aria-selected'), 'true', 'Tabs support keyboard arrow navigation')
+  assert.equal(providerRequests, 1, 'Tab navigation reuses provider metadata')
+  await page.reload()
+  await providersPanel(page).waitFor()
+  await region(page, 'unreferenced-provider').waitFor()
+  assert.equal(await providerTab.getAttribute('aria-selected'), 'true', 'A provider-tab URL reloads into the same tab')
+  assert.equal(providerRequests, 2)
+  console.log('PASS: independent tab searches, keyboard navigation, browser Back/Forward and provider deep-link reload')
 
   const telegram = await openSet(page, 'telegram')
+  assert.equal(await telegram.getByRole('listitem').count(), 0, 'Inline payload starts collapsed in the provider list')
+  const inlineToggle = telegram.getByRole('button', { name: 'Show rules in telegram', exact: true })
+  assert.equal(await inlineToggle.getAttribute('aria-expanded'), 'false')
+  await inlineToggle.press('Enter')
   await telegram.getByRole('listitem').filter({ hasText: 'DOMAIN-SUFFIX,telegram.org' }).waitFor()
   assert.equal(await telegram.getByRole('listitem').count(), 3)
+  const inlineControls = await telegram.getByRole('button', { name: 'Hide rules in telegram', exact: true }).getAttribute('aria-controls')
+  assert(inlineControls, 'Inline disclosure must identify its contents')
+  assert.equal(await page.locator(`[id="${inlineControls}"]`).count(), 1)
   const search = telegram.getByRole('searchbox', { name: 'Find a rule in this set', exact: true })
   await search.fill('TELEGRAM.ORG')
   await poll(async () => (await telegram.getByRole('listitem').count()) === 1, 'case-insensitive inline search')
@@ -447,68 +1101,85 @@ try {
   await telegram.getByRole('listitem').filter({ hasText: '149.154.160.0/20' }).waitFor()
   await search.fill('')
   await poll(async () => (await telegram.getByRole('listitem').count()) === 3, 'clearing inline search')
-  await collapse(page, 'telegram').click()
-  await openSet(page, 'telegram')
-  await telegram.getByRole('listitem').first().waitFor()
-  assert.equal(providerRequests, 1, 'All expanded rows must share the cached provider response')
+  await telegram.getByRole('button', { name: 'Hide rules in telegram', exact: true }).press('Space')
+  assert.equal(await telegram.getByRole('listitem').count(), 0)
+  await showInline(page, 'telegram')
   const file = await openSet(page, 'ru-domains')
   await file.getByText(/^File$/i).waitFor()
   assert.equal(await file.getByRole('searchbox').count(), 0)
-  assert.equal(providerRequests, 1)
-  console.log('PASS: inline domain/IP search, empty results, reset, File provider and shared cache')
+  assert.equal(providerRequests, 2)
+  await providerSearch(page).fill('no-such-provider')
+  await providersPanel(page).getByText('No matching rule providers', { exact: true }).waitFor()
+  await providersPanel(page).getByRole('button', { name: 'Clear search', exact: true }).click()
+  await region(page, 'telegram').waitFor()
+  console.log('PASS: inline disclosure, domain/IP search, empty results, File provider, independent provider search and shared cache')
 
   await setLanguage(page, 'ru')
-  await page.getByRole('button', { name: 'Раскрыть набор telegram', exact: true }).click()
+  await page.getByRole('tab', { name: /^Провайдеры правил(?:\s|$)/ }).click()
+  await providersPanel(page).getByRole('searchbox').fill('telegram')
   const russian = page.getByRole('region', { name: 'Набор правил telegram', exact: true })
+  await russian.getByRole('button', { expanded: false }).click()
   await russian.getByRole('searchbox', { name: 'Найти правило в наборе', exact: true }).waitFor()
   await russian.getByRole('listitem').first().waitFor()
-  await page.screenshot({ path: path.join(screenshotDir, 'rules-inline-desktop.png'), fullPage: true, animations: 'disabled' })
+  await page.screenshot({ path: path.join(screenshotDir, 'rule-providers-desktop.png'), fullPage: true, animations: 'disabled' })
   await page.emulateMedia({ colorScheme: 'dark' })
-  await page.screenshot({ path: path.join(screenshotDir, 'rules-inline-dark.png'), fullPage: true, animations: 'disabled' })
+  await page.screenshot({ path: path.join(screenshotDir, 'rule-providers-dark.png'), fullPage: true, animations: 'disabled' })
   await page.emulateMedia({ colorScheme: 'light' })
-  const rulesSearch = page.getByRole('searchbox', { name: 'Домен, тип, прокси', exact: true })
   for (const [width, columns] of [[390, 2], [700, 3], [1400, 4]]) {
-    await checkColumns(page, width, columns, 'expanded set')
+    await page.setViewportSize({ width, height: width < 640 ? 844 : 900 })
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `providers/${width}: viewport overflow`)
     if (width === 390 || width === 700) {
-      await page.screenshot({ path: path.join(screenshotDir, `rules-inline-${width === 390 ? 'mobile' : 'tablet'}.png`), fullPage: true, animations: 'disabled' })
+      await page.screenshot({ path: path.join(screenshotDir, `rule-providers-${width === 390 ? 'mobile' : 'tablet'}.png`), fullPage: true, animations: 'disabled' })
     }
-    await rulesSearch.fill('no-such-top-level-rule.example')
+    await page.getByRole('tab', { name: /^Правила(?:\s|$)/ }).click()
+    const russianRule = page.getByRole('button', { name: 'Раскрыть набор telegram', exact: true })
+    if (await russianRule.isVisible()) await russianRule.click()
+    await checkColumns(page, width, columns, 'expanded rule statistics')
+    const russianRulesSearch = page.getByRole('searchbox', { name: 'Домен, тип, прокси', exact: true })
+    await russianRulesSearch.fill('no-such-top-level-rule.example')
     await page.getByText('Ничего не найдено', { exact: true }).waitFor()
     await checkColumns(page, width, columns, 'no results')
-    await rulesSearch.fill('')
-    await russian.getByRole('listitem').first().waitFor()
+    await russianRulesSearch.fill('')
+    await page.getByRole('tab', { name: /^Провайдеры правил(?:\s|$)/ }).click()
+    await russian.waitFor()
   }
   await setLanguage(page, 'en')
-  await expand(page, 'telegram').click()
+  await openSet(page, 'telegram')
+  await showInline(page, 'telegram')
   await region(page, 'telegram').getByRole('searchbox', { name: 'Find a rule in this set', exact: true }).waitFor()
   await main.context.close()
-  console.log('PASS: Russian/English labels; 390/700/1400px columns fit expanded and no-results rows without ghost columns')
+  console.log('PASS: Russian/English tabs and provider labels; 390/700/1400px provider layout and rule table columns')
 
   let attempts = 0
   const failed = await openRules(async (route) => {
     if (++attempts === 1) await route.fulfill({ status: 503, json: { message: 'Provider temporarily unavailable' } })
     else await route.continue()
   })
-  const failedDetails = await openSet(failed.page, 'telegram')
-  await failedDetails.getByRole('alert').filter({ hasText: 'Provider temporarily unavailable' }).waitFor()
+  const failedPanel = await openProviders(failed.page)
+  await failedPanel.getByRole('alert').filter({ hasText: 'Provider temporarily unavailable' }).waitFor()
+  await failedPanel.getByRole('button', { name: 'Retry', exact: true }).click()
+  await region(failed.page, 'telegram').waitFor()
+  await showInline(failed.page, 'telegram')
+  await region(failed.page, 'telegram').getByRole('listitem').first().waitFor()
+  assert.equal(attempts, 2, 'Explicit Retry should refetch providers once')
+  await failed.page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
   await failed.page.getByRole('table').getByText('youtube.com', { exact: true }).waitFor()
-  await failedDetails.getByRole('button', { name: 'Retry', exact: true }).click()
-  await failedDetails.getByRole('listitem').first().waitFor()
-  assert.equal(attempts, 2, 'Retry should refetch providers once')
   await failed.context.close()
-  console.log('PASS: failed provider request preserves the rules table; Retry recovers inline details')
+  console.log('PASS: provider request errors do not break routing rules; Retry recovers providers')
 
   const missing = await openRules((route) => route.fulfill({ json: { providers: {} } }))
-  const missingDetails = await openSet(missing.page, 'ads')
-  await missingDetails.getByText('The API did not return details for this rule set.', { exact: true }).waitFor()
-  assert.equal(await missingDetails.getByRole('searchbox').count(), 0)
+  const missingPanel = await openProviders(missing.page)
+  await missingPanel.getByText('No rule providers', { exact: true }).waitFor()
+  assert.equal(await missingPanel.getByRole('region').count(), 0)
+  await missing.page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
   await missing.page.getByRole('table').getByText('youtube.com', { exact: true }).waitFor()
   await missing.context.close()
-  console.log('PASS: missing provider gets a local explanation and keeps ordinary rules visible')
+  console.log('PASS: empty provider collection has an explicit empty state and routing rules remain available')
 
   const unsupported = await openRules((route) => route.fulfill({ status: 404, json: { message: 'Not Found' } }))
-  const unsupportedDetails = await openSet(unsupported.page, 'ads')
-  await unsupportedDetails.getByRole('alert').filter({ hasText: 'This core does not provide rule set details.' }).waitFor()
+  const unsupportedPanel = await openProviders(unsupported.page)
+  await unsupportedPanel.getByRole('alert').filter({ hasText: 'This core does not provide rule set details.' }).waitFor()
+  await unsupported.page.getByRole('tab', { name: /^Rules(?:\s|$)/ }).click()
   await unsupported.page.getByRole('table').getByText('youtube.com', { exact: true }).waitFor()
   await unsupported.context.close()
 
@@ -520,6 +1191,7 @@ try {
       name: 'telegram', behavior: 'Classical', vehicleType: 'Inline', type: 'Rule', ruleCount,
     } } } }))
     const details = await openSet(inline.page, 'telegram')
+    await showInline(inline.page, 'telegram')
     await details.getByText(expected, { exact: true }).waitFor()
     assert.equal(await details.getByRole('searchbox').count(), 0)
     assert.equal(await details.getByRole('listitem').count(), 0)
@@ -535,6 +1207,7 @@ try {
     } } },
   }))
   const largeDetails = await openSet(large.page, 'telegram')
+  await showInline(large.page, 'telegram')
   await poll(async () => (await largeDetails.getByRole('listitem').count()) === 200, 'bounded rendering for large inline payload')
   await largeDetails.getByText(/first 200/i).waitFor()
   await largeDetails.getByRole('searchbox').fill('entry-274.example.com')

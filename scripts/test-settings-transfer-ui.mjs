@@ -8,6 +8,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { APP_UPDATE_URL, stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = await mkdtemp(path.join(os.tmpdir(), 'miboard-settings-transfer-'))
@@ -54,6 +56,7 @@ async function download(page) {
 }
 async function open(locale = 'en', theme = 'light') {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, colorScheme: theme, reducedMotion: 'reduce', acceptDownloads: true })
+  await stubAppUpdates(context)
   await context.addInitScript(({ origin, locale, theme }) => {
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
@@ -82,6 +85,7 @@ async function open(locale = 'en', theme = 'light') {
   })
   await page.route('**/*', route => {
     const url = new URL(route.request().url())
+    if (url.href === APP_UPDATE_URL) return route.fallback()
     if (/^https?:$/.test(url.protocol) && !['127.0.0.1', 'localhost'].includes(url.hostname)) {
       external.push(url.href)
       return route.abort()
@@ -92,6 +96,7 @@ async function open(locale = 'en', theme = 'light') {
   entry.hash = '/settings'
   await page.goto(entry.href)
   await page.getByRole('heading', { name: locale === 'ru' ? 'Настройки' : 'Settings', exact: true }).waitFor()
+  await chooseSettingsCategory(page, 'data')
   await page.getByTestId('settings-transfer').waitFor()
   await poll(() => sockets.length >= 3, 'live streams')
   await page.evaluate(() => document.fonts.ready)
@@ -130,6 +135,8 @@ try {
   assert.equal(await checkbox.isChecked(), false)
   const original = await storage(page)
   const exported = await download(page)
+  await page.getByText('Settings export is ready', { exact: true }).waitFor()
+  assert.equal(await section.getByText('Settings export is ready', { exact: true }).count(), 0, 'Export success belongs in the global notification')
   assert.equal(exported.format, 'miboard-settings')
   assert.equal(exported.servers.length, 2)
   assert.ok(exported.servers.every(server => !Object.hasOwn(server, 'secret')))
@@ -138,6 +145,7 @@ try {
   await checkbox.check()
   const withSecrets = await download(page)
   assert.equal(withSecrets.servers.find(server => server.url === 'https://saved.invalid').secret, 'private-export-fixture')
+  assert.equal(await page.getByText('Settings export is ready', { exact: true }).count(), 1, 'Repeated export replaces its notification')
   await checkbox.uncheck()
   console.log('PASS: default export omits secrets, explicit opt-in includes them, no arbitrary storage exported')
 
@@ -163,6 +171,8 @@ try {
   await page.screenshot({ path: path.join(out, 'transfer-en-light-1440-preview.png'), fullPage: true })
   await preview.getByRole('button', { name: 'Apply import', exact: true }).click()
   await page.getByTestId('transfer-saved').waitFor()
+  await page.getByText('Import saved', { exact: true }).waitFor()
+  assert.equal(await section.getByText('Import saved', { exact: true }).count(), 0, 'Persistent reload guidance must not duplicate the success notification')
   assert.equal(page.url(), urlBefore, 'Apply must not navigate or reload')
   const after = await storage(page)
   const profiles = JSON.parse(after['miboard.backends'])
@@ -183,6 +193,28 @@ try {
   assert.equal(apiRequests.filter(request => request.path === '/version').length, versionsBefore)
   assert.ok(apiRequests.every(request => request.method === 'GET'), 'Import must not reconfigure the controller')
   console.log('PASS: read-only preview, explicit merge, credentials/other entries preserved, live connection unchanged, explicit reload offered')
+
+  await file(page, documentFile({ preferences: { theme: 'light' } }), 'quota-fixture.json')
+  await preview.waitFor()
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem
+    let blocked = false
+    Storage.prototype.setItem = function (key, value) {
+      if (!blocked && key === 'miboard.theme' && value === 'light') {
+        blocked = true
+        throw new DOMException('Fixture quota', 'QuotaExceededError')
+      }
+      return original.call(this, key, value)
+    }
+    window.restoreTransferStorageFixture = () => { Storage.prototype.setItem = original }
+  })
+  await preview.getByRole('button', { name: 'Apply import', exact: true }).click()
+  const storageError = 'Could not save the import. Previous settings were restored'
+  await page.getByText(storageError, { exact: true }).waitFor()
+  assert.equal(await section.getByText(storageError, { exact: true }).count(), 0, 'Operational errors belong in the global notification')
+  assert.deepEqual(await storage(page), after, 'Failed import rolls back and preserves the live session')
+  await page.evaluate(() => { window.restoreTransferStorageFixture(); delete window.restoreTransferStorageFixture })
+  console.log('PASS: import storage error is a global notification, no inline duplicate or partial save')
 
   await file(page, documentFile({ servers: [{ url: 'https://valid.invalid' }, { url: 'https://bad.invalid', secret: 12 }] }), 'invalid.json')
   await preview.getByRole('alert').waitFor()

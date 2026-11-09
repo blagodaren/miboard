@@ -7,6 +7,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { APP_UPDATE_URL, stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const base = process.env.MIBOARD_DEVICES_URL ?? 'http://127.0.0.1:5173/'
@@ -80,6 +81,7 @@ async function newPage({ locale = 'ru', theme = 'light', width = 1440, initial =
     viewport: { width, height: width < 768 ? 844 : 1040 },
     colorScheme: theme, reducedMotion: 'reduce',
   })
+  await stubAppUpdates(context)
   await context.addInitScript(({ locale, theme }) => {
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
@@ -89,7 +91,7 @@ async function newPage({ locale = 'ru', theme = 'light', width = 1440, initial =
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('request', (request) => {
     const url = new URL(request.url())
-    if (/^https?:$/.test(url.protocol) && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) externalRequests.push(request.url())
+    if (url.href !== APP_UPDATE_URL && /^https?:$/.test(url.protocol) && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) externalRequests.push(request.url())
   })
   let socket
   let offline = false
@@ -169,6 +171,9 @@ try {
     await page.getByTestId('device-alias-input').fill('Рабочий ноутбук')
     await page.getByTestId('device-alias-save').click()
     await eventually(async () => /Рабочий ноутбук/.test(await rowById(page, '192.168.1.10').textContent()), 'saved device name')
+    const savedToast = page.locator('[data-toast-id="device-alias-save"]')
+    await savedToast.getByText('Название сохранено в этом браузере', { exact: true }).waitFor()
+    assert.equal(await details(page).getByText('Название сохранено в этом браузере', { exact: true }).count(), 0, 'The save result is not duplicated inline')
     await page.reload()
     await eventually(async () => await rows(page).count() === 4, 'devices after reload')
     assert.match(await rowById(page, '192.168.1.10').textContent(), /Рабочий ноутбук/)
@@ -208,6 +213,27 @@ try {
     await noOverflow(page, 'interactive devices page')
     await context.close()
     console.log('PASS: route, 4 summaries, shared flow nodes, device details, search, names, pause/resume and active-only devices')
+  }
+
+  {
+    const data = await newPage()
+    const { page, context } = data
+    await open(data)
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function(key, value) {
+        if (key.startsWith('miboard.device-names.')) throw new DOMException('Fixture quota', 'QuotaExceededError')
+        return original.call(this, key, value)
+      }
+    })
+    await rowById(page, '192.168.1.10').click()
+    await page.getByTestId('device-alias-input').fill('Не сохранено')
+    await page.getByTestId('device-alias-save').click()
+    await page.locator('[data-toast-id="device-alias-save"]').getByText('Не удалось сохранить название в этом браузере', { exact: true }).waitFor()
+    assert.equal(await details(page).getByText('Не удалось сохранить название в этом браузере', { exact: true }).count(), 0)
+    assert.doesNotMatch(await rowById(page, '192.168.1.10').textContent(), /Не сохранено/, 'A failed save cannot update the device label')
+    await context.close()
+    console.log('PASS: device alias save outcomes appear once in the global toast; failed storage preserves the prior name')
   }
 
   {

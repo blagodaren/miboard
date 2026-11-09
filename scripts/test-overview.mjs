@@ -6,6 +6,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { APP_UPDATE_URL, stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const base = process.env.MIBOARD_OVERVIEW_URL ?? 'http://127.0.0.1:5173/'
@@ -54,6 +55,7 @@ let origin
 let port
 async function newPage(locale = 'ru', theme = 'light', width = 1440, initial = baseline) {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1040 }, colorScheme: theme, reducedMotion: 'reduce' })
+  await stubAppUpdates(context)
   await context.addInitScript(({ locale, theme }) => {
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
@@ -63,7 +65,7 @@ async function newPage(locale = 'ru', theme = 'light', width = 1440, initial = b
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => {
     const url = new URL(request.url())
-    if (/^https?:/.test(url.protocol) && !['127.0.0.1', 'localhost'].includes(url.hostname)) externalRequests.push(request.url())
+    if (url.href !== APP_UPDATE_URL && /^https?:/.test(url.protocol) && !['127.0.0.1', 'localhost'].includes(url.hostname)) externalRequests.push(request.url())
   })
   let socket
   await page.routeWebSocket(/\/connections(?:\?|$)/, ws => { socket = ws; ws.send(snap(initial)) })

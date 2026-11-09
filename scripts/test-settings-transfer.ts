@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'settings-transfer']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'settings-transfer']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -34,6 +34,7 @@ function session(seed: Record<string, unknown> = {}) {
     WebSocket: class { constructor() { sockets++; throw new Error('Unexpected socket') } },
   })
   function load(id: string): any {
+    id = id.replace(/\.ts$/, '')
     if (id === './i18n.svelte') return { t: (key: string) => key }
     if (modules.has(id)) return modules.get(id)
     assert.ok(code.has(id), `Unexpected module ${id}`)
@@ -64,7 +65,7 @@ test('export uses a semantic allowlist, omits secrets by default, and does not m
     [aliasesKey]: { '192.168.1.10': 'Work laptop' },
     [sortKey('Main')]: { key: 'name', direction: 'desc' },
     'miboard.groups': { Main: false },
-    'miboard.theme': 'dark', 'miboard.locale': 'ru',
+    'miboard.theme': 'dark', 'miboard.locale': 'ru', 'miboard.proxy-card-size': 'compact',
     'miboard.diagnostics': { secret: 'unrelated-private-data' }, 'unrelated': 'never-export-me',
   })
   const before = s.snapshot()
@@ -75,6 +76,7 @@ test('export uses a semantic allowlist, omits secrets by default, and does not m
   assert.equal(document.deviceAliases[0].names['192.168.1.10'], 'Work laptop')
   assert.equal(document.proxySort[0].direction, 'desc')
   assert.equal(document.preferences.theme, 'dark')
+  assert.equal(document.preferences.proxyCardSize, 'compact')
   assert.ok(!output.includes(profile.secret) && !output.includes('unrelated-private-data') && !output.includes('never-export-me'))
   assert.deepEqual(s.snapshot(), before)
   assert.deepEqual(s.activity(), { writes: 0, network: 0, sockets: 0 })
@@ -104,6 +106,61 @@ test('export preserves legacy latency preferences through the same readonly migr
   assert.equal(s.transfer.previewSettingsImport(JSON.stringify(exported)).invalid, 0)
   assert.deepEqual(s.snapshot(), before, 'Export reads migrated preferences without persisting migration')
   assert.deepEqual(s.activity(), { writes: 0, network: 0, sockets: 0 })
+})
+
+test('card-size preference round-trips and older settings files leave the current layout unchanged', () => {
+  const source = session({ 'miboard.proxy-card-size': 'compact' })
+  const target = session({ 'miboard.proxy-card-size': 'large' })
+  const preview = target.transfer.previewSettingsImport(source.transfer.exportSettings())
+  assert.equal(preview.invalid, 0)
+  assert.equal(target.store.get('miboard.proxy-card-size'), 'large', 'Preview does not apply layout changes')
+  target.transfer.applySettingsImport(preview)
+  assert.equal(target.store.get('miboard.proxy-card-size'), 'compact')
+  assert.equal(target.store.has('miboard.proxyCardSize'), false, 'The transfer uses the same storage key as the live preference')
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base({ preferences: { theme: 'dark' } }))))
+  assert.equal(target.store.get('miboard.proxy-card-size'), 'compact', 'An omitted preference never resets an existing layout')
+  assert.equal(target.activity().network + target.activity().sockets, 0)
+})
+
+test('layout, live capture and per-server bulk selections round-trip without changing absent preferences', () => {
+  const key = 'miboard.proxy-test-selection.v1.' + encodeURIComponent(profile.url)
+  const source = session({
+    'miboard.proxy-group-height': 'full', 'miboard.live-update-mode': 'eco',
+    [key]: { mode: 'selected', groups: ['Main', 'Hidden'] },
+  })
+  const target = session({ 'miboard.proxy-group-height': 'large', 'miboard.live-update-mode': 'realtime' })
+  const output = source.transfer.exportSettings()
+  assert.deepEqual(JSON.parse(output).proxyTestSelections, [{ backendUrl: profile.url, mode: 'selected', groups: ['Main', 'Hidden'] }])
+  const preview = target.transfer.previewSettingsImport(output)
+  assert.equal(preview.invalid, 0)
+  assert.equal(target.store.get('miboard.live-update-mode'), 'realtime')
+  target.transfer.applySettingsImport(preview)
+  assert.equal(target.store.get('miboard.proxy-group-height'), 'full')
+  assert.equal(target.store.get('miboard.live-update-mode'), 'eco')
+  assert.deepEqual(JSON.parse(target.store.get(key)!), { mode: 'selected', groups: ['Main', 'Hidden'] })
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base())))
+  assert.equal(target.store.get('miboard.proxy-group-height'), 'full')
+  assert.equal(target.store.get('miboard.live-update-mode'), 'eco')
+  assert.equal(JSON.parse(target.store.get(key)!).mode, 'selected')
+  assert.equal(target.activity().network + target.activity().sockets, 0)
+})
+
+test('new preferences validate atomically and roll back per-server selections on storage failure', () => {
+  const key = 'miboard.proxy-test-selection.v1.' + encodeURIComponent(profile.url)
+  const s = session({ [key]: { mode: 'all', groups: [] }, 'miboard.proxy-group-height': 'large', 'miboard.live-update-mode': 'realtime' })
+  for (const extra of [
+    { preferences: { proxyGroupHeight: 'tiny' } }, { preferences: { liveUpdateMode: 'off' } },
+    { proxyTestSelections: [{ backendUrl: profile.url, mode: 'selected', groups: [42] }] },
+    { proxyTestSelections: [{ backendUrl: profile.url, mode: 'all', groups: [], secret: 'unexpected' }] },
+  ]) assert.ok(s.transfer.previewSettingsImport(JSON.stringify(base(extra))).invalid > 0)
+  const before = s.snapshot()
+  const preview = s.transfer.previewSettingsImport(JSON.stringify(base({
+    proxyTestSelections: [{ backendUrl: profile.url, mode: 'selected', groups: ['Main'] }],
+    preferences: { proxyGroupHeight: 'compact', liveUpdateMode: 'eco' },
+  })))
+  s.failNext('miboard.live-update-mode')
+  assert.throws(() => s.transfer.applySettingsImport(preview), (error: any) => error.code === 'storage')
+  assert.deepEqual(s.snapshot(), before)
 })
 
 test('merge preserves legacy credentials, untouched entries and the live backend while importing explicit names', () => {
@@ -167,6 +224,8 @@ test('one malformed entry invalidates the entire file and cannot partially apply
     { proxySort: [{ backendUrl: profile.url, group: 'Main', key: 'name', direction: ['asc'] }] },
     { proxySort: [{ backendUrl: profile.url, group: 'Main', key: { toString: 'name' }, direction: 'asc' }] },
     { preferences: { locale: 'unknown' } },
+    { preferences: { proxyCardSize: 'small' } },
+    { preferences: { proxyCardSize: ['compact'] } },
     { preferences: { latency: { mode: 'core', url: 'https://valid.test', timeout: 5000, yellow: 800, red: 400, ipv6: false, independent: false } } },
   ]) {
     const preview = s.transfer.previewSettingsImport(JSON.stringify(base(extra)))
@@ -228,7 +287,7 @@ test('import validates URL schemes and canonical device addresses without rewrit
 test('quota failure after profile migration and preference writes restores every affected key exactly', () => {
   const s = session({
     'miboard.backend': profile, 'miboard.secrets': { [profile.url]: profile.secret },
-    [aliasesKey]: { '192.168.1.10': 'Keep laptop' }, 'miboard.locale': 'en', 'miboard.theme': 'dark', 'unrelated': 'untouched',
+    [aliasesKey]: { '192.168.1.10': 'Keep laptop' }, 'miboard.locale': 'en', 'miboard.theme': 'dark', 'miboard.proxy-card-size': 'large', 'unrelated': 'untouched',
   })
   s.api.useBackend(profile)
   const before = s.snapshot()
@@ -236,7 +295,7 @@ test('quota failure after profile migration and preference writes restores every
     servers: [{ url: profile.url, name: 'Change me' }, { url: 'https://new.test', secret: 'new-secret' }],
     deviceAliases: [{ backendUrl: profile.url, names: { '192.168.1.20': 'New phone' } }],
     proxySort: [{ backendUrl: profile.url, group: 'Main', key: 'name', direction: 'asc' }],
-    preferences: { groups: { Main: false }, locale: 'ru', theme: 'light' },
+    preferences: { groups: { Main: false }, locale: 'ru', theme: 'light', proxyCardSize: 'compact' },
   })))
   s.failNext('miboard.locale')
   assert.throws(() => s.transfer.applySettingsImport(preview), { code: 'storage' })

@@ -156,7 +156,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
   const limit = Math.max(1, Math.floor(concurrency) || 5)
   let active = 0
   const queue: Array<() => void> = []
-  type ProbeResult = { name: string; supported: boolean }
+  type ProbeResult = { name: string; supported: boolean; target: DelayTarget }
   type NodeTest = { promise: Promise<{ delay: number }>; probe: Promise<ProbeResult | undefined> }
   const pending = new Map<string, NodeTest>()
   let batchCache: Map<string, NodeTest> | null = null
@@ -202,7 +202,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
               // An optional probe cannot prevent the normal latency measurement.
             }
             assertActive()
-            publishProbe({ name: ipv6Target.name, supported })
+            publishProbe({ name: ipv6Target.name, supported, target: endpoint(ipv6Target) })
             // Deliver the probe to subscribers before starting the main request.
             await probe
           } else {
@@ -231,7 +231,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
   async function testNode(
     target: DelayTarget,
     settings: DelaySettings,
-    onIPv6?: (name: string, supported: boolean) => void,
+    onIPv6?: (name: string, supported: boolean, target: DelayTarget) => void,
     ipv6Target?: DelayTarget,
   ): Promise<{ delay: number }> {
     assertActive()
@@ -239,7 +239,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
     const [result] = await Promise.all([
       operation.promise,
       operation.probe.then((probe) => {
-        if (!disposed && probe) onIPv6?.(probe.name, probe.supported)
+        if (!disposed && probe) onIPv6?.(probe.name, probe.supported, probe.target)
       }),
     ])
     assertActive()
@@ -250,8 +250,8 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
     group: string,
     targets: DelayTarget[],
     settings: DelaySettings,
-    onResult: (name: string, delay: number) => void,
-    onIPv6?: (name: string, supported: boolean) => void,
+    onResult: (name: string, delay: number, target: DelayTarget) => void,
+    onIPv6?: (name: string, supported: boolean, target: DelayTarget) => void,
   ): Promise<void> {
     assertActive()
     const unique = [...new Map(targets.map((target) => [settings.mode === 'core' ? target.name : nodeKey(target, settings), target])).values()]
@@ -265,12 +265,12 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
           // Group IPv6 failure remains separate from the main group test.
         }
         if (disposed) return
-        for (const target of unique) onIPv6?.(target.name, normalizedDelay(results[target.name]) > 0)
+        for (const target of unique) onIPv6?.(target.name, normalizedDelay(results[target.name]) > 0, target)
       }
       if (disposed) return
       const results = await client.groupDelay(group, settings.url, settings.timeout, controller.signal)
       if (disposed) return
-      for (const target of unique) onResult(target.name, normalizedDelay(results[target.name]))
+      for (const target of unique) onResult(target.name, normalizedDelay(results[target.name]), target)
       return
     }
 
@@ -285,7 +285,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
         failed++
         lastError = error
       }
-      if (!disposed) onResult(target.name, delay)
+      if (!disposed) onResult(target.name, delay, target)
     }))
     if (failed === unique.length) throw lastError
   }
@@ -311,7 +311,7 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
     },
     testNode,
     testGroup,
-    testNodes(targets: DelayTarget[], settings: DelaySettings, onResult: (name: string, delay: number) => void, onIPv6?: (name: string, supported: boolean) => void): Promise<void> {
+    testNodes(targets: DelayTarget[], settings: DelaySettings, onResult: (name: string, delay: number, target: DelayTarget) => void, onIPv6?: (name: string, supported: boolean, target: DelayTarget) => void): Promise<void> {
       return testGroup('', targets, { ...settings, mode: 'panel', timeout: Math.min(2000, settings.timeout) }, onResult, onIPv6)
     },
     /** Compatibility for standalone probes; application tests use the complete node pipeline. */

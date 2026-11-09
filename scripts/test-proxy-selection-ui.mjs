@@ -6,6 +6,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = path.join(root, '.proxy-selection-check')
@@ -160,6 +161,7 @@ async function noticePaint(page) {
 
 async function session(server, { locale = 'en', theme = 'light', width = 1440, proxies = fixture(), failed = [], gate, seedSort = true, clock = false, hasTouch = false } = {}) {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1050 }, colorScheme: theme, reducedMotion: 'reduce', hasTouch })
+  await stubAppUpdates(context)
   await context.addInitScript(({ locale, theme, origin, seedSort }) => {
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
@@ -297,8 +299,12 @@ try {
     await applyButton(page).click()
     await notice(page).waitFor()
     const idlePaint = await noticePaint(page)
-    assert.equal(idlePaint.alpha, 1, 'Notification uses an opaque surface so underlying cards do not reduce readability')
+    assert(idlePaint.alpha > 0 && idlePaint.alpha < 1, 'Notification uses a translucent surface')
     assert.equal(idlePaint.opacity, 1, 'Text and controls remain fully opaque')
+    const bounds = await notice(page).boundingBox()
+    const viewport = page.viewportSize()
+    assert(viewport.width - bounds.x - bounds.width >= 0 && viewport.width - bounds.x - bounds.width <= 32, 'Notification aligns with the right edge')
+    assert(viewport.height - bounds.y - bounds.height >= 0 && viewport.height - bounds.y - bounds.height <= 32, 'Desktop notification aligns with the bottom edge')
     await page.clock.fastForward(7900)
     assert.equal(await notice(page).count(), 1, 'Notification stays visible for nearly eight seconds')
     await page.clock.fastForward(200)
@@ -308,7 +314,7 @@ try {
     await notice(page).waitFor()
     await page.clock.fastForward(3000)
     await notice(page).hover()
-    assert.equal((await noticePaint(page)).alpha, 1, 'Hovered notification keeps its opaque surface')
+    assert((await noticePaint(page)).alpha < 1, 'Hover preserves the translucent surface')
     await page.clock.fastForward(12000)
     assert.equal(await notice(page).count(), 1, 'Hover pauses the lifetime')
     await page.mouse.move(0, 0)
@@ -321,7 +327,7 @@ try {
     await notice(page).waitFor()
     await page.clock.fastForward(2000)
     await notice(page).getByRole('button').focus()
-    assert.equal((await noticePaint(page)).alpha, 1, 'Keyboard focus keeps the surface opaque')
+    assert((await noticePaint(page)).alpha < 1, 'Keyboard focus preserves the translucent surface')
     await page.clock.fastForward(12000)
     assert.equal(await notice(page).count(), 1, 'Keyboard focus pauses the lifetime')
     await applyButton(page).focus()
@@ -348,7 +354,7 @@ try {
     await notice(page).waitFor({ state: 'hidden' })
     await page.clock.fastForward(12000)
     await state.context.close()
-    console.log('PASS: opaque notification expires after eight seconds; hover/focus pause, replacement lifetime and manual close work')
+    console.log('PASS: bottom-right translucent notification expires after eight seconds; hover/focus pause, replacement lifetime and manual close work')
   }
 
   for (const theme of ['light', 'dark']) {
@@ -358,10 +364,14 @@ try {
     await assertSelectionStyle(state.page, videoGroup, 'ru')
     assert.match(await notice(state.page).innerText(), /Нода|нода/)
     assert.ok((await notice(state.page).innerText()).includes('Missing'))
-    assert.equal((await noticePaint(state.page)).alpha, 1, 'Touch notification remains opaque without hover')
+    const paint = await noticePaint(state.page)
+    assert(paint.alpha > 0 && paint.alpha < 1, 'Touch notification uses the shared translucent surface')
+    assert.equal(paint.opacity, 1, 'Touch text and controls remain fully opaque')
     assert.ok(await state.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${theme}: 375px has no horizontal overflow`)
     const bounds = await notice(state.page).boundingBox()
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 376, `${theme}: corner notice fits the mobile viewport`)
+    const bottomGap = state.page.viewportSize().height - bounds.y - bounds.height
+    assert(bottomGap >= 0 && bottomGap <= 120, `${theme}: mobile notice stays at the bottom above navigation`)
     await state.page.screenshot({ path: path.join(out, `selection-partial-ru-${theme}-375.png`), fullPage: false })
     await state.context.close()
   }

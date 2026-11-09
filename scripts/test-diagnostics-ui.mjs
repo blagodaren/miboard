@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { APP_UPDATE_URL, stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = await mkdtemp(path.join(os.tmpdir(), 'miboard-diagnostics-'))
@@ -60,11 +61,12 @@ try {
   }, 'mock startup')
   browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' })
+  await stubAppUpdates(context)
   await context.addInitScript(() => { if (!localStorage.getItem('miboard.locale')) localStorage.setItem('miboard.locale', 'en') })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (!request.url().startsWith(origin) && !request.url().startsWith('data:')) external.push(request.url()) })
+  page.on('request', request => { if (request.url() !== APP_UPDATE_URL && !request.url().startsWith(origin) && !request.url().startsWith('data:')) external.push(request.url()) })
   let socket
   await page.routeWebSocket(/\/connections(?:\?|$)/, ws => { socket = ws; ws.send(snapshot([example, unrelated])) })
   const pending = []

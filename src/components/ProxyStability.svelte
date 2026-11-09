@@ -2,6 +2,8 @@
   import { onDestroy } from 'svelte'
   import { api, type Backend } from '../lib/api'
   import { t, i18n } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
+  import { core } from '../lib/core.svelte'
   import type { DelaySettings, DelayTarget } from '../lib/latency'
   import { runStabilitySeries, summarizeStability, STABILITY_ATTEMPTS, type StabilitySample } from '../lib/stability'
   import { IconChevron } from '../lib/icons'
@@ -25,6 +27,12 @@
   let controller: AbortController | null = null
   let active = true
   const targetKey = (target: DelayTarget) => JSON.stringify([target.provider ?? null, target.name])
+  const repeatedNames = $derived.by(() => {
+    const seen = new Set<string>(), repeated = new Set<string>()
+    for (const target of targets) { if (seen.has(target.name)) repeated.add(target.name); seen.add(target.name) }
+    return repeated
+  })
+  const targetLabel = (target: DelayTarget) => `${target.name}${repeatedNames.has(target.name) && target.provider ? ` · ${target.provider}` : ''}`
   const statistics = $derived(summarizeStability(result?.samples ?? []))
   const number = (value: number) => new Intl.NumberFormat(i18n.intlLocale, { maximumFractionDigits: 1 }).format(value)
   const displayDelay = (value: number | null) => value === null ? '—' : t('proxies.delay', { delay: number(value) })
@@ -39,10 +47,12 @@
     const target = targets.find((item) => targetKey(item) === selected)
     if (!active || disabled || running || !target) return
     const session = { ...backend }
+    const noticeId = `proxy-stability:${session.url}`
+    notifications.dismiss(noticeId)
     const preferences = { url: settings.url, timeout: settings.timeout }
     const current = new AbortController()
     controller = current
-    result = { name: target.name, ...preferences, startedAt: Date.now(), samples: [], cancelled: false }
+    result = { name: targetLabel(target), ...preferences, startedAt: Date.now(), samples: [], cancelled: false }
     running = true
     onrunning(true)
     try {
@@ -53,7 +63,17 @@
         current.signal,
         (samples) => { if (active && controller === current && result) result = { ...result, samples } },
       )
-      if (active && controller === current && result) result = { ...result, ...completed }
+      if (active && controller === current && result) {
+        result = { ...result, ...completed }
+        if (core.backend.url === session.url && core.backend.secret === session.secret) {
+          const summary = summarizeStability(completed.samples)
+          notifications.show({
+            id: noticeId, tone: completed.cancelled ? 'info' : summary.failed ? 'warning' : 'success',
+            title: targetLabel(target), scope: session.url, testId: 'proxy-stability-notice',
+            message: () => `${t(completed.cancelled ? 'stability.cancelled' : 'stability.complete', { done: summary.completed })} · ${t('stability.failed')}: ${summary.failed}/${summary.completed}`,
+          })
+        }
+      }
     } finally {
       if (controller === current) controller = null
       if (active) {
@@ -84,7 +104,7 @@
         <label for={selectId} class="mb-1 block text-xs text-fg-2">{t('stability.node')}</label>
         <select id={selectId} bind:value={selected} disabled={running || !targets.length} class="h-11 w-full min-w-0 rounded-[var(--radius-control)] border border-field-border bg-field px-3 text-[13px] text-fg sm:h-9">
           {#if !targets.length}<option value="">{t('stability.empty')}</option>{/if}
-          {#each targets as target (targetKey(target))}<option value={targetKey(target)}>{target.name}</option>{/each}
+          {#each targets as target (targetKey(target))}<option value={targetKey(target)}>{targetLabel(target)}</option>{/each}
         </select>
       </div>
       {#if running}

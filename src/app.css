@@ -93,6 +93,7 @@
   --on-btn: light-dark(#ffffff, #141415);
   --scrim: light-dark(rgb(15 23 36 / 0.42), rgb(0 0 0 / 0.72));
   --shadow-panel: 0 1px 2px light-dark(rgb(28 36 48 / 0.06), transparent);
+  --notification-surface: color-mix(in srgb, var(--card) 94%, transparent);
   --shadow-float: 0 8px 24px light-dark(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.5)), 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2));
   --highlight: inset 0 1px 0 light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.06));
   --radius-panel: 16px;

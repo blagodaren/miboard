@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const routes = {
@@ -147,6 +148,7 @@ try {
   browser = await launchBrowser()
 
   const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1440, height: 900 } })
+  await stubAppUpdates(context)
   const page = await context.newPage()
   watch(page)
   await page.goto(base)
@@ -165,10 +167,10 @@ try {
 
   await page.locator('input[type="password"]').fill('incorrect-secret')
   await page.locator('form button[type="submit"]').click()
-  await page.getByRole('alert').filter({ hasText: /^Неверный secret$/ }).waitFor()
+  await page.locator('[data-toast-id="backend-connect"]').getByText('Неверный secret', { exact: true }).waitFor()
   const marker = await page.evaluate(() => { window.__i18nTestMarker = crypto.randomUUID(); return window.__i18nTestMarker })
   await language(page, 'en')
-  await page.getByRole('alert').filter({ hasText: /^Invalid secret$/ }).waitFor()
+  await page.locator('[data-toast-id="backend-connect"]').getByText('Invalid secret', { exact: true }).waitFor()
   assert.equal(await page.locator('input[type="password"]').inputValue(), 'incorrect-secret')
   assert.equal(await page.evaluate(() => window.__i18nTestMarker), marker, 'Language change reloaded the page')
   await page.locator('input[type="password"]').fill('test')
@@ -232,6 +234,7 @@ try {
 
   for (const blockedStorage of [false, true]) {
     const fallback = await browser.newContext({ locale: 'ru-RU' })
+    await stubAppUpdates(fallback)
     await fallback.addInitScript((blocked) => {
       if (blocked) {
         for (const method of ['getItem', 'setItem', 'removeItem']) {

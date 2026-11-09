@@ -7,6 +7,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshotDir = await mkdtemp(path.join(os.tmpdir(), 'miboard-latency-'))
@@ -50,6 +52,7 @@ async function launchBrowser() {
 
 async function session({ locale = 'en', settings, unified = true } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, colorScheme: 'light' })
+  await stubAppUpdates(context)
   await context.addInitScript(({ locale, settings, storageKey }) => {
     if (!localStorage.getItem('miboard.locale')) localStorage.setItem('miboard.locale', locale)
     if (settings && !localStorage.getItem(storageKey)) localStorage.setItem(storageKey, JSON.stringify(settings))
@@ -76,6 +79,7 @@ const focused = (page) => page.evaluate(() => document.activeElement?.id)
 async function openSettings(page, locale = 'en') {
   await page.goto(`${base}#/settings?secret=test`)
   await page.getByRole('heading', { name: locale === 'ru' ? 'Настройки' : 'Settings', exact: true }).waitFor()
+  await chooseSettingsCategory(page, 'proxies')
   await section(page).getByRole('heading', { name: locale === 'ru' ? 'Задержка' : 'Latency', exact: true }).waitFor()
 }
 
@@ -207,10 +211,10 @@ try {
   assert.equal(await independentSwitch.getAttribute('aria-checked'), 'false')
   await ipv6Switch.click()
   assert.equal((await saved(page)).ipv6, true)
-  await delay.getByText('IPv6 test setting saved', { exact: true }).waitFor()
+  await page.getByText('IPv6 test setting saved', { exact: true }).waitFor()
   await independentSwitch.click()
   assert.equal((await saved(page)).independent, true)
-  await delay.getByText('Independent latency test setting saved', { exact: true }).waitFor()
+  await page.getByText('Independent latency test setting saved', { exact: true }).waitFor()
   await page.reload()
   assert.equal(await ipv6Switch.getAttribute('aria-checked'), 'true')
   assert.equal(await independentSwitch.getAttribute('aria-checked'), 'true')
@@ -239,7 +243,8 @@ try {
   assert.deepEqual(await saved(page), before)
   await page.locator('#latency-red').fill('900')
   await delay.getByRole('button', { name: 'Save', exact: true }).click()
-  await delay.getByText('Settings saved in this browser', { exact: true }).waitFor()
+  await page.getByText('Settings saved in this browser', { exact: true }).waitFor()
+  assert.equal(await delay.getByText('Settings saved in this browser', { exact: true }).count(), 0, 'Saved feedback appears only in the shared notification')
   const preferences = { mode: 'panel', url: customUrl, timeout: 1234, yellow: 500, red: 900, ipv6: true, independent: true }
   assert.deepEqual(await saved(page), preferences)
   await page.reload()
@@ -247,7 +252,9 @@ try {
   assert.equal(await page.locator('#latency-timeout').inputValue(), '1234')
   assert.equal(await page.locator('#latency-yellow').inputValue(), '500')
   assert.equal(await page.locator('#latency-red').inputValue(), '900')
+  await chooseSettingsCategory(page, 'appearance')
   await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru')
+  await chooseSettingsCategory(page, 'proxies')
   for (const label of ['URL проверки', 'Таймаут проверки', 'Жёлтый порог', 'Красный порог']) await delay.getByLabel(label, { exact: true }).waitFor()
   await delay.getByRole('radio', { name: 'Панель', exact: true }).waitFor()
   await delay.getByRole('radio', { name: 'Ядро', exact: true }).waitFor()
@@ -360,6 +367,8 @@ try {
       released = true
       releaseWave()
       await poll(async () => calls.length >= leaves.length * (ipv6 ? 2 : 1) && await trigger.isEnabled(), `${mode}: all-node campaign settles`)
+      await state.page.getByTestId('proxy-latency-summary').waitFor()
+      assert.equal(await state.page.getByTestId('proxy-latency-summary').getAttribute('data-tone'), 'success')
       assert.equal(peak, 5)
       assert.equal(calls.length, leaves.length * (ipv6 ? 2 : 1))
       const mainCalls = calls.filter((call) => !call.ipv6)
@@ -543,7 +552,7 @@ try {
     await state.page.locator('#latency-yellow').fill('100')
     await state.page.locator('#latency-red').fill('300')
     await section(state.page).getByRole('button', { name: 'Save', exact: true }).click()
-    await section(state.page).getByText('Settings saved in this browser', { exact: true }).waitFor()
+    await state.page.getByText('Settings saved in this browser', { exact: true }).waitFor()
     await state.page.goto(`${base}#/proxies?secret=test`)
     await expectDistribution(state.page, { fast: 1, ok: 1, slow: 2, none: 2, total: 6 })
     await nodeCard(state.page, 'provider-dead').locator('.num').click()
@@ -795,7 +804,8 @@ try {
 
   expectedFailures.add(coreRequests[0].href)
   await coreTest.click()
-  await core.page.getByRole('alert').filter({ hasText: 'mock timeout' }).waitFor()
+  await core.page.getByTestId('proxy-latency-notice').filter({ hasText: 'mock timeout' }).waitFor()
+  assert.equal(await core.page.locator('main').getByRole('alert').count(), 0, 'Latency errors are not duplicated inside the page')
   await poll(async () => await coreTest.isEnabled(), 'failed repeat core test refresh')
   assert.equal(coreRequests.length, 2)
   assert.equal((await nodeCard(core.page, names[1]).locator('.num').innerText()).trim(), '—')

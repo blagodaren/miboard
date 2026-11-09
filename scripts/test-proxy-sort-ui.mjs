@@ -6,6 +6,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const base = process.env.MIBOARD_PROXY_SORT_URL
@@ -71,6 +72,7 @@ try {
   browser = await launch()
   await mkdir(out, { recursive: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' })
+  await stubAppUpdates(context)
   await context.addInitScript(() => { localStorage.setItem('miboard.locale', 'en'); localStorage.setItem('miboard.theme', 'light') })
   const page = await context.newPage()
   page.setDefaultTimeout(10000)

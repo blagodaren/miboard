@@ -1,5 +1,6 @@
 // Скриншоты всех экранов с мока: node scripts/shots.mjs <outDir> [dark|light] [mobile]
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -52,6 +53,7 @@ try {
     deviceScaleFactor: mobile ? 2 : 1,
     reducedMotion: 'reduce',
   })
+  await stubAppUpdates(ctx)
   await ctx.addInitScript((theme) => {
     localStorage.setItem('miboard.theme', theme)
     localStorage.setItem('miboard.locale', 'en')

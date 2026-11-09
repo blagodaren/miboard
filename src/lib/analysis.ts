@@ -3,6 +3,7 @@ import type { Connection } from './api'
 /** Never evict IDs: an evicted connection could reappear and be counted twice. */
 export const ANALYSIS_CONNECTION_LIMIT = 20_000
 export const UNKNOWN_PROXY = '\u0000unknown-proxy'
+export const UNKNOWN_ASN = '\u0000unknown-asn'
 const METADATA_VALUE_LIMIT = 64
 const METADATA_TEXT_LIMIT = 512
 
@@ -18,6 +19,24 @@ export type AnalysisStat = {
 export type DomainStat = AnalysisStat & { ips: string[]; proxies: string[] }
 export type IPStat = AnalysisStat & { domains: string[]; proxies: string[]; countries: string[]; asn: string[] }
 export type ProxyStat = AnalysisStat & { domains: string[]; ips: string[] }
+export type ApplicationStat = AnalysisStat & {
+  process: string; processPath: string; sourceIP: string; uid?: number
+  domains: string[]; ips: string[]; proxies: string[]
+}
+export type ASNStat = AnalysisStat & { domains: string[]; ips: string[]; proxies: string[] }
+export type TrafficDimension = 'inbounds' | 'protocols' | 'users'
+export type TrafficDimensionStat = AnalysisStat & {
+  dimension: TrafficDimension
+  label: string
+  inboundName: string
+  inboundType: string
+  domains: string[]
+  ips: string[]
+  proxies: string[]
+  sources: string[]
+}
+export type AnalysisView = 'domains' | 'ips' | 'proxies' | 'applications' | 'networks' | 'inbounds'
+export type AnalysisRow = DomainStat | IPStat | ProxyStat | ApplicationStat | ASNStat | TrafficDimensionStat
 
 export type AnalysisSnapshot = {
   startedAt: number
@@ -25,6 +44,11 @@ export type AnalysisSnapshot = {
   domains: DomainStat[]
   ips: IPStat[]
   proxies: ProxyStat[]
+  applications: ApplicationStat[]
+  networks: ASNStat[]
+  inbounds: TrafficDimensionStat[]
+  protocols: TrafficDimensionStat[]
+  users: TrafficDimensionStat[]
   totals: { download: number; upload: number; connections: number; active: number }
   truncated: boolean
 }
@@ -35,6 +59,14 @@ type TrackedConnection = {
   ip: string
   ipPriority: number
   proxy: string
+  process: string
+  processPath: string
+  sourceIP: string
+  inboundName: string
+  inboundType: string
+  inboundUser: string
+  network: string
+  uid?: number
   baseline: boolean
   countries: Set<string>
   asn: Set<string>
@@ -52,6 +84,7 @@ type Bucket = AnalysisStat & {
   proxies: Set<string>
   countries: Set<string>
   asn: Set<string>
+  sources: Set<string>
 }
 
 function ipAddress(value: unknown): string {
@@ -129,7 +162,7 @@ function bucket(map: Map<string, Bucket>, name: string): Bucket {
   if (!row) {
     row = {
       name, download: 0, upload: 0, connections: 0, active: 0, lastSeen: 0,
-      domains: new Set(), ips: new Set(), proxies: new Set(), countries: new Set(), asn: new Set(),
+      domains: new Set(), ips: new Set(), proxies: new Set(), countries: new Set(), asn: new Set(), sources: new Set(),
     }
     map.set(name, row)
   }
@@ -144,6 +177,7 @@ function accumulate(row: Bucket, connection: TrackedConnection) {
   row.lastSeen = Math.max(row.lastSeen, connection.lastSeen)
   if (connection.domain) row.domains.add(connection.domain)
   if (connection.ip) row.ips.add(connection.ip)
+  if (connection.sourceIP) row.sources.add(connection.sourceIP)
   row.proxies.add(connection.proxy)
   addValues(row.countries, connection.countries)
   addValues(row.asn, connection.asn)
@@ -187,12 +221,15 @@ export class AnalysisTracker {
     const seen = new Set<string>()
 
     for (const connection of connections) {
-      if (typeof connection.id !== 'string' || !connection.id || seen.has(connection.id)) continue
-      if (connection.id.length > METADATA_TEXT_LIMIT) {
+      if (typeof connection.id !== 'string' || !connection.id) continue
+      const started = typeof connection.start === 'string' ? connection.start : ''
+      if (connection.id.length > METADATA_TEXT_LIMIT || started.length > 128) {
         this.#truncated = true
         continue
       }
-      let tracked = this.#connections.get(connection.id)
+      const identity = JSON.stringify([connection.id, started])
+      if (seen.has(identity)) continue
+      let tracked = this.#connections.get(identity)
       if (!tracked) {
         if (this.#connections.size >= ANALYSIS_CONNECTION_LIMIT) {
           this.#truncated = true
@@ -200,13 +237,14 @@ export class AnalysisTracker {
         }
         tracked = {
           domain: '', sniffedDomain: false, ip: '', ipPriority: 0, proxy: UNKNOWN_PROXY, baseline,
+          process: '', processPath: '', sourceIP: '', inboundName: '', inboundType: '', inboundUser: '', network: '',
           countries: new Set(), asn: new Set(),
           download: 0, upload: 0, active: true, lastSeen: now,
         }
-        this.#connections.set(connection.id, tracked)
+        this.#connections.set(identity, tracked)
       }
       // Keep temporary deduplication bounded too, even for an oversized frame.
-      seen.add(connection.id)
+      seen.add(identity)
 
       const download = counter(connection.download)
       const upload = counter(connection.upload)
@@ -224,6 +262,18 @@ export class AnalysisTracker {
 
       const metadata = connection.metadata && typeof connection.metadata === 'object'
         ? connection.metadata as unknown as Record<string, unknown> : {}
+      const sourceIP = ipAddress(metadata.sourceIP)
+      if (sourceIP) tracked.sourceIP = sourceIP
+      for (const [field, key] of [['inboundName', 'inboundName'], ['inboundType', 'type'], ['inboundUser', 'inboundUser'], ['network', 'network']] as const) {
+        const value = metadata[key]
+        if (typeof value === 'string' && value.trim() && value.length <= METADATA_TEXT_LIMIT)
+          tracked[field] = field === 'network' ? value.trim().toUpperCase() : value.trim()
+      }
+      for (const key of ['process', 'processPath'] as const) {
+        if (typeof metadata[key] === 'string' && metadata[key].trim() && metadata[key].length <= METADATA_TEXT_LIMIT)
+          tracked[key] = metadata[key].trim()
+      }
+      if (typeof metadata.uid === 'number' && Number.isSafeInteger(metadata.uid) && metadata.uid >= 0) tracked.uid = metadata.uid
       // mihomo's RuleHost prefers the sniffed name over the original host.
       const sniffedDomain = domainName(metadata.sniffHost)
       const hostDomain = domainName(metadata.host)
@@ -233,8 +283,9 @@ export class AnalysisTracker {
       } else if (hostDomain && !tracked.sniffedDomain) {
         tracked.domain = hostDomain
       }
+      // remoteDestination is the outbound peer (often the proxy server), not the requested destination.
       const candidates = [
-        ipAddress(metadata.destinationIP), ipAddress(metadata.remoteDestination),
+        ipAddress(metadata.destinationIP),
         ipAddress(metadata.host) || ipAddress(metadata.sniffHost),
       ]
       const index = candidates.findIndex(Boolean)
@@ -273,6 +324,13 @@ export class AnalysisTracker {
     const domains = new Map<string, Bucket>()
     const ips = new Map<string, Bucket>()
     const proxies = new Map<string, Bucket>()
+    const applications = new Map<string, Bucket>()
+    const applicationInfo = new Map<string, Pick<ApplicationStat, 'process' | 'processPath' | 'sourceIP' | 'uid'>>()
+    const networks = new Map<string, Bucket>()
+    const trafficGroups: Record<TrafficDimension, Map<string, Bucket>> = {
+      inbounds: new Map(), protocols: new Map(), users: new Map(),
+    }
+    const trafficInfo = new Map<string, Pick<TrafficDimensionStat, 'dimension' | 'label' | 'inboundName' | 'inboundType'>>()
     const totals = { download: 0, upload: 0, connections: this.#connections.size, active: 0 }
 
     for (const tracked of this.#connections.values()) {
@@ -282,7 +340,31 @@ export class AnalysisTracker {
       if (tracked.domain) accumulate(bucket(domains, tracked.domain), tracked)
       if (tracked.ip) accumulate(bucket(ips, tracked.ip), tracked)
       accumulate(bucket(proxies, tracked.proxy), tracked)
+      const application = JSON.stringify([tracked.sourceIP, tracked.processPath || tracked.process, tracked.uid ?? null])
+      accumulate(bucket(applications, application), tracked)
+      applicationInfo.set(application, { process: tracked.process, processPath: tracked.processPath, sourceIP: tracked.sourceIP, uid: tracked.uid })
+      // A connection contributes once. Malformed multi-ASN metadata must not inflate totals.
+      accumulate(bucket(networks, sorted(tracked.asn)[0] || UNKNOWN_ASN), tracked)
+      const dimensions: [TrafficDimension, string[], string][] = [
+        ['inbounds', [tracked.inboundName, tracked.inboundType], tracked.inboundName || tracked.inboundType],
+        ['protocols', [tracked.network], tracked.network],
+        // An identical login on two inbounds need not identify the same account.
+        ['users', [tracked.inboundName, tracked.inboundType, tracked.inboundUser], tracked.inboundUser],
+      ]
+      for (const [dimension, identity, label] of dimensions) {
+        const name = JSON.stringify([dimension, ...identity])
+        accumulate(bucket(trafficGroups[dimension], name), tracked)
+        trafficInfo.set(name, { dimension, label,
+          inboundName: dimension === 'protocols' ? '' : tracked.inboundName,
+          inboundType: dimension === 'protocols' ? '' : tracked.inboundType,
+        })
+      }
     }
+
+    const trafficRows = (dimension: TrafficDimension): TrafficDimensionStat[] => [...trafficGroups[dimension].values()].map((row) => ({
+      ...common(row), ...trafficInfo.get(row.name)!, domains: sorted(row.domains), ips: sorted(row.ips),
+      proxies: sorted(row.proxies), sources: sorted(row.sources),
+    })).sort(byTraffic)
 
     this.#cached = {
       startedAt: this.#startedAt,
@@ -299,6 +381,15 @@ export class AnalysisTracker {
       proxies: [...proxies.values()].map((row) => ({
         ...common(row), domains: sorted(row.domains), ips: sorted(row.ips),
       })).sort(byTraffic),
+      applications: [...applications.values()].map((row) => ({
+        ...common(row), ...applicationInfo.get(row.name)!, domains: sorted(row.domains), ips: sorted(row.ips), proxies: sorted(row.proxies),
+      })).sort(byTraffic),
+      networks: [...networks.values()].map((row) => ({
+        ...common(row), domains: sorted(row.domains), ips: sorted(row.ips), proxies: sorted(row.proxies),
+      })).sort(byTraffic),
+      inbounds: trafficRows('inbounds'),
+      protocols: trafficRows('protocols'),
+      users: trafficRows('users'),
     }
     return this.#cached
   }

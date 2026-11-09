@@ -3,14 +3,19 @@
   import { api, errorMessage, type DnsResponse } from '../lib/api'
   import { core } from '../lib/core.svelte'
   import { connectionJournal } from '../lib/connection-journal.svelte'
-  import { diagnosticHost, diagnosticRoute, domainObservations, dnsRecords, dnsRecordType } from '../lib/domain-diagnostics'
+  import { diagnosticRoute, domainObservations, dnsQueryName, dnsRecords, dnsRecordType, dnsQuestions, dnsFlags, DNS_QUERY_TYPES, type DnsQueryType, type DnsSection } from '../lib/domain-diagnostics'
   import { t, i18n } from '../lib/i18n.svelte'
   import { bytes } from '../lib/format'
   import Button from './Button.svelte'
 
   let { initialHost = '', requestId = 0, onclose }: { initialHost?: string; requestId?: number; onclose: () => void } = $props()
   const backend = { ...core.backend }
-  type DNSResult = { type: 'A' | 'AAAA'; state: 'pending' | 'done' | 'error' | 'cancelled'; answer?: DnsResponse; error?: unknown }
+  type DNSResult = { type: DnsQueryType; state: 'pending' | 'done' | 'error' | 'cancelled'; answer?: DnsResponse; error?: unknown }
+  const sections: { name: DnsSection; label: 'dns.inspector.answer' | 'dns.inspector.authority' | 'dns.inspector.additional' }[] = [
+    { name: 'Answer', label: 'dns.inspector.answer' }, { name: 'Authority', label: 'dns.inspector.authority' }, { name: 'Additional', label: 'dns.inspector.additional' },
+  ]
+  let queryType = $state<DnsQueryType | 'A+AAAA'>('A+AAAA')
+  let reverse = $state(false)
   let input = $state('')
   let host = $state('')
   let field: HTMLInputElement
@@ -33,6 +38,7 @@
     void requestId
     untrack(() => {
       input = value
+      queryType = 'A+AAAA'
       void tick().then(() => { if (alive) field?.focus() })
       if (value) void check()
     })
@@ -48,7 +54,7 @@
   }
 
   async function check() {
-    const normalized = diagnosticHost(input)
+    const normalized = dnsQueryName(input, queryType)
     invalid = !normalized
     if (!normalized || !current()) return
     controller?.abort()
@@ -56,12 +62,14 @@
     const abort = new AbortController()
     controller = abort
     host = normalized
+    reverse = queryType === 'PTR'
     input = normalized
     visibleCount = 5
     checkedAt = null
     busy = true
     cancelled = false
-    dns = (['A', 'AAAA'] as const).map(type => ({ type, state: 'pending' }))
+    const types: DnsQueryType[] = queryType === 'A+AAAA' ? ['A', 'AAAA'] : [queryType]
+    dns = types.map(type => ({ type, state: 'pending' }))
     await Promise.all(dns.map(async ({ type }) => {
       let result: DNSResult
       try {
@@ -88,13 +96,17 @@
     <Button size="sm" variant="ghost" onclick={onclose}>{t('diagnostics.close')}</Button>
   </div>
   <form class="mt-4" onsubmit={(event) => { event.preventDefault(); void check() }}>
-    <label class="mb-2 block text-[13px]" for="diagnostic-domain">{t('diagnostics.domain')}</label>
+    <label class="mb-2 block text-[13px]" for="diagnostic-domain">{t('dns.inspector.input')}</label>
     <div class="flex flex-wrap gap-2">
       <input bind:this={field} bind:value={input} id="diagnostic-domain" class="h-11 min-w-0 flex-1 basis-52 rounded-control border border-field-border bg-field px-3 font-mono text-[13px]" placeholder={t('diagnostics.placeholder')} maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" aria-invalid={invalid} aria-describedby={invalid ? 'diagnostic-domain-error' : undefined} oninput={() => invalid = false} />
+      <select class="h-11 max-w-full rounded-control border border-field-border bg-field px-3 font-mono text-[13px]" aria-label={t('dns.inspector.type')} bind:value={queryType} disabled={busy} onchange={() => invalid = false} data-testid="dns-query-type">
+        <option value="A+AAAA">{t('dns.inspector.addresses')}</option>
+        {#each DNS_QUERY_TYPES as type}<option value={type}>{type}</option>{/each}
+      </select>
       <Button variant="primary" type="submit" disabled={busy}>{t(busy ? 'diagnostics.checking' : 'diagnostics.check')}</Button>
       {#if busy}<Button type="button" onclick={cancel}>{t('diagnostics.cancel')}</Button>{/if}
     </div>
-    {#if invalid}<p id="diagnostic-domain-error" class="mt-2 text-[13px] text-bad" role="alert">{t('diagnostics.invalid')}</p>{/if}
+    {#if invalid}<p id="diagnostic-domain-error" class="mt-2 text-[13px] text-bad" role="alert">{t('dns.inspector.invalid')}</p>{/if}
   </form>
 
   {#if host}
@@ -102,7 +114,7 @@
       <h3 class="min-w-0 break-all font-mono text-[13px]">{t('diagnostics.result', { host })}</h3>
       <span class="text-xs text-fg-3" role="status">{t(busy ? 'diagnostics.checking' : cancelled ? 'diagnostics.cancelled' : 'diagnostics.ready')}</span>
     </div>
-    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+    <div class="mt-3 grid gap-3 {dns.length > 1 ? 'sm:grid-cols-2' : ''}">
       {#each dns as result (result.type)}
         <section class="min-w-0 rounded-card border border-line bg-raised p-4" aria-label={`DNS ${result.type}`}>
           <h4 class="font-mono text-[13px] font-medium">{result.type}</h4>
@@ -115,20 +127,42 @@
               <p class="mt-2 text-[13px] text-bad">{t(result.answer.Status === 3 ? 'diagnostics.nxdomain' : 'diagnostics.dnsError', { code: result.answer.Status })}</p>
             {:else if !dnsRecords(result.answer).length}
               <p class="mt-2 text-[13px] text-fg-2">{t('diagnostics.emptyDns')}</p>
-            {:else}
-              <ul class="mt-2 max-h-60 space-y-3 overflow-auto">
-                {#each dnsRecords(result.answer) as record, index (index)}
-                  <li class="text-xs"><div class="break-all font-mono">{record.data}</div><div class="mt-1 flex flex-wrap gap-x-3 text-fg-3"><span>{dnsRecordType(record.type)}</span><span>{t('diagnostics.ttl', { seconds: record.TTL })}</span></div></li>
-                {/each}
-              </ul>
-              {#if (result.answer.Answer?.length ?? 0) > 100}<p class="mt-2 text-xs text-fg-3">{t('diagnostics.recordsLimited')}</p>{/if}
+            {/if}
+            {#if dnsQuestions(result.answer).length}
+              <div class="mt-3 border-t border-line pt-3" data-testid="dns-question">
+                <h5 class="text-xs text-fg-3">{t('dns.inspector.question')}</h5>
+                {#each dnsQuestions(result.answer) as question, index (index)}<p class="mt-1 break-all font-mono text-xs">{question.Name} · {dnsRecordType(question.Qtype)} · {question.Qclass === 1 ? 'IN' : question.Qclass}</p>{/each}
+              </div>
+            {/if}
+            {#each sections as section (section.name)}
+              {@const records = dnsRecords(result.answer, section.name)}
+              {#if records.length}
+                <section class="mt-3 border-t border-line pt-3" aria-label={t(section.label)} data-testid={`dns-section-${section.name}`}>
+                  <h5 class="text-xs font-medium text-fg-2">{t(section.label)}</h5>
+                  <ul class="mt-2 max-h-60 space-y-3 overflow-auto">
+                    {#each records as record, index (index)}
+                      <li class="text-xs"><div class="break-all font-mono">{record.data}</div><div class="mt-1 break-all font-mono text-fg-3">{record.name}</div><div class="mt-1 flex flex-wrap gap-x-3 text-fg-3"><span>{dnsRecordType(record.type)}</span><span>{t('diagnostics.ttl', { seconds: record.TTL })}</span></div></li>
+                    {/each}
+                  </ul>
+                  {#if (result.answer[section.name]?.length ?? 0) > 100}<p class="mt-2 text-xs text-fg-3">{t('diagnostics.recordsLimited')}</p>{/if}
+                </section>
+              {/if}
+            {/each}
+            {#if dnsFlags(result.answer).length}
+              <dl class="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-3 font-mono text-xs" aria-label={t('dns.inspector.flags')} data-testid="dns-flags">
+                {#each dnsFlags(result.answer) as flag (flag.name)}<div class="flex gap-1"><dt class="text-fg-3">{flag.name}</dt><dd>{t(flag.value ? 'dns.inspector.flagOn' : 'dns.inspector.flagOff')}</dd></div>{/each}
+              </dl>
             {/if}
           {/if}
         </section>
       {/each}
     </div>
     <p class="mt-3 text-xs leading-5 text-fg-3">{t('diagnostics.dnsNote')}{#if checkedAt}<span class="mt-1 block">{t('diagnostics.dnsAt', { time: dateTime(checkedAt) })}</span>{/if}</p>
+    <p class="mt-1 text-xs leading-5 text-fg-3">{t('dns.inspector.note')}</p>
 
+    {#if reverse}
+      <p class="mt-5 text-[13px] leading-5 text-fg-2">{t('dns.inspector.ptrNote')}</p>
+    {:else}
     <h3 class="mt-5 text-[13px] font-medium">{t('diagnostics.observed')}</h3>
     {#if observed.length}
       <ol class="mt-3 space-y-3">
@@ -155,6 +189,7 @@
       <p class="mt-3 text-xs text-fg-3">{t('diagnostics.limit')}</p>
     {:else}
       <div class="mt-3 rounded-card border border-line p-4"><p class="text-[13px] text-fg-2">{t('diagnostics.noObservation')}</p><p class="mt-2 text-xs leading-5 text-fg-3">{t('diagnostics.noObservationHint')}</p></div>
+    {/if}
     {/if}
   {/if}
 </section>

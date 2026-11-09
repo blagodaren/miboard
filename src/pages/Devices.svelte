@@ -1,25 +1,39 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { core } from '../lib/core.svelte'
+  import { connectionJournal } from '../lib/connection-journal.svelte'
+  import { observedConnections, type ObservationRange as ObservationRangeValue, type ObservedConnection } from '../lib/observations'
+  import ObservationRange from '../components/ObservationRange.svelte'
   import { summarizeDevices, normalizeDeviceIP, UNKNOWN_DEVICE, type DeviceConnection, type DeviceStat } from '../lib/devices'
   import { bytes, count, speed } from '../lib/format'
   import { i18n, t } from '../lib/i18n.svelte'
-  import { IconDevices, IconPause, IconPlay, IconConnections } from '../lib/icons'
+  import { IconDevices, IconPause, IconPlay, IconConnections, IconChevron } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
   import SearchInput from '../components/SearchInput.svelte'
   import Button from '../components/Button.svelte'
   import DeviceFlow from '../components/DeviceFlow.svelte'
+  import { notifications } from '../lib/notifications.svelte'
+  import ExportDomains from '../components/ExportDomains.svelte'
 
   let metric = $state<'traffic' | 'connections'>('traffic')
   let query = $state('')
   let selected = $state<string | null>(null)
   let paused = $state(false)
-  let frozen = $state.raw<DeviceConnection[]>([])
+  let frozen = $state.raw<ObservedConnection[]>([])
+  let range = $state<ObservationRangeValue>('active')
+  let historyNow = $state(Date.now())
+  const observed = $derived(observedConnections(core.conns, connectionJournal.backendUrl === core.backend.url ? connectionJournal.entries : [], range, Math.max(historyNow, Date.now())))
+  const streamLive = $derived(core.connectionsOnline && core.connectionsFresh)
+  const dataReady = $derived(core.connectionsReady || (range !== 'active' && !connectionJournal.loading))
+  onMount(() => {
+    const timer = setInterval(() => { historyNow = Date.now() }, 30_000)
+    return () => clearInterval(timer)
+  })
   let names = $state.raw<Record<string, string>>({})
   let aliasDraft = $state('')
-  let aliasStatus = $state<'saved' | 'error' | null>(null)
   let listLimit = $state(50)
   const storageKey = $derived('miboard.device-names.' + encodeURIComponent(core.backend.url))
-  const source = $derived(paused ? frozen : core.conns)
+  const source = $derived(paused ? frozen : observed)
   const snapshot = $derived(summarizeDevices(source))
   const devices = $derived.by(() => {
     const q = query.trim().toLocaleLowerCase(i18n.intlLocale)
@@ -57,7 +71,7 @@
     return times.length ? Math.min(...times) : null
   })
   const summary = $derived([
-    { label: t('devices.deviceCount'), value: count(snapshot.devices.length), caption: t('devices.meta') },
+    { label: t('devices.deviceCount'), value: count(snapshot.devices.length), caption: t(range === 'active' ? 'devices.meta' : `observations.${range}`) },
     { label: t('devices.connections'), value: count(snapshot.totals.connections), caption: `TCP ${count(snapshot.totals.tcp)} · UDP ${count(snapshot.totals.udp)}` },
     { label: t('devices.traffic'), value: bytes(snapshot.totals.total), caption: `↓ ${bytes(snapshot.totals.download)} · ↑ ${bytes(snapshot.totals.upload)}` },
     { label: t('devices.speed'), value: speed(snapshot.totals.dl + snapshot.totals.ul), caption: `↓ ${speed(snapshot.totals.dl)} · ↑ ${speed(snapshot.totals.ul)}` },
@@ -72,10 +86,9 @@
   function selectDevice(id: string | null) {
     selected = id
     aliasDraft = id ? names[id] ?? '' : ''
-    aliasStatus = null
   }
   function togglePause() {
-    if (!paused) frozen = core.conns
+    if (!paused) frozen = observed
     paused = !paused
   }
   function saveName(event: SubmitEvent) {
@@ -89,8 +102,8 @@
       localStorage.setItem(storageKey, JSON.stringify(next))
       names = next
       aliasDraft = name
-      aliasStatus = 'saved'
-    } catch { aliasStatus = 'error' }
+      notifications.show({ id: 'device-alias-save', tone: 'success', scope: core.backend.url, message: () => t('devices.nameSaved') })
+    } catch { notifications.show({ id: 'device-alias-save', tone: 'error', scope: core.backend.url, message: () => t('devices.nameError') }) }
   }
 
   $effect(() => {
@@ -107,7 +120,6 @@
     names = loaded
     selected = null
     aliasDraft = ''
-    aliasStatus = null
     paused = false
     frozen = []
     query = ''
@@ -116,26 +128,29 @@
   $effect(() => { void query; listLimit = 50 })
 </script>
 
-<PageHeader title={t('devices.title')} meta={t('devices.meta')}>
+<PageHeader title={t('devices.title')} meta={t(range === 'active' ? 'devices.meta' : `observations.${range}`)}>
   {#snippet actions()}
-    <span class="live-status"><span class="led" data-on={core.connectionsOnline && !paused} data-state={!core.connectionsOnline && !paused ? 'down' : undefined}></span>{paused ? t('devices.paused') : core.connectionsOnline ? t('devices.live') : t('devices.offline')}</span>
-    <Button size="sm" data-testid="devices-pause" onclick={togglePause} aria-pressed={paused} disabled={!core.connectionsReady}>
+    <span class="live-status"><span class="led" data-on={streamLive && !paused} data-state={!streamLive && !paused ? 'down' : undefined}></span>{paused ? t('devices.paused') : streamLive ? t('devices.live') : t('devices.offline')}</span>
+    <Button size="sm" data-testid="devices-pause" onclick={togglePause} aria-pressed={paused} disabled={!dataReady}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('devices.resume')}{:else}<IconPause strokeWidth={1.5} />{t('devices.pause')}{/if}
     </Button>
   {/snippet}
 </PageHeader>
 
+<ObservationRange bind:value={range} onchange={() => { paused = false; frozen = []; historyNow = Date.now() }} />
+{#if range !== 'active' && source.some(row => row.afterGap)}<p class="mb-4 text-xs text-warning" role="status">{t('observations.gap')}</p>{/if}
+
 <section class="device-summary" aria-label={t('devices.overview')}>
   {#each summary as item (item.label)}
     <div class="summary-item" data-testid="device-summary">
       <div class="summary-label"><h2>{item.label}</h2></div>
-      <p class="summary-value num">{core.connectionsReady ? item.value : '—'}</p>
+      <p class="summary-value num">{dataReady ? item.value : '—'}</p>
       <p class="summary-caption num" title={item.caption}>{item.caption}</p>
     </div>
   {/each}
 </section>
 
-{#if !core.connectionsOnline && core.connectionsReady && !paused}
+{#if !streamLive && core.connectionsReady && !paused}
   <p class="stream-warning" role="status">{t('devices.streamLost')}</p>
 {/if}
 
@@ -149,7 +164,7 @@
 
 <DeviceFlow connections={filteredConnections} {metric} selectedDevice={effectiveSelected} onselect={selectDevice} {names} />
 
-<p class="scope-note">{t('devices.activeOnly')}</p>
+{#if range === 'active'}<p class="scope-note">{t('devices.activeOnly')}</p>{/if}
 
 <div class="devices-layout">
   <section class="device-list-panel" aria-labelledby="device-list-title">
@@ -162,7 +177,7 @@
           <span class="device-row-bottom num"><span>↓ {speed(device.dl)}</span><span>↑ {speed(device.ul)}</span><span class="connection-count"><IconConnections size={12} strokeWidth={1.5} />{count(device.connections)}</span></span>
         </button>
       {:else}
-        <div class="device-empty"><IconDevices size={28} strokeWidth={1} /><p>{!core.connectionsReady ? t('devices.loading') : query.trim() ? t('devices.noResults') : t('devices.empty')}</p>{#if !query.trim()}<span>{t('devices.emptyHint')}</span>{/if}</div>
+        <div class="device-empty"><IconDevices size={28} strokeWidth={1} /><p>{!dataReady ? t('devices.loading') : query.trim() ? t('devices.noResults') : t('devices.empty')}</p>{#if !query.trim()}<span>{t('devices.emptyHint')}</span>{/if}</div>
       {/each}
       {#if listLimit < devices.length}<button class="show-more" onclick={() => { listLimit += 50 }}>{t('devices.showMore')}</button>{/if}
     </div>
@@ -174,8 +189,8 @@
       {#if selectedDevice?.sourceIP}
         <form class="alias-form" onsubmit={saveName}>
           <label for="device-alias">{t('devices.name')}</label>
-          <div class="alias-controls"><input id="device-alias" data-testid="device-alias-input" bind:value={aliasDraft} oninput={() => { aliasStatus = null }} maxlength="64" placeholder={t('devices.namePlaceholder')} /><Button size="sm" type="submit" data-testid="device-alias-save" disabled={aliasDraft.trim() === (names[selectedDevice.id] ?? '')}>{t('devices.saveName')}</Button></div>
-          <p class="alias-hint" role="status">{aliasStatus === 'saved' ? t('devices.nameSaved') : aliasStatus === 'error' ? t('devices.nameError') : t('devices.nameHint')}</p>
+          <div class="alias-controls"><input id="device-alias" data-testid="device-alias-input" bind:value={aliasDraft} maxlength="64" placeholder={t('devices.namePlaceholder')} /><Button size="sm" type="submit" data-testid="device-alias-save" disabled={aliasDraft.trim() === (names[selectedDevice.id] ?? '')}>{t('devices.saveName')}</Button></div>
+          <p class="alias-hint">{t('devices.nameHint')}</p>
         </form>
       {/if}
       <dl class="detail-metrics">
@@ -187,7 +202,7 @@
         ] as item (item.label)}<div><dt>{item.label}</dt><dd class="num">{item.value}</dd></div>{/each}
       </dl>
 
-      <div class="destination-heading"><h3>{t('devices.topDomains')}</h3><span class="text-xs text-fg-3">{t(metric === 'traffic' ? 'devices.byTraffic' : 'devices.byConnections')}</span></div>
+      <div class="destination-heading"><h3>{t('devices.topDomains')}</h3><ExportDomains domains={combined('domains')} name={selectedDevice?.sourceIP || 'devices'} testId="device-export-domains" /></div>
       <div class="destinations">
         {#each destinations as destination (destination.name)}
           <div class="destination-row" data-testid="device-detail-domain"><div class="destination-name"><span title={destination.name}>{destination.name}</span><strong class="num">{metric === 'traffic' ? bytes(destination.download + destination.upload) : count(destination.connections)}</strong></div><div class="destination-bar" aria-hidden="true"><span style:width="{destinationValue(destination) / maxDestination * 100}%"></span></div></div>
@@ -202,9 +217,9 @@
           { label: t('devices.inbounds'), values: combined('inbounds') },
           { label: t('devices.destinationIPs'), values: combined('destinationIPs') },
         ] as item (item.label)}
-          <div><dt>{item.label}</dt><dd>{#if item.values.length}<details><summary><span class="metadata-preview" title={item.values.join(', ')}>{item.values.slice(0, 3).join(', ')}{item.values.length > 3 ? ` +${count(item.values.length - 3)}` : ''}</span><span class="metadata-count num">{count(item.values.length)}</span></summary><ul>{#each item.values as value (value)}<li>{value}</li>{/each}</ul></details>{:else}<span class="text-fg-3">{t('devices.unavailable')}</span>{/if}</dd></div>
+          <div><dt>{item.label}</dt><dd>{#if item.values.length}<details class="group"><summary><IconChevron class="size-4 shrink-0 -rotate-90 text-fg-3 transition-transform group-open:rotate-0" strokeWidth={1.5} aria-hidden="true" /><span class="metadata-preview" title={item.values.join(', ')}>{item.values.slice(0, 3).join(', ')}{item.values.length > 3 ? ` +${count(item.values.length - 3)}` : ''}</span><span class="metadata-count num">{count(item.values.length)}</span></summary><ul>{#each item.values as value (value)}<li>{value}</li>{/each}</ul></details>{:else}<span class="text-fg-3">{t('devices.unavailable')}</span>{/if}</dd></div>
         {/each}
-        <div><dt>{t('devices.oldestConnection')}</dt><dd class="num">{firstSeen === null ? t('devices.unavailable') : new Date(firstSeen).toLocaleString(i18n.intlLocale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</dd></div>
+        <div><dt>{t(range === 'active' ? 'devices.oldestConnection' : 'observations.oldestConnection')}</dt><dd class="num">{firstSeen === null ? t('devices.unavailable') : new Date(firstSeen).toLocaleString(i18n.intlLocale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</dd></div>
       </dl>
     </div>
   </section>
@@ -281,7 +296,8 @@
   .device-metadata > div { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1.5fr); gap: 12px; }
   .device-metadata dt { color: var(--text-3); }
   .device-metadata dd { min-width: 0; color: var(--text-2); overflow-wrap: anywhere; }
-  .device-metadata summary { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+  .device-metadata summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; }
+  .device-metadata summary::-webkit-details-marker { display: none; }
   .device-metadata summary:hover { color: var(--text); }
   .metadata-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .metadata-count { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }

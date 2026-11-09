@@ -38,7 +38,11 @@ function measureDelay(name, url) {
   node.extra[url] = { alive: delay > 0, history: node.history }
   return delay
 }
-for (const [n, t] of nodes) proxies[n] = { name: n, type: t, udp: true, alive: true, history: hist(rnd(40, 260)) }
+for (const [n, t] of nodes) proxies[n] = {
+  name: n, type: t, udp: true, uot: false, xudp: t === 'Vless', tfo: false, mptcp: false, smux: false,
+  interface: '', 'routing-mark': 0, 'provider-name': 'mock-nodes', 'dialer-proxy': '', alive: true,
+  history: Array.from({ length: 6 }, (_, i) => ({ time: new Date(Date.now() - (5 - i) * 60_000).toISOString(), delay: rnd(40, 260) })),
+}
 proxies['jp-tyo-01'].history = hist(412)
 proxies['tr-ist-01'].history = hist(0)
 proxies.DIRECT = { name: 'DIRECT', type: 'Direct', udp: true, alive: true, history: [] }
@@ -51,7 +55,10 @@ const proxyProviders = {
     name: 'mock-nodes',
     type: 'Proxy',
     vehicleType: 'HTTP',
+    testUrl: 'https://www.gstatic.com/generate_204',
+    expectedStatus: '204',
     updatedAt: new Date().toISOString(),
+    subscriptionInfo: { Download: 92_000_000_000, Upload: 8_000_000_000, Total: 500_000_000_000, Expire: Math.floor(Date.now() / 1000) + 30 * 86400 },
     proxies: names.map((name) => proxies[name]),
   },
 }
@@ -95,6 +102,11 @@ const rules = [
   { type: 'ProcessName', payload: 'qbittorrent', proxy: 'DIRECT', size: -1 },
   { type: 'Match', payload: '', proxy: 'Остальное', size: -1 },
 ]
+rules.forEach((rule, index) => Object.assign(rule, { index, extra: {
+  disabled: false, hitCount: index === 10 ? 0 : 1200 - index * 87, missCount: index * 103,
+  hitAt: index === 10 ? '0001-01-01T00:00:00Z' : new Date(Date.now() - index * 60_000).toISOString(),
+  missAt: new Date(Date.now() - index * 30_000).toISOString(),
+} }))
 
 const ruleProviders = {
   ads: {
@@ -218,7 +230,11 @@ const configs = {
   'unified-delay': true,
   mode: 'rule',
   'log-level': 'info',
-  tun: { enable: true, stack: 'mixed' },
+  tun: { enable: true, stack: 'mixed', device: 'Mihomo', mtu: 9000, 'auto-route': true, 'auto-detect-interface': true, 'dns-hijack': ['any:53'] },
+  ipv6: true, sniffing: true, 'find-process-mode': 'strict', 'tcp-concurrent': true,
+  'interface-name': '', 'bind-address': '*', 'routing-mark': 0,
+  'geox-url': { 'geo-ip': 'https://example.test/geoip.dat', 'geo-site': 'https://example.test/geosite.dat', mmdb: 'https://example.test/country.mmdb', asn: 'https://example.test/asn.mmdb' },
+  'geo-auto-update': true, 'geo-update-interval': 24, 'geodata-mode': true, 'geodata-loader': 'memconservative',
   ...(PRIZRAK ? {
     'lgbm-auto-update': true,
     'lgbm-update-interval': 72,
@@ -245,6 +261,7 @@ const readBody = (req) =>
     req.on('end', () => r(s ? JSON.parse(s) : {}))
   })
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' }
+const storage = new Map()
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x')
@@ -264,10 +281,33 @@ const server = http.createServer(async (req, res) => {
   const m = (method, re) => req.method === method && p.match(re)
   let r
   if (m('GET', /^\/version$/)) return json(res, 200, { meta: true, version: 'v1.19.15-mock' })
+  if ((r = p.match(/^\/storage\/([^/]+)$/))) {
+    const key = r[1]
+    if (req.method === 'GET') return json(res, 200, storage.get(key) ?? null)
+    if (req.method === 'DELETE') { storage.delete(key); return json(res, 204) }
+    if (req.method === 'PUT') {
+      const value = await readBody(req)
+      if (Buffer.byteLength(JSON.stringify(value)) > 1024 * 1024) return json(res, 413, { message: 'payload exceeds 1MB limit' })
+      storage.set(key, value)
+      return json(res, 204)
+    }
+  }
   if (m('GET', /^\/dns\/query$/)) {
     // Детерминированный DNS API: мок никогда не выполняет реальные DNS-запросы.
     const name = (url.searchParams.get('name') ?? '').toLowerCase().replace(/\.$/, '')
     const type = (url.searchParams.get('type') ?? 'A').toUpperCase()
+    const types = { A: 1, AAAA: 28, CNAME: 5, MX: 15, TXT: 16, NS: 2, SOA: 6, PTR: 12, CAA: 257 }
+    if (!(type in types)) return json(res, 400, { message: 'invalid query type' })
+    const flags = { Question: [{ Name: name + '.', Qtype: types[type], Qclass: 1 }], TC: false, RD: true, RA: true, AD: false, CD: false }
+    if (type !== 'A' && type !== 'AAAA') {
+      const values = { CNAME: 'edge.example.com.', MX: '10 mail.example.com.', TXT: '"v=spf1 -all"', NS: 'ns1.example.com.', SOA: 'ns1.example.com. admin.example.com. 1 3600 600 86400 60', PTR: 'dns.example.com.', CAA: '0 issue "letsencrypt.org"' }
+      const known = name === 'example.com' || (type === 'PTR' && /\.(in-addr|ip6)\.arpa$/.test(name))
+      return json(res, 200, { ...flags, Status: known ? 0 : 3,
+        ...(known ? { Answer: [{ name: name + '.', type: types[type], TTL: 120, data: values[type] }],
+          Authority: [{ name: 'example.com.', type: 2, TTL: 300, data: 'ns1.example.com.' }],
+          Additional: [{ name: 'ns1.example.com.', type: 1, TTL: 300, data: '192.0.2.53' }] } : {}),
+      })
+    }
     const fixtures = {
       'dns-only.miboard.example.com': { A: '8.8.8.8' },
       'fake-ip.miboard.example.com': { A: '8.8.4.4' },
@@ -279,7 +319,7 @@ const server = http.createServer(async (req, res) => {
     const target = targets.find(([host]) => host === name)
     const data = fixtures[name]?.[type] ?? (type === 'A' ? target?.[8] : undefined)
     if (!data) return json(res, 200, { Status: name === 'ipv6-only.miboard.example.com' ? 0 : 3, Answer: [] })
-    return json(res, 200, { Status: 0, Answer: [{ name: name + '.', type: type === 'AAAA' ? 28 : 1, TTL: 120, data }] })
+    return json(res, 200, { ...flags, Status: 0, Answer: [{ name: name + '.', type: type === 'AAAA' ? 28 : 1, TTL: 120, data }] })
   }
   if (m('GET', /^\/configs$/)) return json(res, 200, configs)
   if (m('PATCH', /^\/configs$/)) {
@@ -291,6 +331,20 @@ const server = http.createServer(async (req, res) => {
   if (m('PUT', /^\/configs$/)) return json(res, 204)
   if (m('GET', /^\/proxies$/)) return json(res, 200, { proxies })
   if (m('GET', /^\/providers\/proxies$/)) return json(res, 200, { providers: proxyProviders })
+  if (req.method === 'PUT' && (r = url.pathname.match(/^\/providers\/proxies\/([^/]+)$/))) {
+    const provider = proxyProviders[decodeURIComponent(r[1])]
+    if (!provider) return json(res, 404, { message: 'Provider not found' })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    provider.updatedAt = new Date().toISOString()
+    return json(res, 204)
+  }
+  if (req.method === 'GET' && (r = url.pathname.match(/^\/providers\/proxies\/([^/]+)\/healthcheck$/))) {
+    const provider = proxyProviders[decodeURIComponent(r[1])]
+    if (!provider) return json(res, 404, { message: 'Provider not found' })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    for (const proxy of provider.proxies ?? []) measureDelay(proxy.name, provider.testUrl ?? 'https://www.gstatic.com/generate_204')
+    return json(res, 204)
+  }
   if (m('GET', /^\/group\/weights$/)) return PRIZRAK
     ? json(res, 200, { weights: { Smart: smartWeights }, errors: {} })
     : json(res, 404, { message: 'Not Found' })
@@ -320,13 +374,30 @@ const server = http.createServer(async (req, res) => {
     if (delay === undefined) return json(res, 404, { message: 'Proxy not found' })
     return delay > 0 ? json(res, 200, { delay }) : json(res, 504, { message: 'Timeout' })
   }
-  if ((r = m('GET', /^\/providers\/proxies\/(.+)\/(.+)\/healthcheck$/))) {
-    if (!proxyProviders[r[1]]?.proxies?.some((node) => node.name === r[2])) return json(res, 404, { message: 'Proxy not found' })
-    const delay = measureDelay(r[2], url.searchParams.get('url') ?? '')
+  if (req.method === 'GET' && (r = url.pathname.match(/^\/providers\/proxies\/([^/]+)\/([^/]+)\/healthcheck$/))) {
+    const provider = decodeURIComponent(r[1])
+    const node = decodeURIComponent(r[2])
+    if (!proxyProviders[provider]?.proxies?.some((proxy) => proxy.name === node)) return json(res, 404, { message: 'Proxy not found' })
+    const delay = measureDelay(node, url.searchParams.get('url') ?? '')
     return delay > 0 ? json(res, 200, { delay }) : json(res, 504, { message: 'Timeout' })
   }
   if (m('GET', /^\/rules$/)) return json(res, 200, { rules })
+  if (m('PATCH', /^\/rules\/disable$/)) {
+    const changes = await readBody(req)
+    for (const [index, disabled] of Object.entries(changes)) {
+      if (typeof disabled === 'boolean' && rules[Number(index)]) rules[Number(index)].extra.disabled = disabled
+    }
+    return json(res, 204)
+  }
   if (m('GET', /^\/providers\/rules$/)) return json(res, 200, { providers: ruleProviders })
+  if (req.method === 'PUT' && (r = url.pathname.match(/^\/providers\/rules\/([^/]+)$/))) {
+    const name = decodeURIComponent(r[1])
+    const provider = Object.hasOwn(ruleProviders, name) ? ruleProviders[name] : undefined
+    if (!provider) return json(res, 404, { message: 'Provider not found' })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    provider.updatedAt = new Date().toISOString()
+    return json(res, 204)
+  }
   if ((r = m('DELETE', /^\/connections\/smart\/(.+)$/))) {
     if (!PRIZRAK) return json(res, 404, { message: 'Not Found' })
     conns = conns.filter((c) => c.id !== r[1])

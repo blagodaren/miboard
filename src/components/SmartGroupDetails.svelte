@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import { api, errorMessage, type Backend, type Proxy, type SmartWeight } from '../lib/api'
   import { i18n, t, type MessageKey } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
   import { IconChevron, IconRefresh } from '../lib/icons'
   import Button from './Button.svelte'
 
@@ -61,7 +62,14 @@
       weights = Array.isArray(response.weights) ? response.weights : []
       loaded = true
     } catch (cause) {
-      if (current()) error = cause
+      if (current()) {
+        if (loaded) notifications.show({
+          id: `smart-weights:${JSON.stringify([target.url, name])}`, tone: 'error', scope: target.url,
+          title: () => `${t('prizrak.weights')}: ${name}`, message: () => errorMessage(cause),
+          testId: 'smart-weights-notice',
+        })
+        else error = cause
+      }
     } finally {
       if (current()) loading = false
     }

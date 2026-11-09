@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { api, errorMessage } from '../lib/api'
+  import { api, ApiError, errorMessage } from '../lib/api'
+  import { notifications } from '../lib/notifications.svelte'
   import { core, type ConnRow } from '../lib/core.svelte'
   import { bytes, speed, since, count } from '../lib/format'
   import { t, i18n } from '../lib/i18n.svelte'
@@ -12,6 +13,10 @@
   import Segmented from '../components/Segmented.svelte'
   import { connectionJournal, type JournalEntry } from '../lib/connection-journal.svelte'
   import { normalizeDeviceIP } from '../lib/devices'
+  import { connectionEndpoint, connectionSearchText } from '../lib/connection-details'
+  import ConnectionDetails from '../components/ConnectionDetails.svelte'
+  import Info from '@lucide/svelte/icons/info'
+  import Columns from '@lucide/svelte/icons/columns-3'
 
   type SortKey = 'rate' | 'total' | 'start' | 'host'
   const LIMIT = 300
@@ -20,6 +25,17 @@
   type DisplayRow = ConnRow & { journal?: JournalEntry }
   let view = $state<'active' | 'closed'>('active')
   let selected = $state('')
+  let detailsOpen = $state(false)
+  let selectedSnapshot = $state.raw<DisplayRow | null>(null)
+  const columnOptions = ['type', 'process', 'sniffHost', 'source', 'destination', 'inbound', 'dnsMode', 'provider', 'peakSpeed'] as const
+  type ColumnKey = typeof columnOptions[number]
+  const defaultColumns: ColumnKey[] = ['type', 'source', 'destination', 'inbound']
+  const columnsKey = 'miboard.connection-columns.v1'
+  let visibleColumns = $state<ColumnKey[]>([...defaultColumns])
+  let columnsOpen = $state(false)
+  const columnCount = $derived(8 + visibleColumns.length)
+  const visible = (column: ColumnKey) => visibleColumns.includes(column)
+  const columnLabel = (column: ColumnKey) => t(column === 'destination' ? 'journal.destination' : `connectionDetails.${column}`)
   let deviceNames = $state<Record<string, string>>({})
   const archived = $derived(connectionJournal.backendUrl === core.backend.url ? connectionJournal.entries : [])
   const viewTotal = $derived(view === 'active' ? core.conns.length : archived.length)
@@ -28,7 +44,7 @@
   const stamp = (value: number) => Number.isFinite(value) && value > 0 ? dateFormat.format(value) : '—'
   const rowKey = (row: DisplayRow) => row.journal ? JSON.stringify([row.id, row.start, row.journal.firstSeenAt]) : row.id
   const deviceName = (row: DisplayRow) => deviceNames[normalizeDeviceIP(row.metadata.sourceIP)] ?? ''
-  function changeView(value: 'active' | 'closed') { view = value; selected = ''; paused = false; sort = value === 'closed' ? 'start' : 'rate'; sortDirection = 'desc' }
+  function changeView(value: 'active' | 'closed') { view = value; selected = ''; detailsOpen = false; selectedSnapshot = null; paused = false; sort = value === 'closed' ? 'start' : 'rate'; sortDirection = 'desc' }
 
   let query = $state('')
   let paused = $state(false)
@@ -41,7 +57,6 @@
   let active = true
   let smartGroups = $state<string[]>([])
   let switching = $state<Record<string, boolean>>({})
-  let switchResult = $state.raw<{ host: string; error?: unknown } | null>(null)
 
   onDestroy(() => { active = false })
 
@@ -51,6 +66,28 @@
       if (names && typeof names === 'object' && !Array.isArray(names)) deviceNames = Object.fromEntries(Object.entries(names).filter(([, name]) => typeof name === 'string' && name.length <= 128))
     } catch { /* Device labels are optional local metadata. */ }
   })
+
+  $effect(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(columnsKey) ?? 'null')
+      if (Array.isArray(saved)) visibleColumns = columnOptions.filter(key => saved.includes(key))
+    } catch { /* Column preferences are optional. */ }
+  })
+
+  function saveColumns(columns: ColumnKey[]) {
+    visibleColumns = columns
+    try { localStorage.setItem(columnsKey, JSON.stringify(columns)) } catch { /* Keep this session's selection. */ }
+  }
+
+  function toggleColumn(column: ColumnKey, enabled: boolean) {
+    saveColumns(enabled ? [...visibleColumns, column] : visibleColumns.filter(key => key !== column))
+  }
+
+  function showDetails(connection: DisplayRow) {
+    selected = rowKey(connection)
+    selectedSnapshot = connection
+    detailsOpen = true
+  }
 
   $effect(() => {
     if (!core.prizrak) return
@@ -69,13 +106,12 @@
     const key = JSON.stringify(c.id)
     if (switching[key] || !currentBackend() || !canSwitch(c)) return
     switching[key] = true
-    switchResult = null
     const name = host(c)
     try {
       await api.closeSmartConnection(c.id, backend)
-      if (currentBackend()) switchResult = { host: name }
+      if (currentBackend()) notifications.show({ id: `connection-switch-${c.id}`, tone: 'success', scope: backend.url, message: () => t('prizrak.switchDone', { host: name }) })
     } catch (error) {
-      if (currentBackend()) switchResult = { host: name, error }
+      if (currentBackend()) notifications.show({ id: `connection-switch-${c.id}`, tone: 'error', scope: backend.url, message: () => t('prizrak.switchError', { host: name, message: errorMessage(error) }) })
     } finally {
       if (active) switching[key] = false
     }
@@ -91,8 +127,19 @@
     if (paused) frozen = core.conns
   }
 
-  const host = (c: ConnRow) => c.metadata.host || c.metadata.sniffHost || c.metadata.destinationIP
+  const host = (c: ConnRow) => c.metadata.host || c.metadata.sniffHost || c.metadata.destinationIP || '—'
   const chain = (c: ConnRow) => [...c.chains].reverse().join(' / ')
+  const optionalRate = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? speed(value) : '—'
+  const sourceRows: DisplayRow[] = $derived(view === 'closed'
+    ? archived.map(journal => ({ ...journal.connection, dl: 0, ul: 0, journal }))
+    : paused ? frozen : core.conns)
+  const selectedCurrent = $derived(sourceRows.find(row => rowKey(row) === selected && row.start === selectedSnapshot?.start))
+  const detailConnection = $derived(selectedCurrent ?? selectedSnapshot)
+  const detailStatus = $derived(detailConnection?.journal ? 'closed' : !selectedCurrent ? 'snapshot' : paused ? 'paused' : core.connectionsOnline ? 'live' : 'offline')
+
+  $effect(() => {
+    if (detailsOpen && selectedCurrent && selectedCurrent !== selectedSnapshot) selectedSnapshot = selectedCurrent
+  })
 
   function changeSort(key: SortKey) {
     if (sort === key) {
@@ -104,17 +151,10 @@
   }
 
   const rows = $derived.by(() => {
-    const src: DisplayRow[] = view === 'closed'
-      ? archived.map(journal => ({ ...journal.connection, dl: 0, ul: 0, journal }))
-      : paused ? frozen : core.conns
+    const src = sourceRows
     const q = query.trim().toLowerCase()
     const list = q
-      ? src.filter((c) =>
-          [host(c), c.metadata.destinationIP, c.metadata.sourceIP, deviceName(c), c.metadata.process ?? '', c.rule, c.rulePayload, ...c.chains]
-            .join(' ')
-            .toLowerCase()
-            .includes(q),
-        )
+      ? src.filter((c) => connectionSearchText(c, deviceName(c)).includes(q))
       : [...src]
     const by: Record<SortKey, (a: DisplayRow, b: DisplayRow) => number> = {
       rate: (a, b) => view === 'closed' ? a.journal!.lastSeenAt - b.journal!.lastSeenAt : a.dl + a.ul - (b.dl + b.ul) || a.download - b.download,
@@ -132,10 +172,23 @@
 
   async function close(id: string) {
     if (view !== 'active' || !currentBackend() || !core.conns.some(row => row.id === id)) return
+    const name = host(core.conns.find(row => row.id === id)!)
     try {
       await api.closeConnection(id)
-    } catch {
-      /* соединение уже закрылось само */
+      if (currentBackend()) notifications.show({ id: `connection-close-${id}`, tone: 'success', scope: backend.url, message: () => t('connections.closeDone', { host: name }) })
+    } catch (error) {
+      if (!currentBackend()) return
+      const alreadyClosed = error instanceof ApiError && error.status === 404
+      notifications.show({ id: `connection-close-${id}`, tone: alreadyClosed ? 'info' : 'error', scope: backend.url, message: () => t(alreadyClosed ? 'connections.alreadyClosed' : 'connections.closeError', { host: name, message: errorMessage(error) }) })
+    }
+  }
+  async function closeAll() {
+    if (view !== 'active' || !currentBackend()) return
+    try {
+      await api.closeAll()
+      if (currentBackend()) notifications.show({ id: 'connections-close-all', tone: 'success', scope: backend.url, message: () => t('connections.closeAllDone') })
+    } catch (error) {
+      if (currentBackend()) notifications.show({ id: 'connections-close-all', tone: 'error', scope: backend.url, message: () => t('connections.closeAllError', { message: errorMessage(error) }) })
     }
   }
 
@@ -153,7 +206,7 @@
 
 <PageHeader title={t('connections.title')} meta={t('connections.meta', { shown: count(rows.length), total: count(viewTotal) }) + (paused ? t('connections.paused') : '')}>
   {#snippet actions()}
-    <SearchInput bind:value={query} placeholder={t('journal.search')} />
+    <SearchInput bind:value={query} placeholder={t('connectionDetails.search')} />
     {#if view === 'active'}
     <Button size="sm" onclick={togglePause} aria-pressed={paused}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('connections.resume')}{:else}<IconPause strokeWidth={1.5} />{t('connections.pause')}{/if}
@@ -163,7 +216,20 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-4"><Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} /></div>
+<div class="connections-toolbar">
+  <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
+  <Button size="sm" data-testid="connection-columns-toggle" aria-expanded={columnsOpen} aria-controls="connection-columns" onclick={() => columnsOpen = !columnsOpen}><Columns strokeWidth={1.5} aria-hidden="true" />{t('connectionDetails.columns')}<span class="num text-fg-3">{visibleColumns.length}</span></Button>
+</div>
+{#if columnsOpen}
+  <section id="connection-columns" class="column-options" data-testid="connection-columns" aria-label={t('connectionDetails.columns')}>
+    <div class="column-options-grid">
+      {#each columnOptions as column (column)}
+        <label><input type="checkbox" data-column={column} checked={visible(column)} onchange={event => toggleColumn(column, event.currentTarget.checked)} />{columnLabel(column)}</label>
+      {/each}
+    </div>
+    <Button size="sm" variant="ghost" data-testid="connection-columns-reset" onclick={() => saveColumns([...defaultColumns])}>{t('connectionDetails.resetColumns')}</Button>
+  </section>
+{/if}
 {#if view === 'closed'}
   <p class="mb-4 max-w-3xl text-xs leading-5 text-fg-3">{t(connectionJournal.retention === 'off' ? 'journal.disabled' : 'journal.hint')}</p>
   {#if connectionJournal.loading}<p class="mb-3 text-xs text-fg-3" role="status">{t('journal.loading')}</p>{/if}
@@ -175,23 +241,25 @@
 {#if view === 'active' && core.prizrak && smartGroups.length}
   <p class="mb-3 text-[13px] text-fg-3">{t('prizrak.switchHint')}</p>
 {/if}
-{#if switchResult}
-  {#if switchResult.error}
-    <p class="mb-3 break-words rounded-[var(--radius-card)] border border-bad-border bg-bad-surface px-4 py-3 text-[13px] text-bad" role="alert">{t('prizrak.switchError', { host: switchResult.host, message: errorMessage(switchResult.error) })}</p>
-  {:else}
-    <p class="mb-3 rounded-[var(--radius-card)] border border-line bg-card px-4 py-3 text-[13px] text-good" role="status">{t('prizrak.switchDone', { host: switchResult.host })}</p>
-  {/if}
-{/if}
 
-<div class="relative overflow-x-auto rounded-panel border border-line bg-card">
+<div class="connections-table relative overflow-x-auto rounded-panel border border-line bg-card" data-testid="connections-table">
   <table class="w-full min-w-[960px] text-[13px]">
     <thead>
       <tr>
-        <th class="w-8 pl-4"><span class="sr-only">{t('connections.activity')}</span></th>
+        <th class="w-12 px-3"><span class="sr-only">{t('connectionDetails.details')}</span></th>
+        {#if visible('type')}<th class="{th} text-left">{t('connectionDetails.type')}</th>{/if}
+        {#if visible('process')}<th class="{th} text-left">{t('connectionDetails.process')}</th>{/if}
         {@render sortHead('host', t('connections.host'))}
+        {#if visible('sniffHost')}<th class="{th} text-left">{t('connectionDetails.sniffHost')}</th>{/if}
+        {#if visible('source')}<th class="{th} text-left">{t('connectionDetails.source')}</th>{/if}
+        {#if visible('destination')}<th class="{th} text-left">{columnLabel('destination')}</th>{/if}
+        {#if visible('inbound')}<th class="{th} text-left">{t('connectionDetails.inbound')}</th>{/if}
+        {#if visible('dnsMode')}<th class="{th} text-left">{t('connectionDetails.dnsMode')}</th>{/if}
         <th class="{th} text-left">{t('connections.rule')}</th>
         <th class="{th} text-left">{t('connections.chain')}</th>
+        {#if visible('provider')}<th class="{th} text-left">{t('connectionDetails.provider')}</th>{/if}
         {@render sortHead('rate', t(view === 'closed' ? 'journal.lastSeen' : 'connections.speed'), true)}
+        {#if visible('peakSpeed')}<th class="{th} text-right">{t('connectionDetails.peakSpeed')}</th>{/if}
         {@render sortHead('total', t('connections.total'), true)}
         {@render sortHead('start', t(view === 'closed' ? 'journal.observedEnd' : 'connections.time'), true)}
         <th class={core.prizrak ? 'w-24' : 'w-12'}><span class="sr-only">{t('connections.close')}</span></th>
@@ -199,19 +267,27 @@
     </thead>
     <tbody>
       {#each displayedRows as c (rowKey(c))}
-        <tr class="group border-t border-line transition-colors {selected === rowKey(c) ? 'bg-selected' : 'hover:bg-hover'}" data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
-          <td class="pl-4"><span class="led" data-on={c.dl + c.ul > 0} title={c.dl + c.ul > 0 ? t('connections.active') : t('connections.idle')}></span></td>
-          <td class="max-w-[320px] px-3 py-2">
-            <button class="block max-w-full truncate text-left" aria-expanded={selected === rowKey(c)} aria-label={t('journal.details', { host: host(c) })} onclick={() => selected = selected === rowKey(c) ? '' : rowKey(c)} title={host(c)}>{host(c)}<span class="text-fg-3">:{c.metadata.destinationPort}</span></button>
+        <tr class="group border-t border-line transition-colors {detailsOpen && selected === rowKey(c) ? 'bg-selected' : 'hover:bg-hover'}" data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
+          <td class="px-2"><Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-haspopup="dialog" onclick={() => showDetails(c)}><Info strokeWidth={1.5} class={c.dl + c.ul > 0 ? 'text-traffic-down-ink' : 'text-fg-3'} aria-hidden="true" /></Button></td>
+          {#if visible('type')}<td class="px-3 py-2 whitespace-nowrap"><span>{c.metadata.type || '—'}</span><div class="mt-0.5 font-mono text-xs text-fg-3">{c.metadata.network?.toUpperCase() || '—'}</div></td>{/if}
+          {#if visible('process')}<td class="max-w-[200px] truncate px-3 py-2" title={c.metadata.processPath || c.metadata.process}>{c.metadata.process || c.metadata.processPath || '—'}</td>{/if}
+          <td class="min-w-[190px] max-w-[300px] px-3 py-2">
+            <button class="block max-w-full truncate text-left hover:text-accent-ink" aria-haspopup="dialog" aria-label={t('journal.details', { host: host(c) })} onclick={() => showDetails(c)} title={connectionEndpoint(host(c), c.metadata.destinationPort)}>{connectionEndpoint(host(c), c.metadata.destinationPort)}</button>
             <div class="mt-0.5 truncate font-mono text-xs text-fg-3">
               {c.metadata.network} · {deviceName(c) || c.metadata.process || c.metadata.sourceIP}
             </div>
           </td>
+          {#if visible('sniffHost')}<td class="max-w-[240px] truncate px-3 py-2 font-mono text-xs text-fg-2" title={c.metadata.sniffHost}>{c.metadata.sniffHost || '—'}</td>{/if}
+          {#if visible('source')}<td class="px-3 py-2 whitespace-nowrap font-mono text-xs"><div>{connectionEndpoint(c.metadata.sourceIP, c.metadata.sourcePort)}</div>{#if deviceName(c)}<div class="mt-0.5 text-fg-3">{deviceName(c)}</div>{/if}</td>{/if}
+          {#if visible('destination')}<td class="max-w-[240px] px-3 py-2 font-mono text-xs text-fg-2"><div class="truncate" title={c.metadata.remoteDestination || connectionEndpoint(c.metadata.destinationIP, c.metadata.destinationPort)}>{c.metadata.remoteDestination || connectionEndpoint(c.metadata.destinationIP, c.metadata.destinationPort)}</div>{#if c.metadata.destinationIP && c.metadata.remoteDestination}<div class="mt-0.5 truncate text-fg-3" title={connectionEndpoint(c.metadata.destinationIP, c.metadata.destinationPort)}>{connectionEndpoint(c.metadata.destinationIP, c.metadata.destinationPort)}</div>{/if}</td>{/if}
+          {#if visible('inbound')}<td class="max-w-[210px] px-3 py-2"><div class="truncate" title={c.metadata.inboundName}>{c.metadata.inboundName || '—'}</div><div class="mt-0.5 truncate font-mono text-xs text-fg-3" title={c.metadata.inboundUser || connectionEndpoint(c.metadata.inboundIP, c.metadata.inboundPort)}>{c.metadata.inboundUser || connectionEndpoint(c.metadata.inboundIP, c.metadata.inboundPort)}</div></td>{/if}
+          {#if visible('dnsMode')}<td class="px-3 py-2 whitespace-nowrap font-mono text-xs text-fg-2">{c.metadata.dnsMode || '—'}</td>{/if}
           <td class="max-w-[220px] px-3 py-2">
-            <div class="truncate">{c.rule}</div>
+            <div class="truncate">{c.rule || '—'}</div>
             {#if c.rulePayload}<div class="mt-0.5 truncate font-mono text-xs text-fg-3" title={c.rulePayload}>{c.rulePayload}</div>{/if}
           </td>
-          <td class="max-w-[240px] truncate px-3 py-2 text-fg-2" title={chain(c)}>{chain(c)}</td>
+          <td class="max-w-[240px] truncate px-3 py-2 text-fg-2" title={chain(c)}>{chain(c) || '—'}</td>
+          {#if visible('provider')}<td class="max-w-[200px] truncate px-3 py-2 text-fg-2" title={c.providerChains?.filter(Boolean).join(' / ')}>{c.providerChains?.filter(Boolean).join(' / ') || '—'}</td>{/if}
           <td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
             {#if c.journal}
               <span class="text-fg-2">{stamp(c.journal.lastSeenAt)}</span>
@@ -220,6 +296,7 @@
             <div class="mt-0.5 {c.ul ? 'text-traffic-up-ink' : 'text-fg-3'}">↑ {speed(c.ul)}</div>
             {/if}
           </td>
+          {#if visible('peakSpeed')}<td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs text-fg-2"><div>↓ {optionalRate(c.maxDownloadRate)}</div><div class="mt-0.5">↑ {optionalRate(c.maxUploadRate)}</div></td>{/if}
           <td class="num whitespace-nowrap px-3 py-2 text-right font-mono text-xs">
             <div class={c.download ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {bytes(c.download)}</div>
             <div class="mt-0.5 {c.upload ? 'text-traffic-up-ink' : 'text-fg-3'}">↑ {bytes(c.upload)}</div>
@@ -256,26 +333,13 @@
               <IconClose class="size-4" strokeWidth={1.5} aria-hidden="true" />
             </Button>
             {:else}
-              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-expanded={selected === rowKey(c)} onclick={() => selected = selected === rowKey(c) ? '' : rowKey(c)}><IconChevron class="size-4 {selected === rowKey(c) ? 'rotate-180' : ''}" strokeWidth={1.5} /></Button>
+              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-haspopup="dialog" onclick={() => showDetails(c)}><Info class="size-4" strokeWidth={1.5} /></Button>
             {/if}
           </td>
         </tr>
-        {#if selected === rowKey(c)}
-          <tr><td colspan="8" class="border-t border-line bg-raised p-4 sm:p-5">
-            <dl class="grid max-w-[calc(100vw-64px)] gap-4 text-xs sm:grid-cols-2 lg:max-w-none lg:grid-cols-3" data-testid="connection-details">
-              <div class="min-w-0"><dt class="text-fg-3">{t('journal.source')}</dt><dd class="mt-1 break-all font-mono">{deviceName(c)} {c.metadata.sourceIP}:{c.metadata.sourcePort}</dd></div>
-              <div class="min-w-0"><dt class="text-fg-3">{t('journal.destination')}</dt><dd class="mt-1 break-all font-mono">{host(c)} · {c.metadata.destinationIP}:{c.metadata.destinationPort}</dd></div>
-              <div class="min-w-0"><dt class="text-fg-3">{t('connections.chain')}</dt><dd class="mt-1 break-words">{chain(c) || '—'}</dd></div>
-              <div class="min-w-0"><dt class="text-fg-3">{t('connections.rule')}</dt><dd class="mt-1 break-all font-mono">{c.rule} {c.rulePayload}</dd></div>
-              <div class="min-w-0"><dt class="text-fg-3">{t('journal.process')}</dt><dd class="mt-1 break-all font-mono">{c.metadata.processPath || c.metadata.process || '—'}</dd></div>
-              <div class="min-w-0"><dt class="text-fg-3">{t('journal.started')}</dt><dd class="num mt-1 font-mono">{stamp(Date.parse(c.start))}</dd></div>
-              {#if c.journal}<div><dt class="text-fg-3">{t('journal.firstSeen')}</dt><dd class="num mt-1 font-mono">{stamp(c.journal.firstSeenAt)}</dd></div>{/if}
-            </dl>
-          </td></tr>
-        {/if}
       {:else}
         <tr class="border-t border-line">
-          <td colspan="8" class="px-4 py-8 text-center text-fg-3">{query ? t('connections.noResults') : view === 'closed' ? t('journal.empty') : t('connections.noConnections')}</td>
+          <td colspan={columnCount} class="px-4 py-8 text-center text-fg-3">{query ? t('connections.noResults') : view === 'closed' ? t('journal.empty') : t('connections.noConnections')}</td>
         </tr>
       {/each}
     </tbody>
@@ -293,10 +357,27 @@
   {/if}
 </div>
 
+<ConnectionDetails bind:open={detailsOpen} connection={detailConnection} deviceName={detailConnection ? deviceName(detailConnection) : ''} status={detailStatus} />
+
 <Confirm
   bind:open={confirmAll}
   title={t('connections.confirmTitle')}
   description={t('connections.confirmDescription', { count: core.conns.length, total: count(core.conns.length) })}
   action={t('connections.closeAll')}
-  onconfirm={() => api.closeAll()}
+  onconfirm={closeAll}
 />
+
+<style>
+  .connections-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .column-options { margin-bottom: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
+  .column-options-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 16px; margin-bottom: 8px; }
+  .column-options label { display: flex; align-items: center; gap: 9px; min-height: 36px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+  .column-options input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
+  .connections-table { max-width: 100%; }
+  @media (max-width: 639px) {
+    .connections-toolbar { flex-wrap: wrap; gap: 8px; }
+    .column-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; }
+    .column-options { padding: 10px 12px; }
+    .column-options label { min-height: 44px; font-size: 12px; }
+  }
+</style>

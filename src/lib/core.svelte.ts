@@ -16,6 +16,8 @@ import { t } from './i18n.svelte'
 import { AnalysisTracker } from './analysis'
 import { TrafficHistory } from './traffic-history'
 import { connectionJournal } from './connection-journal.svelte'
+import { notifications } from './notifications.svelte'
+import { ConnectionRates, readLiveUpdateMode, saveLiveUpdateMode, validLiveUpdateMode, type LiveUpdateMode } from './live-updates'
 
 export type ConnRow = Connection & { dl: number; ul: number }
 
@@ -37,9 +39,13 @@ class Core {
 
   up = $state(0)
   down = $state(0)
+  trafficReady = $state(false)
+  trafficOnline = $state(false)
   upTotal = $state(0)
   downTotal = $state(0)
   memory = $state(0)
+  memoryReady = $state(false)
+  memoryOnline = $state(false)
   /** счётчик кадров — график перерисовывается по нему, массивы не реактивны */
   tick = $state(0)
   readonly series: { t: number[]; up: number[]; down: number[] } = { t: [], up: [], down: [] }
@@ -47,14 +53,21 @@ class Core {
 
   conns = $state.raw<ConnRow[]>([])
   connectionsReady = $state(false)
+  connectionsFresh = $state(false)
   connectionsOnline = $state(false)
   #analysisTracker = new AnalysisTracker()
   analysis = $state.raw(this.#analysisTracker.snapshot())
   configs = $state<Configs | null>(null)
   streamsOpen = $state(0)
+  liveUpdateMode = $state<LiveUpdateMode>(readLiveUpdateMode())
+  liveUpdateSaved = $state(true)
+  updatesPaused = $state(false)
+  updatesResuming = $state(false)
+  staleStreams = $state<string[]>([])
+  observationGapVersion = $state(0)
 
   #stops: Array<() => void> = []
-  #prev = new Map<string, { u: number; d: number }>()
+  #rates = new ConnectionRates()
   #generation = 0
 
   constructor() {
@@ -64,6 +77,7 @@ class Core {
       this.series.up.push(0)
       this.series.down.push(0)
     }
+    document.addEventListener?.('visibilitychange', () => this.#syncVisibility())
   }
 
   async boot() {
@@ -155,12 +169,18 @@ class Core {
   async setMode(mode: Mode) {
     if (!this.configs) return
     const generation = this.#generation
+    const backend = { ...this.backend }
     const prev = this.configs.mode
     this.configs.mode = mode
     try {
-      await api.patchConfigs({ mode })
-    } catch {
-      if (generation === this.#generation && this.configs) this.configs.mode = prev
+      await api.patchConfigs({ mode }, backend)
+      if (generation === this.#generation) notifications.dismiss('routing-mode')
+    } catch (error) {
+      if (generation === this.#generation && this.configs) {
+        this.configs.mode = prev
+        notifications.show({ id: 'routing-mode', tone: 'error', scope: backend.url,
+          message: () => t('notifications.modeError', { message: errorMessage(error) }) })
+      }
     }
   }
 
@@ -170,11 +190,42 @@ class Core {
     this.analysis = this.#analysisTracker.snapshot()
   }
 
+  setLiveUpdateMode(value: LiveUpdateMode): boolean {
+    if (!validLiveUpdateMode(value)) return false
+    this.liveUpdateMode = value
+    this.liveUpdateSaved = saveLiveUpdateMode(value)
+    this.#syncVisibility()
+    return this.liveUpdateSaved
+  }
+
+  #syncVisibility() {
+    if (this.status !== 'ok' && this.status !== 'lost') return
+    const pause = this.liveUpdateMode === 'eco' && document.hidden
+    if (pause && !this.updatesPaused) {
+      this.updatesPaused = true
+      this.updatesResuming = false
+      this.observationGapVersion++
+      this.#stop(false)
+    } else if (!pause && this.updatesPaused) {
+      this.updatesPaused = false
+      this.updatesResuming = true
+      this.#start(this.#generation)
+    }
+  }
+
+  #stale(path: string) {
+    if (!this.staleStreams.length) this.observationGapVersion++
+    if (!this.staleStreams.includes(path)) this.staleStreams = [...this.staleStreams, path]
+  }
+
+  #received(path: string) {
+    if (this.staleStreams.includes(path)) this.staleStreams = this.staleStreams.filter(value => value !== path)
+    if (this.trafficReady && this.memoryReady && this.connectionsFresh) this.updatesResuming = false
+  }
+
   #start(generation: number) {
-    this.conns = []
-    this.#prev.clear()
-    this.connectionsReady = false
-    this.resetAnalysis()
+    if (this.liveUpdateMode === 'eco' && document.hidden) { this.#syncVisibility(); return }
+    this.#rates.reset()
     const onState = (open: boolean) => {
       if (generation !== this.#generation) return
       this.streamsOpen += open ? 1 : -1
@@ -200,65 +251,94 @@ class Core {
             s.down.shift()
           }
           this.trafficHistory.append(Date.now() / 1000, d.down, d.up)
+          this.trafficReady = true
+          this.#received('/traffic')
           this.tick++
         },
-        { onState: (open) => {
+        { onStale: () => { if (generation === this.#generation) this.#stale('/traffic') }, onState: (open) => {
           if (generation !== this.#generation) return
-          if (!open) this.trafficHistory.pause()
+          this.trafficOnline = open
+          if (!open) {
+            this.trafficReady = false
+            this.trafficHistory.pause()
+          }
           onState(open)
         } },
       ),
       stream<{ inuse: number }>('/memory', (d) => {
-        if (generation === this.#generation) this.memory = d.inuse
-      }, { onState }),
+        if (generation !== this.#generation) return
+        this.memory = d.inuse
+        this.memoryReady = true
+        this.#received('/memory')
+      }, { onStale: () => { if (generation === this.#generation) this.#stale('/memory') }, onState: (open) => {
+        if (generation !== this.#generation) return
+        this.memoryOnline = open
+        if (!open) this.memoryReady = false
+        onState(open)
+      } }),
       stream<ConnSnapshot>(
         '/connections',
         (d) => {
           if (generation !== this.#generation) return
           this.upTotal = d.uploadTotal
           this.downTotal = d.downloadTotal
-          const next = new Map<string, { u: number; d: number }>()
-          const rows: ConnRow[] = (d.connections ?? []).map((c) => {
-            const p = this.#prev.get(c.id)
-            next.set(c.id, { u: c.upload, d: c.download })
-            return { ...c, ul: p ? Math.max(0, c.upload - p.u) : 0, dl: p ? Math.max(0, c.download - p.d) : 0 }
-          })
-          this.#prev = next
-          this.conns = rows
+          this.conns = this.#rates.sample(d.connections ?? [])
           connectionJournal.observe(d.connections ?? [])
           this.#analysisTracker.ingest(d.connections ?? [])
           this.analysis = this.#analysisTracker.snapshot()
           this.connectionsReady = true
+          this.connectionsFresh = true
+          this.#received('/connections')
         },
-        { query: { interval: 1000 }, onState: (open) => {
+        { query: { interval: 1000 }, onStale: () => { if (generation === this.#generation) this.#stale('/connections') }, onState: (open) => {
           if (generation !== this.#generation) return
           this.connectionsOnline = open
-          if (!open) connectionJournal.pause()
+          if (!open) {
+            this.connectionsFresh = false
+            this.#rates.reset()
+            connectionJournal.pause()
+          }
           onState(open)
         } },
       ),
     )
   }
 
-  #stop() {
-    connectionJournal.pause(true)
+  #stop(resetJournal = true) {
+    connectionJournal.pause(resetJournal)
     this.#stops.forEach((s) => s())
     this.#stops = []
     this.streamsOpen = 0
+    this.trafficReady = false
+    this.trafficOnline = false
+    this.memoryReady = false
+    this.memoryOnline = false
+    this.connectionsFresh = false
     this.connectionsOnline = false
+    this.#rates.reset()
+    this.trafficHistory.pause()
   }
 
   #reset() {
-    this.#prev.clear()
+    this.#rates.reset()
+    this.updatesPaused = false
+    this.updatesResuming = false
+    this.staleStreams = []
+    this.observationGapVersion = 0
     this.up = 0
     this.down = 0
+    this.trafficReady = false
+    this.trafficOnline = false
     this.upTotal = 0
     this.downTotal = 0
     this.memory = 0
+    this.memoryReady = false
+    this.memoryOnline = false
     this.version = ''
     this.prizrak = false
     this.conns = []
     this.connectionsReady = false
+    this.connectionsFresh = false
     this.configs = null
     this.resetAnalysis()
     this.trafficHistory.reset()

@@ -6,6 +6,8 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshotDir = path.join(root, '.prizrak-check')
@@ -58,6 +60,7 @@ async function launchBrowser() {
 
 async function session({ locale = 'en', width = 1440, colorScheme = 'light' } = {}) {
   const context = await browser.newContext({ viewport: { width, height: 1050 }, colorScheme })
+  await stubAppUpdates(context)
   await context.addInitScript((locale) => localStorage.setItem('miboard.locale', locale), locale)
   const page = await context.newPage()
   page.setDefaultTimeout(10_000)
@@ -75,6 +78,7 @@ const modelRequests = (requests) => requests.filter((request) => request.method(
 async function open(page, server, route, heading) {
   await page.goto(`${server.base}#/${route}?secret=test`)
   await page.getByRole('heading', { name: heading, exact: true }).waitFor()
+  if (route === 'settings') await chooseSettingsCategory(page, 'core')
 }
 
 try {
@@ -119,7 +123,7 @@ try {
   await clear.click()
   assert((await dialog.innerText()).includes(configName))
   await dialog.getByRole('button', { name: 'Clear history', exact: true }).click()
-  await settings.getByRole('status').filter({ hasText: 'Smart history cleared' }).waitFor()
+  await page.locator('.notification-toast').filter({ hasText: 'Smart history cleared' }).waitFor()
   assert.equal(historyRequests(requests).length, 1)
   assert.equal(apiPath(historyRequests(requests)[0]), `/cache/smart/flush/${encodeURIComponent(configName)}`)
 
@@ -129,15 +133,15 @@ try {
   await dialog.getByRole('button', { name: 'Clear history', exact: true }).click()
   await poll(() => historyRequests(requests).length === 2, 'global history reset')
   assert.equal(apiPath(historyRequests(requests)[1]), '/cache/smart/flush')
-  await settings.getByRole('status').filter({ hasText: 'Smart history cleared' }).waitFor()
+  await page.locator('.notification-toast').filter({ hasText: 'Smart history cleared' }).waitFor()
 
   const update = settings.getByRole('button', { name: 'Update model', exact: true })
   await update.click()
-  await settings.getByRole('status').filter({ hasText: 'LightGBM model updated' }).waitFor()
+  await page.locator('.notification-toast').filter({ hasText: 'LightGBM model updated' }).waitFor()
   assert.equal(modelRequests(requests).length, 1)
   await page.route(`${prizrak.origin}/upgrade/lgbm`, (route) => route.fulfill({ status: 503, json: { error: 'Model download failed' } }))
   await update.click()
-  await settings.getByRole('alert').filter({ hasText: 'Model download failed' }).waitFor()
+  await page.locator('.notification-toast').filter({ hasText: 'Model download failed' }).waitFor()
   await update.waitFor({ state: 'visible' })
   assert(await update.isEnabled(), 'Model update can be retried after an API error')
   await page.screenshot({ path: path.join(screenshotDir, 'settings-light.png'), fullPage: true, animations: 'disabled' })

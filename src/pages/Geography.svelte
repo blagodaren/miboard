@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { api, type Connection } from '../lib/api'
-  import { core, type ConnRow } from '../lib/core.svelte'
+  import { core } from '../lib/core.svelte'
+  import { connectionJournal } from '../lib/connection-journal.svelte'
+  import { observedConnections, type ObservationRange as ObservationRangeValue, type ObservedConnection } from '../lib/observations'
+  import ObservationRange from '../components/ObservationRange.svelte'
   import { countryName, destinationCountry, summarizeGeography } from '../lib/geography'
   import { loadGeoDatabase, type GeoDatabase } from '../lib/geo-db'
   import { GeoResolver } from '../lib/geo-resolver'
@@ -26,7 +29,12 @@
   let regionMetric = $state<Metric>('traffic')
   let selected = $state<string | null>(null)
   let paused = $state(false)
-  let frozen = $state.raw<ConnRow[]>([])
+  let frozen = $state.raw<ObservedConnection[]>([])
+  let range = $state<ObservationRangeValue>('active')
+  let historyNow = $state(Date.now())
+  const observed = $derived(observedConnections(core.conns, connectionJournal.backendUrl === core.backend.url ? connectionJournal.entries : [], range, Math.max(historyNow, Date.now())))
+  const streamLive = $derived(core.connectionsOnline && core.connectionsFresh)
+  const dataReady = $derived(core.connectionsReady || (range !== 'active' && !connectionJournal.loading))
   let frozenLocations = $state.raw<Map<string, Location>>(new Map())
   let database = $state.raw<GeoDatabase | null>(null)
   let databaseLoading = $state(true)
@@ -51,7 +59,8 @@
   onMount(() => {
     mounted = true
     void loadDatabase()
-    return () => { mounted = false }
+    const timer = setInterval(() => { historyNow = Date.now() }, 30_000)
+    return () => { mounted = false; clearInterval(timer) }
   })
 
   $effect(() => {
@@ -71,17 +80,18 @@
   })
 
   $effect(() => {
-    resolver?.update(!paused && core.connectionsOnline ? core.conns : [])
+    resolver?.update(!paused && streamLive ? core.conns : [])
   })
 
-  function location(connection: Connection): Location {
+  function location(connection: Connection & { observedClosed?: boolean }): Location {
     const code = destinationCountry(connection)
     if (code) return { code, source: 'metadata' }
     const resolved = resolver?.locate(connection)
+    if (connection.observedClosed && resolved?.source === 'dns') return { code: null, source: 'unknown' }
     return resolved ? { code: resolved.country, source: resolved.source } : { code: null, source: 'unknown' }
   }
 
-  const source = $derived(paused ? frozen : core.conns)
+  const source = $derived(paused ? frozen : observed)
   const locations = $derived.by(() => {
     revision
     return paused ? frozenLocations : new Map(source.map((connection) => [connection.id, location(connection)]))
@@ -128,30 +138,36 @@
 
   function togglePause() {
     if (!paused) {
-      frozen = core.conns
+      frozen = observed
       frozenLocations = new Map(locations)
     }
     paused = !paused
   }
 </script>
 
-<PageHeader title={t('geography.title')} meta={t('geography.meta')}>
+<PageHeader title={t('geography.title')} meta={t(range === 'active' ? 'geography.meta' : `observations.${range}`)}>
   {#snippet actions()}
     <Segmented label={t('geography.metric')} value={metric} {options} onchange={(value) => (metric = value)} />
-    <Button size="sm" onclick={togglePause} aria-pressed={paused} disabled={!core.connectionsReady}>
+    <Button size="sm" onclick={togglePause} aria-pressed={paused} disabled={!dataReady}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('geography.resume')}{:else}<IconPause strokeWidth={1.5} />{t('geography.pause')}{/if}
     </Button>
   {/snippet}
 </PageHeader>
 
+<ObservationRange bind:value={range} onchange={() => { paused = false; frozen = []; frozenLocations = new Map(); historyNow = Date.now() }} />
+{#if range !== 'active'}
+  <p class="mb-4 max-w-4xl text-xs leading-5 text-fg-3">{t('observations.geo')}</p>
+  {#if source.some(row => row.afterGap)}<p class="mb-4 text-xs text-warning" role="status">{t('observations.gap')}</p>{/if}
+{/if}
+
 <div class="geo-stats">
   <div>
     <p class="text-xs text-fg-3">{t('geography.countries')}</p>
-    <p class="stat-value">{core.connectionsReady ? count(countries.length) : '—'}</p>
+    <p class="stat-value">{dataReady ? count(countries.length) : '—'}</p>
   </div>
   <div>
     <p class="text-xs text-fg-3">{t('geography.located')}</p>
-    <p class="stat-value">{core.connectionsReady ? count(summary.located) : '—'}<span class="ml-2 text-xs text-fg-3">{t('geography.ofTotal', { total: summary.total })}</span></p>
+    <p class="stat-value">{dataReady ? count(summary.located) : '—'}<span class="ml-2 text-xs text-fg-3">{t('geography.ofTotal', { total: summary.total })}</span></p>
   </div>
   <div>
     <button
@@ -163,12 +179,12 @@
       onclick={() => select(UNKNOWN)}
     >
       <span class="text-xs text-fg-3">{t('geography.unknown')}</span>
-      <span class="stat-value">{core.connectionsReady ? count(summary.unknown) : '—'}</span>
+      <span class="stat-value">{dataReady ? count(summary.unknown) : '—'}</span>
     </button>
   </div>
   <div>
     <p class="text-xs text-fg-3">{t('geography.connectionVolume')}</p>
-    <p class="stat-value">{core.connectionsReady ? bytes(summary.download + summary.upload) : '—'}</p>
+    <p class="stat-value">{dataReady ? bytes(summary.download + summary.upload) : '—'}</p>
   </div>
 </div>
 
@@ -179,7 +195,7 @@
   </div>
 {/if}
 
-{#if !core.connectionsOnline && core.connectionsReady && !paused}
+{#if !streamLive && core.connectionsReady && !paused}
   <p class="mb-4 rounded-card border border-warning-border bg-warning-surface px-4 py-3 text-[13px] text-fg-2" role="status">
     {t('geography.streamLost')}
   </p>
@@ -190,8 +206,8 @@
     <div class="panel-heading">
       <h2 class="text-sm font-medium">{t('geography.mapTitle')}</h2>
       <span class="flex items-center gap-2 text-xs text-fg-3" role="status">
-        <span class="led" data-on={!paused && core.connectionsOnline} data-state={!core.connectionsOnline && !paused ? 'down' : undefined}></span>
-        {paused ? t('geography.pause') : !core.connectionsReady ? t('geography.waiting') : core.connectionsOnline ? t('geography.live') : t('geography.offline')}
+        <span class="led" data-on={!paused && streamLive} data-state={!streamLive && !paused ? 'down' : undefined}></span>
+        {paused ? t('geography.pause') : !core.connectionsReady ? t('geography.waiting') : streamLive ? t('geography.live') : t('geography.offline')}
       </span>
     </div>
     <GeographyMap
@@ -201,7 +217,7 @@
       metricLabel={metric === 'connections' ? t('geography.connections') : t('geography.traffic')}
       {formatValue}
     />
-    {#if !core.connectionsReady}
+    {#if !dataReady}
       <p class="map-message" role="status">{t('geography.loading')}</p>
     {:else if !summary.total}
       <p class="map-message">{t('geography.empty')}</p>
@@ -232,7 +248,7 @@
           </span>
         </button>
       {:else}
-        <p class="px-4 py-8 text-[13px] text-fg-3">{core.connectionsReady ? t('geography.noCountries') : t('geography.firstSnapshot')}</p>
+        <p class="px-4 py-8 text-[13px] text-fg-3">{dataReady ? t('geography.noCountries') : t('geography.firstSnapshot')}</p>
       {/each}
     </div>
     <div class="country-footer">
@@ -263,12 +279,13 @@
 
 <div class="mt-6">
   <RegionDetails
+    historical={range !== 'active'}
     countries={countries}
     selected={selected === UNKNOWN ? null : selected}
     onselect={select}
     metric={regionMetric}
     onmetricchange={(value) => (regionMetric = value)}
-    loading={!core.connectionsReady || (!summary.located && summary.total > 0 && (databaseLoading || pending > 0))}
+    loading={!dataReady || (!summary.located && summary.total > 0 && (databaseLoading || pending > 0))}
   />
 </div>
 
@@ -303,7 +320,7 @@
           <td class="num whitespace-nowrap px-4 py-3 text-right font-mono text-xs text-fg-2">{bytes(host.total)}</td>
         </tr>
       {:else}
-        <tr class="border-t border-line"><td colspan="3" class="px-4 py-8 text-center text-fg-3">{core.connectionsReady ? t('geography.noSelectedConnections') : t('geography.waiting')}</td></tr>
+        <tr class="border-t border-line"><td colspan="3" class="px-4 py-8 text-center text-fg-3">{dataReady ? t('geography.noSelectedConnections') : t('geography.waiting')}</td></tr>
       {/each}
     </tbody>
   </table>

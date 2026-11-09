@@ -20,6 +20,8 @@
   } from '../lib/icons'
   import Segmented from './Segmented.svelte'
   import Brand from './Brand.svelte'
+  import SidebarStats from './SidebarStats.svelte'
+  import LiveUpdateNotice from './LiveUpdateNotice.svelte'
 
   let { children }: { children: Snippet } = $props()
 
@@ -43,8 +45,8 @@
   const host = $derived(core.backend.url.replace(/^https?:\/\//, ''))
   const linkUp = $derived(core.status === 'ok')
 
-  // A deep link or reload must leave the selected mobile section on screen.
-  // Scroll only this strip: scrollIntoView would also move the page content.
+  // Keep the active section visible in either scrollable navigation.
+  // Scroll only the menu: scrollIntoView would also move the page content.
   const revealSection: Action<HTMLElement, Route> = (element) => {
     let disposed = false
     const reveal = async () => {
@@ -52,7 +54,10 @@
       if (disposed || !element.clientWidth) return
       const selected = element.querySelector<HTMLElement>('[aria-current="page"]')
       if (!selected) return
-      element.scrollLeft = selected.offsetLeft - (element.clientWidth - selected.offsetWidth) / 2
+      const menu = element.getBoundingClientRect()
+      const item = selected.getBoundingClientRect()
+      if (getComputedStyle(element).flexDirection === 'column') element.scrollTop += item.top - menu.top - (element.clientHeight - item.height) / 2
+      else element.scrollLeft += item.left - menu.left - (element.clientWidth - item.width) / 2
     }
     const observer = new ResizeObserver(reveal)
     observer.observe(element)
@@ -79,17 +84,17 @@
 <div class="flex min-h-dvh">
   <!-- Сайдбар: десктоп -->
   <aside
-    class="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col border-r border-line bg-deep px-3 pb-4 pt-5 md:flex"
+    class="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col overflow-y-auto border-r border-line bg-deep px-3 pb-4 pt-5 md:flex"
   >
-    <div class="px-3">{@render brand()}</div>
+    <div class="shrink-0 px-3">{@render brand()}</div>
 
-    <nav class="mt-8 flex flex-col gap-0.5" aria-label={t('nav.sections')}>
+    <nav use:revealSection={router.route} class="mt-8 flex min-h-24 flex-col gap-0.5 overflow-y-auto" aria-label={t('nav.sections')}>
       {#each nav as item (item.route)}
         {@const active = router.route === item.route}
         <a
           href="#/{item.route}"
           aria-current={active ? 'page' : undefined}
-          class="sidebar-link flex h-9 items-center gap-2.5 rounded-lg px-3 transition-colors duration-150
+          class="sidebar-link flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 transition-colors duration-150
             {active ? 'bg-nav-active font-medium text-fg' : 'text-fg-2 hover:bg-hover hover:text-fg'}"
         >
           <item.icon class="size-4 {active ? 'text-fg' : 'text-fg-3'}" strokeWidth={1.5} />
@@ -101,7 +106,8 @@
       {/each}
     </nav>
 
-    <div class="mt-auto flex flex-col gap-3 px-1">
+    <div class="mt-auto flex shrink-0 flex-col gap-3 px-1 pt-3">
+      <SidebarStats />
       {#if core.configs}
         <div class="flex flex-col gap-2">
           <span class="px-2 text-xs text-fg-3">{t('mode.label')}</span>
@@ -127,7 +133,8 @@
       {/if}
     </div>
 
-    <main class="mx-auto w-full max-w-[1440px] flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-12 md:pt-8">
+    <main class="mx-auto w-full flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-12 md:pt-8 {router.route === 'connections' || router.route === 'proxies' ? 'max-w-none' : 'max-w-[1440px]'}">
+      <LiveUpdateNotice />
       {@render children()}
     </main>
 

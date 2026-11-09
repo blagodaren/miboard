@@ -6,6 +6,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 import { FONT_SOURCES } from './font-sources.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -129,6 +130,7 @@ async function scenario(server, mode) {
       }
       return route.continue()
     })
+    await stubAppUpdates(context)
     const page = await context.newPage()
     page.setDefaultTimeout(10_000)
     page.on('pageerror', error => errors.push(error.message))

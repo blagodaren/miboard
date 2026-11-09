@@ -1,0 +1,130 @@
+# Разработка MIBoard
+
+[Русский](DEVELOPMENT.ru.md) · [English](DEVELOPMENT.en.md) · [README](../README.md)
+
+## Скачать
+
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
+
+Для каждого архива есть контрольная сумма:
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist.zip.sha256)
+и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist-cdn-fonts.zip.sha256).
+
+CDN-варианту для загрузки шрифтов нужен доступ к `unpkg.com`. При недоступности
+CDN панель использует системные шрифты; цветные флаги на Windows могут быть
+недоступны. В обоих архивах одинаковые функции и локальная GeoDB.
+
+Версии шрифтов закреплены: Geist и Geist Mono `5.3.0`, Twemoji Country Flags
+из `country-flag-emoji-polyfill` `0.1.8`. Пять точных URL перечислены в
+[`scripts/font-sources.mjs`](../scripts/font-sources.mjs).
+
+## Разработка
+
+Требуется **Node.js 24 или новее**. Установить зависимости: `npm ci`.
+Для запуска готовой панели Node.js не нужен.
+
+| Команда | Что делает |
+| --- | --- |
+| `npm run mock` | мок mihomo на `127.0.0.1:9090`, secret `test`, отдаёт `dist/` на `/ui/` |
+| `npm run dev` | Vite на `:5173`, подключиться к `http://127.0.0.1:9090` |
+| `npm run check` / `npm test` | типы и все модульные тесты, включая упаковку релиза |
+| `npm run test:ui` | одна сборка; UI-проверки сценариев, всех десяти экранов, обеих тем и контраста с изолированными mock |
+| `npm run release` | типы, модульные тесты, обе сборки, ZIP, SHA-256 и проверка содержимого |
+| `node scripts/shots.mjs <dir> [dark\|light] [mobile]` | скриншоты всех экранов с мока |
+
+Перед UI-проверками установить Chromium: `npx playwright install chromium`.
+На Linux для CI: `npx playwright install --with-deps chromium`.
+
+Отдельная сборка CDN-варианта: `npm run build:cdn-fonts`.
+Проверка загрузки шрифтов и системного fallback для обеих готовых сборок:
+`npm run test:fonts`.
+
+Для воспроизведения скриншотов README сначала запустить `npm run build`, затем
+`node scripts/readme-screenshots.mjs`. Скрипт использует синтетические данные
+в изолированном fixture и сохраняет изображения в `docs/images/`.
+
+## Релиз 0.1.3
+
+1. Запустить `npm run test:ui`. Проверки используют локальный mock, без подключения
+   к пользовательскому контроллеру.
+2. Запустить `npm run release`. В корне появятся `dist.zip`, `dist-cdn-fonts.zip`
+   и их файлы `.sha256`. `index.html` находится в корне каждого архива;
+   размер каждого ZIP ограничен 10 МиБ.
+3. Запустить `npm run test:fonts` для обеих готовых сборок.
+4. Отправить проверенные исходники в `main` репозитория `blagodaren/miboard`.
+   Сборки, архивы, снимки UI-проверок, `node_modules/` и `.env*` исключены из Git.
+5. Создать и отправить тег `v0.1.3`. Workflow сверит тег с `package.json`,
+   повторит проверки и создаст GitHub release с обоими ZIP и контрольными суммами.
+   Версии без суффикса становятся `latest`; версии с суффиксом остаются предварительными.
+
+При подготовке следующей версии изменить `package.json`, синхронизировать lockfile
+через `npm install --package-lock-only` и добавить запись в `CHANGELOG.md`.
+Версия в интерфейсе берётся из `package.json` автоматически.
+
+Локальная проверка уже созданных архивов: `npm run check:release` и
+`npm run check:release:cdn-fonts`. Обе команды сверяют версию сборки с `package.json`,
+чтобы после изменения версии не выпустить прежний архив. В архивы входят только готовая панель, GeoDB и
+лицензии, PWA-манифест, service worker, иконки и метаданные версии;
+в основной архив также включены файлы шрифтов. Исходники, тесты и
+настройки разработки в архивы не входят.
+
+## Лицензии
+
+Код MIBoard распространяется под [MIT](../LICENSE). Лицензии шрифтов, иконки,
+Twemoji и поставляемых JavaScript-зависимостей находятся в
+[`public/licenses/`](../public/licenses/); при сборке notices зависимостей обновляются
+автоматически. У GeoDB DB-IP Country Lite — [CC BY 4.0](../public/geodb/NOTICE.md), у контуров карты —
+[public domain](../src/lib/data/NOTICE.md). Все эти уведомления входят в релиз.
+
+## Стек
+
+Svelte 5, Vite, Tailwind v4, bits-ui (база shadcn-svelte), lucide, uPlot, Geist / Geist Mono (latin + cyrillic).
+
+## Языки и переводы
+
+По умолчанию интерфейс на английском, независимо от языка браузера. Русский можно выбрать на экране подключения или в **Settings → Appearance → Language**. Выбор хранится в `localStorage` под ключом `miboard.locale`. Переключение обновляет страницы, сообщения, заголовок вкладки, числа, время и единицы трафика без перезагрузки. При недоступном хранилище переключение работает до закрытия страницы.
+
+`src/lib/i18n.svelte.ts` содержит реестр языков и функцию `t()`. Словари в `src/lib/locales/` разделены по разделам приложения; `en.ts` и `ru.ts` собирают их вместе. Английский словарь задаёт типизированные ключи. Реактивность использует стандартные [$state и $derived Svelte 5](https://svelte.dev/docs/svelte/$derived), дополнительных зависимостей нет.
+
+Для нового языка:
+
+1. Создать `src/lib/locales/fr.ts`. Полный перевод необязателен — отсутствующие сообщения берутся из English:
+
+   ```ts
+   import type { Messages } from '../i18n.svelte'
+
+   export default {
+     'nav.overview': 'Vue d’ensemble',
+     'common.language': 'Langue',
+   } satisfies Partial<Messages>
+   ```
+
+2. Импортировать словарь в `src/lib/i18n.svelte.ts` и добавить запись в `locales`:
+
+   ```ts
+   fr: { label: 'Français', intlLocale: 'fr-FR', dir: 'ltr', messages: fr },
+   ```
+
+   Язык автоматически появится в обоих переключателях. Для письма справа налево доступно `dir: 'rtl'`.
+
+3. Запустить `npm run check` и `npm run test:i18n`.
+
+В компонентах использовать `t('ключ', { name: value })`; для вычисляемых списков подписей — `$derived(...)`. Множественное число задаётся объектом `{ one: '…', few: '…', many: '…', other: '…' }` и числовым параметром `count`. Формы выбирает `Intl.PluralRules`, числовые параметры форматируются по выбранному языку. Тексты и имена, полученные от mihomo, остаются данными API.
+
+## Дизайн
+
+Графитовые нейтральные поверхности, один янтарный акцент для выбранных
+элементов и индикаторов состояния. Графики передают загрузку канала,
+задержки показываются числами.
+
+Токены обеих тем — `src/app.css`. Общие роли цветов, размеры и шаблон панели — [UI_KIT.md](../UI_KIT.md).
+
+В светлой теме фон страницы и навигации отделён от белых панелей. Поля используют
+`--field` / `--field-border`, выбранные состояния — `--selected` / `--selected-border` / `--selected-text`.
+Второстепенный текст сохраняет контраст не ниже 4.5:1 на штатных поверхностях;
+зелёная задержка и янтарный текст используют более тёмные оттенки.
+Проверка всех десяти экранов, обеих тем, контраста и состояний входит в `npm run test:ui`.
+Отдельный запуск на уже собранной панели: `node scripts/test-dashboard-ui.mjs`.
+Для проверки текущего Vite доступна команда `npm run test:theme`.
+Проверка цветов вне общего набора: `npm run test:palette` (также входит в `npm test`).

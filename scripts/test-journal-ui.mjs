@@ -9,6 +9,8 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = await mkdtemp(path.join(os.tmpdir(), 'miboard-journal-'))
@@ -80,6 +82,7 @@ try {
 
   async function session(locale = 'en', width = 1440, memory = false, initial = [a, b]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: locale === 'ru' ? 'dark' : 'light', reducedMotion: 'reduce' })
+    await stubAppUpdates(context)
     await context.addInitScript(({ locale, origin, memory }) => {
       localStorage.setItem('miboard.locale', locale)
       localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.10': 'Work laptop' }))
@@ -147,6 +150,7 @@ try {
   console.log('PASS: disconnect preserves active snapshots; reconnect records observed disappearance with uncertainty')
 
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
+  await chooseSettingsCategory(page, 'data')
   const settings = page.locator('section[aria-labelledby="journal-settings-heading"]')
   await settings.locator('#journal-retention').selectOption('7d')
   await poll(async () => (await record(page, origin))?.retention === '7d', 'retention preference persisted')
@@ -195,6 +199,49 @@ try {
   assert.match(await navigation.innerText(), /Page 1 of 2/, 'Sorting resets pagination')
   await paging.context.close()
   console.log('PASS: 105 real snapshot closures paginate by 100; search covers the complete journal and sort/search reset the page')
+
+  assert.deepEqual(mutations, [], 'Historical journal controls have not invoked mutation APIs')
+  const actions = await session()
+  let closeStatus = 500
+  await actions.page.route(`${origin}/connections/${a.id}`, route => route.fulfill({ status: closeStatus, ...(closeStatus === 204 ? {} : { json: { message: 'fixture close failure' } }) }))
+  const closeButton = actions.page.getByRole('button', { name: 'Close connection to a.journal.example', exact: true })
+  await closeButton.click()
+  const closeToast = actions.page.locator(`[data-toast-id="connection-close-${a.id}"]`)
+  await closeToast.getByText('Could not close a.journal.example: fixture close failure', { exact: true }).waitFor()
+  assert.equal(await actions.page.locator('main').getByText('Could not close a.journal.example: fixture close failure', { exact: true }).count(), 0)
+  closeStatus = 204
+  await closeButton.click()
+  await closeToast.getByText('Closure requested for a.journal.example', { exact: true }).waitFor()
+  assert.equal(await closeToast.count(), 1, 'Repeating a connection action updates the same notification')
+  await actions.page.route(`${origin}/connections`, route => route.fulfill({ status: 500, json: { message: 'fixture close-all failure' } }))
+  await actions.page.getByRole('button', { name: 'Close all', exact: true }).click()
+  await actions.page.getByRole('alertdialog').getByRole('button', { name: 'Close all', exact: true }).click()
+  await actions.page.locator('[data-toast-id="connections-close-all"]').getByText('Could not close all connections: fixture close-all failure', { exact: true }).waitFor()
+  await actions.context.close()
+  mutations.length = 0 // Subsequent checks again assert that historical-only interactions do not mutate the core.
+  console.log('PASS: single/all live-connection failures and success use one global toast with no inline duplicates')
+
+  const setup = await session()
+  const setupUrl = new URL(base)
+  setupUrl.hash = '/setup'
+  await setup.page.goto(setupUrl.href)
+  await setup.page.getByRole('button', { name: 'Add', exact: true }).click()
+  await setup.page.getByPlaceholder('For example, home router', { exact: true }).fill('Offline toast fixture')
+  await setup.page.locator('#backend-url').fill('offline-toast.invalid:9090')
+  await setup.page.getByRole('button', { name: 'Save', exact: true }).click()
+  await setup.page.locator('[data-toast-id="backend-profile-save"]').getByText('Profile saved', { exact: true }).waitFor()
+  assert.equal(await setup.page.locator('form').getByText('Profile saved', { exact: true }).count(), 0)
+  await setup.page.locator('#backend-url').fill(origin)
+  await setup.page.locator('#backend-secret').fill('wrong-fixture-secret')
+  await setup.page.getByRole('button', { name: 'Connect', exact: true }).click()
+  const connectToast = setup.page.locator('[data-toast-id="backend-connect"]')
+  await connectToast.getByText('Invalid secret', { exact: true }).waitFor()
+  assert.equal(await setup.page.locator('#connection-error').count(), 0, 'Authentication failure moved out of form validation')
+  await setup.page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru')
+  await connectToast.getByText('Неверный secret', { exact: true }).waitFor()
+  assert.equal(await connectToast.count(), 1, 'The same authentication toast reacts to locale changes')
+  await setup.context.close()
+  console.log('PASS: offline profile saves and API authentication failures use global, locale-reactive notifications')
 
   for (const memory of [false, true]) {
     const mobile = await session('ru', 320, memory)

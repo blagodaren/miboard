@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
+  import { errorMessage } from '../lib/api'
   import { core } from '../lib/core.svelte'
   import { connectionJournal, type JournalRetention } from '../lib/connection-journal.svelte'
-  import { t } from '../lib/i18n.svelte'
+  import { t, type MessageKey } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
   import { count } from '../lib/format'
   import Button from './Button.svelte'
   import Confirm from './Confirm.svelte'
@@ -9,17 +12,48 @@
   let confirmClear = $state(false)
   let confirmDisable = $state(false)
   let capturedBackend = $state('')
+  const backend = { ...core.backend }
+  let active = true
+  let operation = 0
+  onDestroy(() => { active = false; operation++ })
+  const current = () => active && core.backend.url === backend.url && core.backend.secret === backend.secret && connectionJournal.backendUrl === backend.url
   const ready = $derived(!!connectionJournal.backendUrl && connectionJournal.backendUrl === core.backend.url && !connectionJournal.loading)
+  async function persist(message: MessageKey) {
+    const run = ++operation
+    try {
+      await connectionJournal.flush()
+      if (!current() || run !== operation) return
+      const memory = connectionJournal.storageState === 'memory'
+      notifications.show({ id: 'settings:journal', tone: memory ? 'warning' : 'success', scope: backend.url,
+        title: () => t('journal.title'), message: () => t(memory ? 'journal.memory' : message) })
+    } catch (error) {
+      if (current() && run === operation) notifications.show({ id: 'settings:journal', tone: 'error', scope: backend.url,
+        title: () => t('journal.title'), message: () => errorMessage(error) })
+    }
+  }
   function change(value: string) {
-    if (!ready) return
+    if (!ready || !current()) return
     if (value === 'off' && connectionJournal.entries.length) {
       capturedBackend = connectionJournal.backendUrl
       confirmDisable = true
-    } else connectionJournal.setRetention(value as JournalRetention)
+    } else {
+      connectionJournal.setRetention(value as JournalRetention)
+      void persist(value === 'off' ? 'journal.recordingDisabled' : 'journal.retentionSaved')
+    }
   }
   function clear() {
     capturedBackend = connectionJournal.backendUrl
     confirmClear = true
+  }
+  function confirmClearJournal() {
+    if (!ready || !current() || capturedBackend !== connectionJournal.backendUrl) return
+    connectionJournal.clear()
+    void persist('journal.cleared')
+  }
+  function confirmDisableJournal() {
+    if (!ready || !current() || capturedBackend !== connectionJournal.backendUrl) return
+    connectionJournal.setRetention('off')
+    void persist('journal.recordingDisabled')
   }
 </script>
 
@@ -46,5 +80,5 @@
   </div>
 </section>
 
-<Confirm bind:open={confirmClear} title={t('journal.clearTitle')} description={t('journal.clearDescription', { count: count(connectionJournal.entries.length) })} action={t('journal.clear')} onconfirm={() => { if (capturedBackend === connectionJournal.backendUrl) connectionJournal.clear() }} />
-<Confirm bind:open={confirmDisable} title={t('journal.disableTitle')} description={t('journal.disableDescription')} action={t('journal.disable')} onconfirm={() => { if (capturedBackend === connectionJournal.backendUrl) connectionJournal.setRetention('off') }} />
+<Confirm bind:open={confirmClear} title={t('journal.clearTitle')} description={t('journal.clearDescription', { count: count(connectionJournal.entries.length) })} action={t('journal.clear')} onconfirm={confirmClearJournal} />
+<Confirm bind:open={confirmDisable} title={t('journal.disableTitle')} description={t('journal.disableDescription')} action={t('journal.disable')} onconfirm={confirmDisableJournal} />

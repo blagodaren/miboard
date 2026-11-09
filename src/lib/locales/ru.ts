@@ -11,5 +11,15 @@ import { ru as journal } from './journal'
 import { ru as proxyTools } from './proxy-tools'
 import { ru as transfer } from './transfer'
 import { ru as diagnostics } from './diagnostics'
+import { ru as notifications } from './notifications'
+import { ru as pwa } from './pwa'
+import { ru as connectionDetails } from './connection-details'
+import { ru as observations } from './observations'
+import { ru as coreTools } from './core-tools'
+import { ru as apiRulesDns } from './api-rules-dns'
+import { ru as nodeDiagnostics } from './node-diagnostics'
+import { ru as trafficTools } from './traffic-tools'
+import { ru as proxyPreferences } from './proxy-preferences'
+import { ru as liveUpdates } from './live-updates'
 
-export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices, ...journal, ...proxyTools, ...transfer, ...diagnostics }
+export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices, ...journal, ...proxyTools, ...transfer, ...diagnostics, ...notifications, ...pwa, ...connectionDetails, ...observations, ...apiRulesDns, ...nodeDiagnostics, ...coreTools, ...trafficTools, ...proxyPreferences, ...liveUpdates }

@@ -14,6 +14,7 @@ const transpile = (input, module = ts.ModuleKind.CommonJS) => ts.transpileModule
 const apiCode = transpile(source('api.ts'))
 const analysisCode = transpile(source('analysis.ts'))
 const trafficHistoryCode = transpile(source('traffic-history.ts'))
+const liveUpdatesCode = transpile(source('live-updates.ts'))
 const coreCode = transpile(compileModule(transpile(source('core.svelte.ts'), ts.ModuleKind.ESNext), {
   filename: 'core.svelte.js', generate: 'client',
 }).js.code)
@@ -32,6 +33,7 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
     removeItem: (key) => store.delete(key),
   }
   let timerId = 0
+  let now = 1_000_000
   class Socket {
     constructor(url) { this.url = url; this.closed = false; sockets.push(this) }
     close() { this.closed = true; this.onclose?.() }
@@ -39,17 +41,25 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
   let api
   let analysis
   let trafficHistory
+  let liveUpdates
+  const addListener = (type, callback) => {
+    if (!listeners.has(type)) listeners.set(type, [])
+    listeners.get(type).push(callback)
+  }
+  const removeListener = (type, callback) => {
+    listeners.set(type, (listeners.get(type) ?? []).filter(value => value !== callback))
+  }
+  const document = { documentElement: { dataset: {} }, hidden: false, addEventListener: addListener, removeEventListener: removeListener }
   const context = vm.createContext({
     URL, URLSearchParams, TextEncoder, btoa, AbortController, console,
     location,
-    document: { documentElement: { dataset: {} } },
-    addEventListener(type, callback) {
-      if (!listeners.has(type)) listeners.set(type, [])
-      listeners.get(type).push(callback)
-    },
+    document,
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])) } static now() { return now } },
+    addEventListener: addListener,
+    removeEventListener: removeListener,
     history: { replaceState(_state, _title, path) { location.href = new URL(path, location).href } },
     localStorage: storage,
-    setTimeout(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId },
+    setTimeout(callback, delay) { timers.set(++timerId, { callback, delay, at: now + delay }); return timerId },
     clearTimeout(id) { timers.delete(id) },
     WebSocket: Socket,
     async fetch(url, init) {
@@ -63,6 +73,8 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
       if (id === './api') return api
       if (id === './analysis') return analysis
       if (id === './traffic-history') return trafficHistory
+      if (id === './live-updates') return liveUpdates
+      if (id === './notifications.svelte') return { notifications: { show() {}, dismiss() {} } }
       // Journal persistence is covered separately; these tests isolate controller lifecycle.
       if (id === './connection-journal.svelte') return { connectionJournal: {
         activateBackend: async () => {}, observe() {}, pause() {},
@@ -79,10 +91,20 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
   api = evaluate(apiCode, 'api.ts')
   analysis = evaluate(analysisCode, 'analysis.ts')
   trafficHistory = evaluate(trafficHistoryCode, 'traffic-history.ts')
+  liveUpdates = evaluate(liveUpdatesCode, 'live-updates.ts')
   let coreExports
   const runtime = () => coreExports ??= evaluate(coreCode, 'core.svelte.ts')
   return {
-    api, store, storage, location, sockets, timers, requests,
+    api, store, storage, location, sockets, timers, requests, document,
+    advance(milliseconds, run = true) {
+      const end = now + milliseconds
+      while (run) {
+        const next = [...timers.entries()].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0]
+        if (!next) break
+        now = next[1].at; timers.delete(next[0]); next[1].callback()
+      }
+      now = end
+    },
     core() { return runtime().core },
     router() { return runtime().router },
     dispatch(type) { for (const callback of listeners.get(type) ?? []) callback() },
@@ -481,6 +503,215 @@ test('поздний ответ старого сервера не заменя�
   assert.equal(core.backend.url, 'http://new.test')
   assert.deepEqual(plain(s.api.savedBackends()).map((b) => b.url), ['http://new.test'])
   core.disconnect()
+  assert.equal(s.timers.size, 0)
+})
+
+test('watchdog восстанавливает молча зависший поток; поздние кадры и другой current backend не вмешиваются', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://original.test', secret: 'original' })
+  const states = [], values = []
+  let stale = 0
+  const stop = s.api.stream('/traffic', value => values.push(value), { onState: value => states.push(value), onStale: () => stale++ })
+  const old = s.sockets[0]
+  old.onopen()
+  s.advance(10000)
+  old.onmessage({ data: '{bad json' })
+  s.advance(5000)
+  assert.equal(old.closed, true)
+  assert.deepEqual(states, [true, false])
+  assert.equal(stale, 1)
+  old.onmessage({ data: '{"down":999}' })
+  assert.equal(values.length, 0)
+  s.api.useBackend({ url: 'http://different.test', secret: 'different' })
+  s.advance(1200)
+  const replacement = s.sockets[1]
+  assert.equal(new URL(replacement.url).hostname, 'original.test')
+  assert.equal(new URL(replacement.url).searchParams.get('token'), 'original')
+  replacement.onopen()
+  replacement.onmessage({ data: '{"down":42}' })
+  assert.deepEqual(plain(values), [{ down: 42 }])
+  assert.deepEqual(states, [true, false, true])
+  stop()
+  s.advance(60000)
+  assert.equal(s.sockets.length, 2)
+  assert.equal(s.timers.size, 0)
+})
+
+test('таймаут подключения и backoff с jitter работают до первого корректного кадра', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://router.test', secret: '' })
+  const states = []
+  let stale = 0
+  const stop = s.api.stream('/memory', () => {}, { onState: value => states.push(value), onStale: () => stale++ })
+  s.advance(10000)
+  assert.equal(stale, 1)
+  assert.deepEqual(states, [], 'never-opened timeout cannot decrement the open stream count')
+  const firstWait = [...s.timers.values()][0].delay
+  assert.ok(firstWait >= 800 && firstWait <= 1200)
+  s.advance(firstWait)
+  s.sockets[1].onopen()
+  s.sockets[1].onclose()
+  const secondWait = [...s.timers.values()][0].delay
+  assert.ok(secondWait >= 1600 && secondWait <= 2400, 'handshake without data does not reset backoff')
+  s.advance(secondWait)
+  s.sockets[2].onopen()
+  s.sockets[2].onmessage({ data: '{"inuse":42}' })
+  s.sockets[2].onclose()
+  const resetWait = [...s.timers.values()][0].delay
+  assert.ok(resetWait >= 800 && resetWait <= 1200)
+  stop()
+  assert.equal(s.timers.size, 0)
+})
+
+test('тишина в logs нормальна; возвращение из сна проверяет периодический поток сразу', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://router.test', secret: '' })
+  const stopLogs = s.api.stream('/logs', () => {})
+  s.sockets[0].onopen()
+  s.advance(60000)
+  assert.equal(s.sockets[0].closed, false)
+  assert.equal(s.timers.size, 0)
+  const stopTraffic = s.api.stream('/traffic', () => {})
+  s.sockets[1].onopen()
+  s.document.hidden = true
+  s.dispatch('visibilitychange')
+  s.advance(30000, false)
+  assert.equal(s.sockets[1].closed, false, 'simulate throttled background timers')
+  s.document.hidden = false
+  s.dispatch('visibilitychange')
+  assert.equal(s.sockets[1].closed, true)
+  assert.equal(s.sockets[0].closed, false)
+  stopTraffic(); stopLogs()
+  assert.equal(s.timers.size, 0)
+})
+
+test('остановка stream внутри onData не оставляет watchdog или обработчики возобновления', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://router.test', secret: '' })
+  const stop = s.api.stream('/traffic', () => stop())
+  s.sockets[0].onopen()
+  s.sockets[0].onmessage({ data: '{}' })
+  assert.equal(s.timers.size, 0)
+  s.advance(30000)
+  s.dispatch('visibilitychange')
+  s.dispatch('online')
+  assert.equal(s.sockets.length, 1)
+})
+
+test('запоздавший кадр после сна не маскирует пропуск до выполнения visibilitychange', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://router.test', secret: '' })
+  const values = []
+  let stale = 0
+  const stop = s.api.stream('/connections', value => values.push(value), { onStale: () => stale++ })
+  s.sockets[0].onopen()
+  s.advance(20000, false)
+  s.sockets[0].onmessage({ data: '{"connections":[]}' })
+  assert.equal(stale, 1)
+  assert.equal(values.length, 0, 'wait for a new observation baseline after the gap')
+  assert.equal(s.sockets[0].closed, true)
+  stop()
+  assert.equal(s.timers.size, 0)
+})
+
+test('eco приостанавливает скрытую вкладку, сохраняет накопления и возобновляет скорости с новой базы', async () => {
+  const s = session()
+  const core = s.core()
+  await core.connect({ url: 'http://router.test', secret: '' })
+  const connection = download => ({ id: 'same', start: '2026-01-01T00:00:00Z', download, upload: 0, chains: ['DIRECT'], metadata: { host: 'example.com' } })
+  const frame = (sockets, download) => {
+    for (const socket of sockets) {
+      const path = new URL(socket.url).pathname
+      socket.onmessage({ data: JSON.stringify(path === '/traffic' ? { up: 10, down: 42 } : path === '/memory' ? { inuse: 1024 } : { uploadTotal: 0, downloadTotal: download, connections: [connection(download)] }) })
+    }
+  }
+  const original = [...s.sockets]
+  original.forEach(socket => socket.onopen())
+  frame(original, 100)
+  s.advance(1000)
+  frame(original, 200)
+  assert.equal(core.conns[0].dl, 100)
+  assert.equal(core.analysis.totals.download, 100)
+  core.setLiveUpdateMode('eco')
+  assert.equal(s.store.get('miboard.live-update-mode'), 'eco')
+  s.document.hidden = true
+  s.dispatch('visibilitychange')
+  assert.equal(core.updatesPaused, true)
+  assert.equal(core.status, 'ok', 'an intentional pause does not report a controller failure')
+  assert.equal(core.streamsOpen, 0)
+  assert.ok(original.every(socket => socket.closed))
+  assert.equal(core.connectionsFresh, false)
+  frame(original, 999999)
+  assert.equal(core.analysis.totals.download, 100)
+  s.advance(20000)
+  assert.equal(s.sockets.length, 3)
+  s.document.hidden = false
+  s.dispatch('visibilitychange')
+  assert.equal(core.updatesPaused, false)
+  assert.equal(core.updatesResuming, true)
+  assert.equal(core.observationGapVersion, 1)
+  const resumed = s.sockets.slice(3)
+  assert.equal(resumed.length, 3)
+  resumed.forEach(socket => socket.onopen())
+  frame(resumed, 10000)
+  assert.equal(core.updatesResuming, false)
+  assert.equal(core.conns[0].dl, 0, 'paused bytes cannot become an instantaneous speed spike')
+  assert.equal(core.analysis.totals.download, 9900, 'preserve the existing connection counters and session baseline')
+  assert.equal(core.trafficHistory.snapshot(1800).download, 42, 'never integrate traffic over the hidden interval')
+  s.advance(2000)
+  frame(resumed, 12000)
+  assert.equal(core.conns[0].dl, 1000, 'divide by the actual two-second interval')
+  core.disconnect()
+  assert.equal(s.timers.size, 0)
+})
+
+test('по умолчанию скрытая вкладка продолжает сбор; eco работает в памяти при запрете localStorage', async () => {
+  const s = session()
+  const core = s.core()
+  await core.connect({ url: 'http://router.test', secret: '' })
+  s.sockets.forEach(socket => socket.onopen())
+  s.document.hidden = true
+  s.dispatch('visibilitychange')
+  assert.equal(core.liveUpdateMode, 'realtime')
+  assert.equal(core.updatesPaused, false)
+  assert.ok(s.sockets.every(socket => !socket.closed))
+  s.storage.setItem = () => { throw new Error('blocked') }
+  assert.equal(core.setLiveUpdateMode('eco'), false)
+  assert.equal(core.liveUpdateSaved, false)
+  assert.equal(core.liveUpdateMode, 'eco')
+  assert.equal(core.updatesPaused, true)
+  assert.equal(core.setLiveUpdateMode('invalid'), false)
+  assert.equal(core.liveUpdateMode, 'eco')
+  core.disconnect()
+})
+
+test('смена backend во время eco-паузы не запускает старые потоки и ждёт возвращения вкладки', async () => {
+  const s = session({ 'miboard.live-update-mode': 'eco' })
+  const core = s.core()
+  await core.connect({ url: 'http://old.test', secret: 'old-secret' })
+  const old = [...s.sockets]
+  old.forEach(socket => socket.onopen())
+  s.document.hidden = true
+  s.dispatch('visibilitychange')
+  await core.connect({ url: 'http://new.test', secret: 'new-secret' })
+  assert.equal(core.updatesPaused, true)
+  assert.equal(core.backend.url, 'http://new.test')
+  assert.equal(s.sockets.length, 3, 'a new controller does not create hidden eco streams')
+  old[0].onmessage({ data: '{"down":99999}' })
+  old[0].onopen()
+  assert.equal(core.down, 0)
+  s.advance(30000)
+  assert.equal(s.sockets.length, 3)
+  s.document.hidden = false
+  s.dispatch('visibilitychange')
+  assert.equal(s.sockets.length, 6)
+  for (const socket of s.sockets.slice(3)) {
+    assert.equal(new URL(socket.url).hostname, 'new.test')
+    assert.equal(new URL(socket.url).searchParams.get('token'), 'new-secret')
+  }
+  core.disconnect()
+  s.advance(60000)
+  assert.equal(s.sockets.length, 6)
   assert.equal(s.timers.size, 0)
 })
 

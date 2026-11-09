@@ -99,6 +99,40 @@ test('IP literals are excluded from domains; IPv6 addresses are canonicalized', 
   assert.equal(snapshot.ips.find((row) => row.name === '1.1.1.1')?.connections, 1)
 })
 
+test('an outbound proxy peer never becomes a destination IP or an application/ASN association', () => {
+  const tracker = new AnalysisTracker()
+  tracker.ingest([])
+  const row = connection('proxied', {
+    metadata: { ...connection().metadata, destinationIP: '', remoteDestination: '8.8.8.8', process: 'browser' },
+  })
+  tracker.ingest([row])
+  const snapshot = tracker.snapshot()
+  assert.deepEqual(snapshot.ips, [])
+  assert.equal(snapshot.domains[0].name, 'example.com')
+  for (const rows of [snapshot.domains, snapshot.proxies, snapshot.applications, snapshot.networks]) {
+    assert.deepEqual(rows[0].ips, [])
+    assert.equal(rows[0].download, 100)
+  }
+  assert.deepEqual(snapshot.totals, { download: 100, upload: 20, connections: 1, active: 1 })
+})
+
+test('reported destination IPs and literal target hosts retain priority over outbound proxy peers', () => {
+  const tracker = new AnalysisTracker()
+  tracker.ingest([])
+  const make = (id: string, metadata: Partial<Connection['metadata']>) => connection(id, {
+    metadata: { ...connection().metadata, remoteDestination: '8.8.8.8', ...metadata },
+  })
+  tracker.ingest([
+    make('resolved', { destinationIP: '1.1.1.1', host: 'example.com' }),
+    make('literal', { destinationIP: '', host: '1.0.0.1' }),
+    make('sniffed', { destinationIP: '', host: '', sniffHost: '9.9.9.9' }),
+  ])
+  const snapshot = tracker.snapshot()
+  assert.deepEqual(snapshot.ips.map(row => row.name).sort(), ['1.0.0.1', '1.1.1.1', '9.9.9.9'])
+  assert.deepEqual(snapshot.domains[0].ips, ['1.1.1.1'])
+  assert.equal(snapshot.totals.download, 300)
+})
+
 test('counter resets add new bytes; invalid counters do not poison the baseline', () => {
   const tracker = new AnalysisTracker()
   tracker.ingest([connection()])

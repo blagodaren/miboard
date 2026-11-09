@@ -13,10 +13,14 @@
   import Rules from './pages/Rules.svelte'
   import Logs from './pages/Logs.svelte'
   import Settings from './pages/Settings.svelte'
+  import NotificationViewport from './components/NotificationViewport.svelte'
+  import ProviderAlerts from './components/ProviderAlerts.svelte'
+  import { pwa } from './lib/pwa.svelte'
 
   const pages = { overview: Overview, proxies: Proxies, connections: Connections, devices: Devices, analysis: Analysis, geography: Geography, rules: Rules, logs: Logs, settings: Settings }
 
   onMount(() => core.boot())
+  onMount(() => pwa.start())
 
   // Hash routes share a document. A new screen starts at its heading instead
   // of inheriting the scroll position of the previous table or settings form.
@@ -44,4 +48,9 @@
       <div class="enter"><Page /></div>
     {/key}
   </Shell>
+{/if}
+
+<NotificationViewport />
+{#if core.status === 'ok' || core.status === 'lost'}
+  {#key JSON.stringify([core.backend.url, core.backend.secret])}<ProviderAlerts backend={core.backend} />{/key}
 {/if}

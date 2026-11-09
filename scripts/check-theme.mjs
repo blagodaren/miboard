@@ -8,6 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = path.join(root, '.theme-check')
@@ -60,6 +62,7 @@ async function open(context, route) {
 
 async function contextFor(width, theme, colorScheme = theme ?? 'light') {
   const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 1000 }, colorScheme, reducedMotion: 'reduce' })
+  await stubAppUpdates(context)
   await context.addInitScript(({ theme }) => {
     localStorage.setItem('miboard.locale', 'ru')
     if (theme) localStorage.setItem('miboard.theme', theme)
@@ -159,6 +162,7 @@ async function checkInteractions(theme) {
   assert.notDeepEqual(await styleOf(selectedProxy), await styleOf(proxies.locator('section button[aria-pressed="false"]').first()), `${theme}: selected and idle proxies are visually identical`)
 
   const settings = await open(context, 'settings')
+  await chooseSettingsCategory(settings, 'core')
   const toggle = settings.getByRole('switch', { name: 'TUN', exact: true })
   const previous = await toggle.getAttribute('aria-checked')
   const oldToggleStyle = await toggle.evaluate((element) => getComputedStyle(element).backgroundColor)
@@ -166,6 +170,7 @@ async function checkInteractions(theme) {
   await poll(async () => await toggle.getAttribute('aria-checked') !== previous, 'toggle state')
   await poll(async () => await toggle.evaluate((element) => getComputedStyle(element).backgroundColor) !== oldToggleStyle, 'toggle visual state')
   await toggle.click()
+  await chooseSettingsCategory(settings, 'appearance')
   const active = settings.getByRole('radio', { name: theme === 'light' ? 'Светлая' : 'Тёмная', exact: true })
   const inactive = settings.getByRole('radio', { name: theme === 'light' ? 'Тёмная' : 'Светлая', exact: true })
   assert.notDeepEqual(await styleOf(active), await styleOf(inactive), `${theme}: active and idle segments are visually identical`)
@@ -185,7 +190,7 @@ async function checkInteractions(theme) {
   const overview = await open(context, 'overview')
   await overview.getByRole('slider').focus()
   await overview.keyboard.press('End')
-  await overview.getByRole('status').waitFor()
+  await overview.locator('.traffic-tooltip[role="status"]').waitFor()
   const tooltip = await inspect(overview, '.traffic-tooltip')
   record(tooltip, `${theme} traffic tooltip`)
   report.states.push({ theme, state: 'traffic-tooltip', ...tooltip })
@@ -203,10 +208,15 @@ try {
       const context = await contextFor(width, theme)
       for (const route of routes) {
         const page = await open(context, route)
-        const result = await inspect(page)
-        report.pages.push({ route, width, theme, ...result })
-        record(result, `${theme} ${route} ${width}`)
-        if (width !== 320) await page.screenshot({ path: path.join(out, `${prefix}-${route}-${theme}-${width}.png`), fullPage: true })
+        const categories = route === 'settings' ? ['appearance', 'core', 'proxies', 'data', 'maintenance'] : [null]
+        for (const category of categories) {
+          if (category) await chooseSettingsCategory(page, category)
+          const result = await inspect(page)
+          const screen = category ? `${route}-${category}` : route
+          report.pages.push({ route, category, width, theme, ...result })
+          record(result, `${theme} ${screen} ${width}`)
+          if (width !== 320) await page.screenshot({ path: path.join(out, `${prefix}-${screen}-${theme}-${width}.png`), fullPage: true })
+        }
         await page.close()
       }
       await context.close()

@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
+  import { core } from '../lib/core.svelte'
   import { t, type MessageKey } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
   import { applySettingsImport, exportSettings, MAX_SETTINGS_FILE_BYTES, previewSettingsImport, SettingsTransferError, type SettingsImportPreview } from '../lib/settings-transfer'
   import Button from './Button.svelte'
 
@@ -11,6 +14,10 @@
   let saved = $state(false)
   let reading = $state(false)
   let selection = 0
+  let active = true
+  const backend = { ...core.backend }
+  const current = () => active && core.backend.url === backend.url && core.backend.secret === backend.secret
+  onDestroy(() => { active = false; selection++ })
   const inputId = $props.id()
   const counts: Array<{ key: keyof SettingsImportPreview['counts']; label: MessageKey }> = [
     { key: 'servers', label: 'transfer.servers' }, { key: 'aliases', label: 'transfer.aliases' },
@@ -26,7 +33,13 @@
     }
     return exporting ? 'transfer.errorExport' : 'transfer.errorStorage'
   }
+  function notifyError(cause: unknown, exporting = false) {
+    const key = errorKey(cause, exporting)
+    notifications.show({ id: exporting ? 'settings-transfer:export' : 'settings-transfer:import', tone: 'error', scope: backend.url,
+      title: () => t('transfer.title'), message: () => t(key) })
+  }
   function download() {
+    if (!current()) return
     error = null
     try {
       const contents = exportSettings({ includeSecrets })
@@ -36,12 +49,14 @@
       link.download = `miboard-settings-${new Date().toISOString().slice(0, 10)}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 0)
-    } catch (cause) { error = errorKey(cause, true) }
+      notifications.show({ id: 'settings-transfer:export', tone: 'success', scope: backend.url,
+        title: () => t('transfer.title'), message: () => t('transfer.exported') })
+    } catch (cause) { notifyError(cause, true) }
   }
   async function choose(event: Event) {
     const input = event.currentTarget as HTMLInputElement
     const file = input.files?.[0]
-    if (!file) return
+    if (!file || !current()) return
     const id = ++selection
     preview = null
     error = null
@@ -51,18 +66,25 @@
     try {
       if (file.size > MAX_SETTINGS_FILE_BYTES) throw new SettingsTransferError('size')
       const contents = await file.text()
-      if (id === selection) preview = previewSettingsImport(contents)
-    } catch (cause) { if (id === selection) error = errorKey(cause) }
-    finally { if (id === selection) reading = false; input.value = '' }
+      if (id === selection && current()) preview = previewSettingsImport(contents)
+    } catch (cause) {
+      if (id === selection && current()) {
+        if (cause instanceof SettingsTransferError && (cause.code === 'invalid' || cause.code === 'size')) error = errorKey(cause)
+        else notifyError(cause)
+      }
+    }
+    finally { if (id === selection && active) reading = false; input.value = '' }
   }
   function apply() {
-    if (!preview?.document || preview.invalid) return
+    if (!preview?.document || preview.invalid || !current()) return
     error = null
     try {
       applySettingsImport(preview)
       preview = null
       saved = true
-    } catch (cause) { error = errorKey(cause) }
+      notifications.show({ id: 'settings-transfer:import', tone: 'success', scope: backend.url,
+        title: () => t('transfer.title'), message: () => t('transfer.imported') })
+    } catch (cause) { notifyError(cause) }
   }
 </script>
 
@@ -108,7 +130,7 @@
     {#if error}<p class="mt-4 text-[13px] text-bad" role="alert">{t(error)}</p>{/if}
     {#if saved}
       <div class="mt-4 border-t border-line pt-4" data-testid="transfer-saved">
-        <p class="text-[13px] text-good" role="status">{t('transfer.saved')}</p>
+        <p class="text-[13px] text-fg-2">{t('transfer.reloadHint')}</p>
         <Button size="sm" class="mt-3" onclick={() => location.reload()}>{t('transfer.reload')}</Button>
       </div>
     {/if}

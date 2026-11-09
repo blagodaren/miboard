@@ -1,14 +1,15 @@
 <script lang="ts">
-  import type { DomainStat, IPStat, ProxyStat } from '../lib/analysis'
+  import type { AnalysisRow, AnalysisView } from '../lib/analysis'
   import { bytes } from '../lib/format'
   import { proxyName } from '../lib/analysis-display'
   import { t } from '../lib/i18n.svelte'
   import Button from './Button.svelte'
+  import ExportDomains from './ExportDomains.svelte'
 
   let { row, view, onnavigate, ondiagnose }: {
-    row: DomainStat | IPStat | ProxyStat
-    view: 'domains' | 'ips' | 'proxies'
-    onnavigate: (view: 'domains' | 'ips' | 'proxies', value: string) => void
+    row: AnalysisRow
+    view: AnalysisView
+    onnavigate: (view: AnalysisView, value: string) => void
     ondiagnose?: (domain: string) => void
   } = $props()
 
@@ -24,6 +25,11 @@
       result.push({ title: t('analysis.geoRegions'), values: row.countries })
       result.push({ title: t('analysis.asnOrganization'), values: row.asn })
     }
+    if ('processPath' in row) {
+      result.push({ title: t('analysis.sourceDevice'), values: row.sourceIP ? [row.sourceIP] : [] })
+      result.push({ title: t('analysis.processPath'), values: row.processPath ? [row.processPath] : [] })
+    }
+    if ('sources' in row) result.push({ title: t('traffic.sourceDevices'), values: row.sources })
     return result
   })
 </script>
@@ -38,7 +44,10 @@
   <div class="mt-4 grid gap-6 sm:grid-cols-2">
     {#each groups as group (group.title)}
       <section class="min-w-0">
-        <h3 class="mb-2 text-xs text-fg-3">{group.title}</h3>
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-xs text-fg-3">{group.title}</h3>
+          {#if group.view === 'domains'}<ExportDomains domains={group.values} name={view} testId="analysis-detail-export-domains" />{/if}
+        </div>
         {#if group.values.length}
           <ul class="flex max-h-52 flex-wrap gap-2 overflow-y-auto">
             {#each group.values.slice(0, limits[group.title] ?? 100) as value (value)}

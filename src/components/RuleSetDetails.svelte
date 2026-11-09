@@ -2,20 +2,32 @@
   import { ApiError, errorMessage, type RuleProvider } from '../lib/api'
   import { count } from '../lib/format'
   import { i18n, t } from '../lib/i18n.svelte'
+  import { providerUpdatedAt } from '../lib/provider-tools'
   import Button from './Button.svelte'
   import SearchInput from './SearchInput.svelte'
+  import { IconChevron, IconRefresh } from '../lib/icons'
 
-  let { name, provider, loading, error, onretry }: {
+  let { name, provider, loading, error, onretry, updating = false, updateError = null, updated = false, reloadOnly = false, onupdate, standalone = false, disabled = false }: {
     name: string
     provider?: RuleProvider
     loading: boolean
     error: Error | null
     onretry: () => void
+    updating?: boolean
+    updateError?: Error | null
+    updated?: boolean
+    reloadOnly?: boolean
+    onupdate?: () => void
+    standalone?: boolean
+    disabled?: boolean
   } = $props()
 
   const LIMIT = 200
   let query = $state('')
+  let inlineExpanded = $state(false)
+  const payloadId = $props.id()
   const inline = $derived(provider?.vehicleType?.toLowerCase() === 'inline')
+  const canUpdate = $derived(['http', 'file'].includes(provider?.vehicleType?.toLowerCase() ?? ''))
   const hasPayload = $derived(Array.isArray(provider?.payload))
   const entries = $derived((Array.isArray(provider?.payload) ? provider.payload : []).filter((value) => typeof value === 'string').map((value, index) => ({ value, index, search: value.toLowerCase() })))
   const filtered = $derived.by(() => {
@@ -23,11 +35,11 @@
     return search ? entries.filter((entry) => entry.search.includes(search)) : entries
   })
   const updatedAt = $derived.by(() => {
-    if (!provider?.updatedAt) return null
-    const date = new Date(provider.updatedAt)
-    return Number.isFinite(date.getTime()) && date.getUTCFullYear() > 1 ? date : null
+    const timestamp = providerUpdatedAt(provider?.updatedAt)
+    return timestamp === null ? null : new Date(timestamp)
   })
-  const dateFormat = $derived(new Intl.DateTimeFormat(i18n.intlLocale, { dateStyle: 'medium', timeStyle: 'short' }))
+  const dateFormat = $derived(new Intl.DateTimeFormat(i18n.intlLocale, { year: 'numeric', month: '2-digit', day: '2-digit' }))
+  const timeFormat = $derived(new Intl.DateTimeFormat(i18n.intlLocale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }))
   const source = $derived.by(() => {
     switch (provider?.vehicleType?.toLowerCase()) {
       case 'http': return 'HTTP'
@@ -46,7 +58,7 @@
   })
 </script>
 
-<section class="border-t border-line bg-raised px-4 py-4 sm:px-5" aria-label={t('rules.setTitle', { name })} aria-busy={loading}>
+<section class="min-w-0 px-4 py-4 sm:px-5 {standalone ? 'rounded-card border border-line bg-card' : 'border-t border-line bg-raised'}" aria-label={t('rules.setTitle', { name })} aria-busy={loading || updating}>
   {#if loading}
     <p class="text-[13px] text-fg-2" role="status">{t('rules.providerLoading')}</p>
   {:else if error}
@@ -56,16 +68,39 @@
     <p class="text-[13px] text-fg-2" role="status">{t('rules.providerMissing')}</p>
     <Button class="mt-3" variant="secondary" size="sm" onclick={onretry}>{t('rules.retry')}</Button>
   {:else}
-    <h2 class="break-all text-[13px] font-medium">{t('rules.setTitle', { name: provider.name || name })}</h2>
-    <dl class="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="min-w-0 break-all text-[13px]"><span class="font-normal text-fg-2">{t('rules.setTitlePrefix')}</span>{' '}<span class="font-semibold text-accent-ink" data-testid="rule-provider-name">{provider.name || name}</span></h2>
+      {#if onupdate}
+        <Button variant="secondary" size="sm" disabled={disabled || updating || !canUpdate} aria-busy={updating}
+          aria-label={t(reloadOnly ? 'rules.reloadProviderLabel' : 'rules.updateProviderLabel', { name })}
+          title={inline ? t('rules.inlineUpdateHint') : undefined} onclick={onupdate}>
+          <IconRefresh size={14} strokeWidth={1.5} class={updating ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
+          {t(updating ? (reloadOnly ? 'rules.providerReloading' : 'rules.providerUpdating') : reloadOnly ? 'rules.reloadProvider' : 'rules.updateProvider')}
+        </Button>
+      {/if}
+    </div>
+    {#if inline}<p class="mt-2 text-xs leading-5 text-fg-3">{t('rules.inlineUpdateHint')}</p>{/if}
+    {#if updateError}
+      <p class="mt-3 break-words text-[13px] text-bad" role="alert">{t(reloadOnly ? 'rules.providerReloadError' : 'rules.providerUpdateError', { message: errorMessage(updateError) })}</p>
+    {:else if updating || updated}
+      <p class="mt-3 text-xs text-fg-2" role="status">{t(updating ? (reloadOnly ? 'rules.providerReloading' : 'rules.providerUpdating') : 'rules.providerUpdated')}</p>
+    {/if}
+    <dl class="mt-4 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3 {standalone ? '' : 'lg:grid-cols-5'}">
       <div class="min-w-0"><dt class="text-xs text-fg-3">{t('rules.source')}</dt><dd class="mt-1 break-words text-fg-2">{source}</dd></div>
       <div class="min-w-0"><dt class="text-xs text-fg-3">{t('rules.behavior')}</dt><dd class="mt-1 break-words text-fg-2">{behavior}</dd></div>
       <div class="min-w-0"><dt class="text-xs text-fg-3">{t('rules.ruleCount')}</dt><dd class="num mt-1 font-mono text-fg-2">{Number.isFinite(provider.ruleCount) && provider.ruleCount >= 0 ? count(provider.ruleCount) : t('rules.unavailable')}</dd></div>
       <div class="min-w-0"><dt class="text-xs text-fg-3">{t('rules.format')}</dt><dd class="mt-1 break-words font-mono text-fg-2">{provider.format || t('rules.unavailable')}</dd></div>
-      <div class="min-w-0"><dt class="text-xs text-fg-3">{t('rules.updatedAt')}</dt><dd class="mt-1 text-fg-2">{#if updatedAt}<time datetime={provider.updatedAt}>{dateFormat.format(updatedAt)}</time>{:else}{t('rules.unavailable')}{/if}</dd></div>
+      <div class="min-w-0 {standalone ? 'col-span-2' : ''}"><dt class="text-xs text-fg-3">{t('rules.updatedAt')}</dt><dd class="mt-1 text-fg-2">{#if updatedAt}<time datetime={provider.updatedAt}>{dateFormat.format(updatedAt)} {timeFormat.format(updatedAt)}</time>{:else}{t('rules.unavailable')}{/if}</dd></div>
     </dl>
 
-    {#if inline}
+    {#if inline && standalone}
+      <Button class="mt-4" variant="ghost" size="sm" aria-expanded={inlineExpanded} aria-controls={payloadId} aria-label={t(inlineExpanded ? 'rules.providers.hideRulesLabel' : 'rules.providers.showRulesLabel', { name })} onclick={() => { inlineExpanded = !inlineExpanded }}>
+        <IconChevron size={14} strokeWidth={1.5} class={inlineExpanded ? 'rotate-180' : ''} aria-hidden="true" />
+        {t(inlineExpanded ? 'rules.providers.hideRules' : 'rules.providers.showRules')}
+      </Button>
+    {/if}
+    <div id={payloadId} hidden={!inline || (standalone && !inlineExpanded)}>
+    {#if inline && (!standalone || inlineExpanded)}
       <div class="mt-5 border-t border-line pt-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-[13px] font-medium">{t('rules.inlineRules')}</h3>
@@ -93,7 +128,9 @@
           <p class="mt-3 text-[13px] text-fg-2">{hasPayload || provider.ruleCount === 0 ? t('rules.inlineEmpty') : t('rules.inlineMissing')}</p>
         {/if}
       </div>
-    {:else}
+    {/if}
+    </div>
+    {#if !inline && !standalone}
       <p class="mt-5 max-w-2xl text-[13px] leading-5 text-fg-3">{t('rules.externalContent')}</p>
     {/if}
   {/if}

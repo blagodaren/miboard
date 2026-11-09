@@ -12,9 +12,10 @@
     metric: Metric
     onmetricchange: (metric: Metric) => void
     loading?: boolean
+    historical?: boolean
   }
 
-  let { countries, selected, onselect, metric, onmetricchange, loading = false }: Props = $props()
+  let { countries, selected, onselect, metric, onmetricchange, loading = false, historical = false }: Props = $props()
   let expanded = $state(false)
   const headingId = $props.id()
   const INITIAL_COUNT = 6
@@ -53,7 +54,7 @@
   <header class="regions-heading">
     <div class="min-w-0">
       <h2 id={headingId}>{t('geography.regionDetails')}</h2>
-      <p class="share-hint">{t('geography.regionShareHint')}</p>
+      <p class="share-hint">{t(historical ? 'observations.regionHint' : 'geography.regionShareHint')}</p>
     </div>
     <div class="metric-switch" role="group" aria-label={t('geography.regionDetails')}>
       <button

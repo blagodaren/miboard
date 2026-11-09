@@ -5,6 +5,7 @@
   import { i18n, t } from '../lib/i18n.svelte'
   import { IconRules, IconGeography, IconConnections, IconPause, IconPlay } from '../lib/icons'
   import RuleChainFlow from './RuleChainFlow.svelte'
+  import ExportDomains from './ExportDomains.svelte'
 
   let { connections, rules, ready, online }: {
     connections: readonly Connection[]
@@ -152,6 +153,7 @@
     <section class="analytics-panel domains-panel" aria-labelledby="rules-domains-heading">
       <div class="panel-heading">
         <h2 id="rules-domains-heading"><IconGeography size={16} strokeWidth={1.5} aria-hidden="true" />{t('rules.analytics.topDomains')}</h2>
+        <ExportDomains domains={selected?.domains.map((domain) => domain.name) ?? []} name={selected ? ruleName(selected) : 'rule'} testId="rule-export-domains" />
       </div>
       <p class="domain-selection" title={selected ? `${ruleName(selected)} → ${selected.policy}` : undefined}>
         {#if selected}<span class="legend-dot" style:background={colors[selected.id]}></span><span>{ruleName(selected)}</span>{:else}—{/if}
@@ -192,7 +194,7 @@
   .analytics-grid { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.14fr) minmax(0, 1.24fr); gap: 16px; margin-bottom: 24px; }
   .analytics-panel { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
   h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text); }
-  .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .panel-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   .panel-count { font-size: 12px; color: var(--text-3); font-family: var(--font-mono); }
   .donut-wrap { position: relative; width: min(100%, 208px); margin: 16px auto 0; aspect-ratio: 1; }
   .donut { display: block; width: 100%; height: 100%; }

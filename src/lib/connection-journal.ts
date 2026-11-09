@@ -30,15 +30,36 @@ export function journalConnection(value: unknown): Connection | null {
     network: text(source.network), type: text(source.type), sourceIP: text(source.sourceIP), sourcePort: text(source.sourcePort),
     destinationIP: text(source.destinationIP), destinationPort: text(source.destinationPort), host: text(source.host),
   }
-  for (const key of ['sniffHost', 'process', 'processPath', 'remoteDestination', 'inboundName', 'destinationIPASN'] as const) {
+  for (const key of [
+    'sniffHost', 'process', 'processPath', 'remoteDestination', 'inboundIP', 'inboundPort', 'inboundName', 'inboundUser',
+    'sourceIPASN', 'destinationIPASN', 'rematchName', 'dnsMode', 'specialProxy', 'specialRules', 'id',
+    'smartBlock', 'smartTarget', 'wildcardTarget', 'exitGeoIP', 'exitIPASN',
+  ] as const) {
     if (typeof source[key] === 'string') metadata[key] = text(source[key])
   }
-  if (Array.isArray(source.destinationGeoIP)) metadata.destinationGeoIP = source.destinationGeoIP.filter(item => typeof item === 'string').slice(0, 8).map(item => text(item, 64))
-  return {
+  for (const key of ['sourceGeoIP', 'destinationGeoIP'] as const) {
+    if (source[key] === null) metadata[key] = null
+    else if (Array.isArray(source[key])) metadata[key] = source[key].filter(item => typeof item === 'string').slice(0, 8).map(item => text(item, 64))
+  }
+  for (const key of ['uid', 'dscp'] as const) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && (key !== 'dscp' || value <= 63)) metadata[key] = value
+  }
+  const connection: Connection = {
     id: text(row.id, 512), metadata, start: text(row.start, 128), upload: counter(row.upload), download: counter(row.download),
     chains: Array.isArray(row.chains) ? row.chains.filter(item => typeof item === 'string').slice(0, 64).map(item => text(item)) : [],
     rule: text(row.rule), rulePayload: text(row.rulePayload),
   }
+  if (row.providerChains === null) connection.providerChains = null
+  else if (Array.isArray(row.providerChains)) {
+    // Empty positions correspond to the same positions in chains; keep them.
+    connection.providerChains = row.providerChains.slice(0, 64).map(item => text(item))
+  }
+  for (const key of ['maxUploadRate', 'maxDownloadRate', 'downloadSpeed', 'uploadSpeed'] as const) {
+    const value = row[key]
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) connection[key] = value
+  }
+  return connection
 }
 
 export function retainJournal(values: readonly unknown[], retention: JournalRetention, now = Date.now()): JournalEntry[] {

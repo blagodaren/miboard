@@ -3,6 +3,7 @@
   import { api, errorMessage } from '../lib/api'
   import { core } from '../lib/core.svelte'
   import { t } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
   import Button from './Button.svelte'
   import Confirm from './Confirm.svelte'
 
@@ -13,8 +14,6 @@
   let pendingConfig = $state('')
   let confirmFlush = $state(false)
   let busy = $state<Action | null>(null)
-  let completed = $state<Action | null>(null)
-  let error = $state.raw<unknown>(null)
   const cfg = $derived(core.configs)
   const hasParameters = $derived(cfg && (
     typeof cfg['lgbm-auto-update'] === 'boolean' ||
@@ -38,14 +37,18 @@
   async function run(action: Action) {
     if (busy || !currentBackend()) return
     busy = action
-    completed = null
-    error = null
     try {
       if (action === 'flush') await api.flushSmart(pendingConfig || undefined, backend)
       else await api.upgradeLightGBM(backend)
-      if (currentBackend()) completed = action
+      if (currentBackend()) notifications.show({
+        id: `settings:prizrak:${action}`, tone: 'success', scope: backend.url,
+        title: () => t('prizrak.title'), message: () => t(action === 'flush' ? 'prizrak.flushDone' : 'prizrak.modelDone'),
+      })
     } catch (cause) {
-      if (currentBackend()) error = cause
+      if (currentBackend()) notifications.show({
+        id: `settings:prizrak:${action}`, tone: 'error', scope: backend.url,
+        title: () => t(action === 'flush' ? 'prizrak.history' : 'prizrak.model'), message: () => errorMessage(cause),
+      })
     } finally {
       if (active) busy = null
     }
@@ -117,11 +120,6 @@
       <Button size="sm" disabled={busy !== null} onclick={() => run('model')}>{t(busy === 'model' ? 'prizrak.busy' : 'prizrak.updateModel')}</Button>
     </div>
 
-    {#if error}
-      <p class="break-words border-t border-line px-4 py-3 text-[13px] text-bad sm:px-5" role="alert">{errorMessage(error)}</p>
-    {:else if completed}
-      <p class="border-t border-line px-4 py-3 text-[13px] text-good sm:px-5" role="status">{t(completed === 'flush' ? 'prizrak.flushDone' : 'prizrak.modelDone')}</p>
-    {/if}
   </div>
 </section>
 

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { core } from '../lib/core.svelte'
-  import { t } from '../lib/i18n.svelte'
+  import { t, type MessageKey } from '../lib/i18n.svelte'
+  import { notifications } from '../lib/notifications.svelte'
   import { delaySettings } from '../lib/latency.svelte'
   import { DEFAULT_DELAY_SETTINGS, type DelaySettings as Preferences } from '../lib/latency'
   import Button from './Button.svelte'
@@ -14,7 +15,6 @@
   let yellow = $state<number | undefined>(delaySettings.value.yellow)
   let red = $state<number | undefined>(delaySettings.value.red)
   let touched = $state<Partial<Record<Field, boolean>>>({})
-  let status = $state<'saved' | 'mode' | 'reset' | 'ipv6' | 'independent' | null>(null)
   let formError = $state(false)
 
   const modes: { value: Preferences['mode']; label: string }[] = $derived([
@@ -23,7 +23,7 @@
   ])
   const unified = $derived(core.configs?.['unified-delay'])
   const unifiedHint = $derived(t(unified === true ? 'latency.unifiedEnabled' : unified === false ? 'latency.unifiedDisabled' : 'latency.unifiedUnknown'))
-  const inputClass = 'h-10 w-full min-w-0 rounded-[var(--radius-control)] border border-field-border bg-field px-3 text-[13px] text-fg transition-colors hover:border-fg-3 aria-invalid:border-bad focus-visible:border-accent-ink'
+  const inputClass = 'h-11 w-full min-w-0 rounded-control border border-field-border bg-field px-3 text-[13px] text-fg transition-colors hover:border-fg-3 aria-invalid:border-bad focus-visible:border-accent-ink sm:h-10'
 
   function validNumber(value: number | undefined, max: number) {
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= max
@@ -46,24 +46,28 @@
   })
 
   function edit() {
-    status = null
     formError = false
   }
 
+  function notify(message: MessageKey) {
+    notifications.show({ id: 'settings:latency', tone: 'success', title: () => t('latency.settings'), message: () => t(message) })
+  }
+
   function changeMode(mode: Preferences['mode']) {
-    if (delaySettings.set({ ...delaySettings.value, mode })) status = 'mode'
+    const accepted = delaySettings.set({ ...delaySettings.value, mode })
+    formError = !accepted
+    if (accepted) notify('latency.modeSaved')
   }
 
   function changeOption(field: 'ipv6' | 'independent', value: boolean) {
     const accepted = delaySettings.set({ ...delaySettings.value, [field]: value })
     formError = !accepted
-    if (accepted) status = field
+    if (accepted) notify(field === 'ipv6' ? 'latency.ipv6Saved' : 'latency.independentSaved')
   }
 
   async function save(event: SubmitEvent) {
     event.preventDefault()
     touched = { url: true, timeout: true, yellow: true, red: true }
-    status = null
     const form = event.currentTarget as HTMLFormElement
     if (Object.keys(errors).length) {
       await tick()
@@ -74,7 +78,7 @@
     formError = !accepted
     if (accepted) {
       url = delaySettings.value.url
-      status = 'saved'
+      notify('latency.saved')
     }
   }
 
@@ -86,14 +90,14 @@
     red = DEFAULT_DELAY_SETTINGS.red
     touched = {}
     formError = false
-    status = 'reset'
+    notify('latency.defaultsRestored')
   }
 </script>
 
 <section aria-labelledby="latency-heading">
   <h2 id="latency-heading" class="mb-3 px-1 text-[13px] text-fg-2">{t('latency.settings')}</h2>
-  <div class="rounded-2xl border border-line bg-card">
-    <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+  <div class="rounded-panel border border-line bg-card">
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
       <div class="min-w-0 flex-1 basis-64">
         <div>{t('latency.mode')}</div>
         <p class="mt-0.5 text-[13px] text-fg-3">{t(delaySettings.value.mode === 'core' ? 'latency.coreHint' : 'latency.panelHint')}</p>
@@ -102,7 +106,7 @@
     </div>
 
     <form onsubmit={save} novalidate>
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
+      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
         <div class="min-w-0 sm:pt-2">
           <label for="latency-url">{t('latency.url')}</label>
           <p id="latency-url-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.urlHint')}</p>
@@ -113,7 +117,7 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
+      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
         <div class="min-w-0 sm:pt-2">
           <label for="latency-timeout">{t('latency.timeout')}</label>
           <p id="latency-timeout-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.timeoutHint')}</p>
@@ -127,7 +131,7 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
+      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
         <div class="min-w-0 sm:pt-2">
           <label for="latency-yellow">{t('latency.yellow')}</label>
           <p id="latency-threshold-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.thresholdHint')}</p>
@@ -141,7 +145,7 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
+      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
         <label for="latency-red" class="sm:pt-2">{t('latency.red')}</label>
         <div class="min-w-0 sm:justify-self-end">
           <div class="flex items-center gap-3">
@@ -152,7 +156,7 @@
         </div>
       </div>
 
-      <div class="flex items-start gap-5 border-t border-line px-5 py-4">
+      <div class="flex items-start gap-5 border-t border-line px-4 py-4 sm:px-5">
         <div class="min-w-0 flex-1">
           <div>{t('latency.ipv6')}</div>
           <p class="mt-0.5 text-[13px] text-fg-3">{t('latency.ipv6Hint')}</p>
@@ -160,7 +164,7 @@
         <Toggle label={t('latency.ipv6')} checked={delaySettings.value.ipv6} onchange={(value) => changeOption('ipv6', value)} />
       </div>
 
-      <div class="flex items-start gap-5 border-t border-line px-5 py-4">
+      <div class="flex items-start gap-5 border-t border-line px-4 py-4 sm:px-5">
         <div class="min-w-0 flex-1">
           <div>{t('latency.independent')}</div>
           <p class="mt-0.5 text-[13px] text-fg-3">{t('latency.independentHint')}</p>
@@ -168,11 +172,8 @@
         <Toggle label={t('latency.independent')} checked={delaySettings.value.independent} onchange={(value) => changeOption('independent', value)} />
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4">
-        <div class="min-w-0 text-xs" role="status" aria-live="polite">
-          {#if formError}<span class="text-bad">{t('latency.errorSettings')}</span>
-          {:else if status}<span class="text-good">{t(status === 'saved' ? 'latency.saved' : status === 'mode' ? 'latency.modeSaved' : status === 'ipv6' ? 'latency.ipv6Saved' : status === 'independent' ? 'latency.independentSaved' : 'latency.defaultsRestored')}</span>{/if}
-        </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-4 sm:px-5">
+        {#if formError}<p class="min-w-0 text-xs text-bad" role="alert">{t('latency.errorSettings')}</p>{/if}
         <div class="ml-auto flex items-center gap-2">
           <Button type="button" size="sm" variant="ghost" onclick={reset}>{t('latency.reset')}</Button>
           <Button type="submit" size="sm">{t('latency.save')}</Button>
@@ -180,7 +181,7 @@
       </div>
     </form>
 
-    <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t border-line px-5 py-4">
+    <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5">
       <div class="min-w-0 flex-1 basis-64">
         <div>{t('latency.unified')} <span class="ml-1 font-mono text-xs text-fg-3">unified-delay</span></div>
         <p class="mt-0.5 text-[13px] text-fg-3">{unifiedHint}</p>

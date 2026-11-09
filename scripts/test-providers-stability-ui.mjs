@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { stubAppUpdates } from './app-update-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = await mkdtemp(path.join(os.tmpdir(), 'miboard-proxy-tools-'))
@@ -64,6 +65,7 @@ try {
   }, 'isolated mock startup')
   browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+  await stubAppUpdates(context)
   await context.addInitScript((preferences) => {
     if (!localStorage.getItem('miboard.locale')) localStorage.setItem('miboard.locale', 'en')
     localStorage.setItem('miboard.latency.v1', JSON.stringify(preferences))
@@ -126,8 +128,9 @@ try {
   await page.goto(`${base}#/proxies?secret=test`)
   const stability = page.getByTestId('proxy-stability')
   const providerPanel = page.getByTestId('proxy-providers')
+  const groupsTab = page.getByRole('tab', { name: 'Groups', exact: true })
+  const providersTab = page.getByRole('tab', { name: 'Providers', exact: true })
   await stability.locator('summary').click()
-  await providerPanel.locator('summary').click()
   await stability.getByRole('combobox', { name: 'Node to test' }).selectOption({ label: providerNode })
   await stability.getByRole('button', { name: 'Run 10 checks' }).click()
   await poll(() => stability.getByText('Completed 10/10 checks', { exact: true }).isVisible(), 'ten-check series completes')
@@ -138,6 +141,12 @@ try {
   assert.equal(await stability.locator('[data-stat="p95"]').innerText(), '280 ms')
   assert.equal(await stability.locator('[data-stat="failed"]').innerText(), '2/10')
   assert.equal(await stability.locator('ol > li').count(), 10)
+  const seriesNotice = page.getByTestId('proxy-stability-notice')
+  await seriesNotice.waitFor()
+  assert.match(await seriesNotice.innerText(), /Completed 10\/10 checks.*Failed HTTP checks: 2\/10/s)
+  assert.equal(await seriesNotice.getAttribute('data-tone'), 'warning')
+  await seriesNotice.getByRole('button').click()
+  await providersTab.click()
   assert.equal(await providerPanel.locator('[data-provider]').count(), 2)
   const subscription = providerPanel.locator('[data-provider]').filter({ has: page.getByRole('heading', { name: providerName, exact: true }) })
   const noQuota = providerPanel.locator('[data-provider]').filter({ has: page.getByRole('heading', { name: 'No quota', exact: true }) })
@@ -147,12 +156,18 @@ try {
   await noQuota.getByText('Update time not reported').waitFor()
   const updateButton = subscription.getByRole('button', { name: `Update provider ${providerName}`, exact: true })
   await updateButton.click()
-  await subscription.getByRole('alert').waitFor()
-  assert.match(await subscription.getByRole('alert').innerText(), /Download failed/)
+  const providerNotice = page.getByTestId('proxy-provider-notice')
+  await providerNotice.waitFor()
+  assert.match(await providerNotice.innerText(), /Download failed/)
+  assert.equal(await providerNotice.getAttribute('data-tone'), 'error')
+  assert.equal(await subscription.getByRole('alert').count(), 0, 'Update errors appear only in the shared notification')
   failUpdate = false
   await updateButton.click()
-  await subscription.getByText('Provider updated', { exact: true }).waitFor()
-  await subscription.getByText('HTTP · 2 nodes', { exact: true }).waitFor()
+  await providerNotice.getByText('Provider updated', { exact: true }).waitFor()
+  assert.equal(await providerNotice.getAttribute('data-tone'), 'success')
+  assert.equal(await providerNotice.count(), 1, 'Retry replaces the previous provider notification')
+  assert.equal(await subscription.getByText('Provider updated', { exact: true }).count(), 0)
+  await subscription.getByText('2 nodes', { exact: true }).waitFor()
   assert.equal(updateCalls, 2)
   assert.equal(await subscription.getByRole('alert').count(), 0)
   assert(providerReads >= 3, 'Metadata is reloaded after a successful update')
@@ -164,14 +179,20 @@ try {
     await page.screenshot({ path: path.join(screenshots, `proxy-tools-${width}.png`), fullPage: true, animations: 'disabled' })
   }
   await page.setViewportSize({ width: 1440, height: 1000 })
+  await groupsTab.click()
+  assert.equal(await stability.locator('[data-stat="median"]').innerText(), '190 ms', 'Visiting Providers preserves the completed stability result')
   seriesCalls = []
   hold = true
   await stability.getByRole('button', { name: 'Run 10 checks' }).click()
   await poll(() => seriesCalls.length === 1, 'first cancellable request starts')
   assert.equal(await page.getByRole('button', { name: 'Test all', exact: true }).isEnabled(), false)
+  await providersTab.click()
   assert.equal(await updateButton.isEnabled(), false)
+  await groupsTab.click()
   await stability.getByRole('button', { name: 'Cancel series' }).click()
   await stability.getByText('Cancelled after 0/10 checks', { exact: true }).waitFor()
+  await seriesNotice.getByText(/Cancelled after 0\/10 checks/).waitFor()
+  assert.equal(await seriesNotice.getAttribute('data-tone'), 'info')
   releaseHeld()
   await new Promise((resolve) => setTimeout(resolve, 80))
   assert.equal(seriesCalls.length, 1)
@@ -182,10 +203,11 @@ try {
   releaseHeld()
   await new Promise((resolve) => setTimeout(resolve, 80))
   assert.equal(seriesCalls.length, 2, 'Leaving Proxies cancels the series and all future attempts')
+  assert.equal(await seriesNotice.count(), 0, 'A departed series does not post a late completion notification')
   console.log('PASS: explicit cancellation and navigation stop queued stability checks without counting an error')
 
   await page.goto(`${base}#/proxies`)
-  await providerPanel.locator('summary').click()
+  await providersTab.click()
   holdUpdate = true
   await updateButton.click()
   await poll(() => updateCalls === 3, 'pending provider update starts')
@@ -194,17 +216,17 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 80))
   assert.equal(providerReads, readsBeforeVisible, 'Returning to a busy page does not race the provider metadata refresh')
   const readsBeforeLeave = providerReads
-  await page.goto(`${base}#/overview`)
+  await groupsTab.click()
   releaseUpdate()
   await new Promise((resolve) => setTimeout(resolve, 80))
   assert.equal(providerReads, readsBeforeLeave, 'A cancelled provider update does not refresh a departed page')
+  assert.equal(await providerNotice.count(), 0, 'A departed update does not post a late notification')
   providerUnavailable = true
-  await page.goto(`${base}#/proxies`)
-  await providerPanel.locator('summary').click()
+  await providersTab.click()
   await providerPanel.getByText('Provider information is unavailable from this core', { exact: true }).waitFor()
   providerUnavailable = false
   await providerPanel.getByRole('button', { name: 'Reload providers', exact: true }).click()
-  await subscription.getByText('HTTP · 2 nodes', { exact: true }).waitFor()
+  await subscription.getByText('2 nodes', { exact: true }).waitFor()
   console.log('PASS: provider update cancellation, unsupported metadata and retry')
   await page.evaluate(() => {
     localStorage.setItem('miboard.locale', 'ru')
@@ -214,8 +236,8 @@ try {
   holdUpdate = false
   seriesCalls = []
   await page.reload()
+  await page.getByRole('tab', { name: 'Группы', exact: true }).click()
   await stability.locator('summary').click()
-  await providerPanel.locator('summary').click()
   await stability.getByRole('combobox', { name: 'Нода для проверки' }).selectOption({ label: providerNode })
   await stability.getByRole('button', { name: 'Запустить 10 проверок' }).click()
   await stability.getByText('Завершено 10/10 проверок', { exact: true }).waitFor()

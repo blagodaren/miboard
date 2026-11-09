@@ -1,6 +1,6 @@
 <script lang="ts">
   import { core } from '../lib/core.svelte'
-  import type { AnalysisSnapshot, DomainStat, IPStat, ProxyStat } from '../lib/analysis'
+  import { UNKNOWN_ASN, type AnalysisSnapshot, type AnalysisView, type AnalysisRow, type TrafficDimension, type TrafficDimensionStat } from '../lib/analysis'
   import { proxyName } from '../lib/analysis-display'
   import { bytes, count } from '../lib/format'
   import { t, i18n } from '../lib/i18n.svelte'
@@ -11,18 +11,23 @@
   import Confirm from '../components/Confirm.svelte'
   import AnalysisDetails from '../components/AnalysisDetails.svelte'
   import DomainDiagnostics from '../components/DomainDiagnostics.svelte'
+  import ExportDomains from '../components/ExportDomains.svelte'
 
-  type View = 'domains' | 'ips' | 'proxies'
-  type Row = DomainStat | IPStat | ProxyStat
+  type View = AnalysisView
+  type Row = AnalysisRow
   type Sort = 'name' | 'total' | 'download' | 'upload' | 'connections'
   const PAGE_SIZE = 25
   const views = $derived<{ value: View; label: string }[]>([
     { value: 'domains', label: t('analysis.domains') },
     { value: 'ips', label: t('analysis.ips') },
     { value: 'proxies', label: t('analysis.proxies') },
+    { value: 'applications', label: t('analysis.applications') },
+    { value: 'networks', label: t('analysis.networks') },
+    { value: 'inbounds', label: t('traffic.inbounds') },
   ])
 
   let view = $state<View>('domains')
+  let dimension = $state<TrafficDimension>('inbounds')
   let query = $state('')
   let proxyFilter = $state('')
   let sort = $state<Sort>('total')
@@ -42,12 +47,13 @@
   }
 
   const stats = $derived(paused && frozen ? frozen : core.analysis)
+  const streamLive = $derived(core.connectionsOnline && core.connectionsFresh)
   const totalTraffic = $derived(stats.totals.download + stats.totals.upload)
   const sessionTime = $derived(new Date(stats.startedAt).toLocaleTimeString(i18n.intlLocale, { hour: '2-digit', minute: '2-digit' }))
   const distribution = $derived([...stats.proxies].sort((a, b) => b.download + b.upload - a.download - a.upload))
   const sorted = $derived.by(() => {
     const q = query.trim().toLowerCase()
-    let rows: Row[] = stats[view]
+    let rows: Row[] = view === 'inbounds' ? stats[dimension] : stats[view]
     if (proxyFilter && view !== 'proxies') rows = rows.filter((row) => 'proxies' in row && row.proxies.includes(proxyFilter))
     if (q) rows = rows.filter((row) => {
       const fields = [row.name, rowName(row)]
@@ -55,6 +61,8 @@
       if ('domains' in row) fields.push(...row.domains)
       if ('proxies' in row) fields.push(...row.proxies, ...row.proxies.map(proxyName))
       if ('countries' in row) fields.push(...row.countries, ...row.asn)
+      if ('processPath' in row) fields.push(row.processPath, row.process, row.sourceIP, String(row.uid ?? ''))
+      if ('dimension' in row) fields.push(row.label, row.inboundName, row.inboundType, ...row.sources)
       return fields.join(' ').toLowerCase().includes(q)
     })
     return [...rows].sort((a, b) => {
@@ -66,9 +74,10 @@
   const pages = $derived(Math.max(1, Math.ceil(sorted.length / PAGE_SIZE)))
   const currentPage = $derived(Math.min(page, pages))
   const rows = $derived(sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE))
+  const exportDomains = $derived(sorted.flatMap((row) => 'domains' in row ? row.domains : view === 'domains' ? [row.name] : []))
 
   $effect(() => {
-    query; view; proxyFilter
+    query; view; proxyFilter; dimension
     page = 1
     selected = ''
   })
@@ -98,7 +107,17 @@
   }
 
   function rowName(row: Row): string {
+    if ('dimension' in row) {
+      if (row.dimension === 'inbounds') return inboundName(row)
+      return row.label || t(row.dimension === 'protocols' ? 'traffic.unknownProtocol' : 'traffic.unknownUser')
+    }
+    if ('processPath' in row) return row.process || row.processPath.split(/[\\/]/).at(-1) || t('analysis.unknownApplication')
+    if (view === 'networks' && row.name === UNKNOWN_ASN) return t('analysis.unknownNetwork')
     return view === 'proxies' ? proxyName(row.name) : row.name
+  }
+
+  function inboundName(row: TrafficDimensionStat): string {
+    return row.inboundName || (row.inboundType ? t('traffic.typeOnly', { type: row.inboundType }) : t('traffic.unknownInbound'))
   }
 
   function related(row: Row) {
@@ -150,11 +169,11 @@
   <div class="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6" role="group" aria-label={t('analysis.viewLabel')}>
     {#each views as item (item.value)}
       <button class="flex min-h-11 items-center gap-2 border-b-2 pb-1 text-[13px] transition-colors {view === item.value ? 'border-selected-border text-selected-text' : 'border-transparent text-fg-3 hover:text-fg'}" aria-pressed={view === item.value} onclick={() => (view = item.value)}>
-        {item.label}<span class="num font-mono text-xs text-fg-3">{count(stats[item.value].length)}</span>
+        {item.label}<span class="num font-mono text-xs text-fg-3">{count(item.value === 'inbounds' ? stats[dimension].length : stats[item.value].length)}</span>
       </button>
     {/each}
   </div>
-  <span class="flex items-center gap-2 pb-2 font-mono text-xs text-fg-3"><span class="led" data-on={core.connectionsOnline && !paused}></span>{paused ? t('analysis.tablePaused') : core.connectionsOnline ? t('analysis.live') : t('analysis.offline')}</span>
+  <span class="flex items-center gap-2 pb-2 font-mono text-xs text-fg-3"><span class="led" data-on={streamLive && !paused}></span>{paused ? t('analysis.tablePaused') : streamLive ? t('analysis.live') : t('analysis.offline')}</span>
 </div>
 
 {#if !core.connectionsOnline && core.connectionsReady}
@@ -180,7 +199,17 @@
 {/if}
 
 <div class="my-4 flex flex-wrap items-center gap-2">
-  <SearchInput bind:value={() => proxyName(query), (value) => (query = value)} placeholder={view === 'domains' ? t('analysis.searchDomains') : view === 'ips' ? t('analysis.searchIPs') : t('analysis.searchProxies')} />
+  {#if view === 'inbounds'}
+    <label class="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs text-fg-3">
+      <span>{t('traffic.groupBy')}</span>
+      <select bind:value={dimension} data-testid="inbound-dimension" class="h-11 max-w-full rounded-control border border-field-border bg-field px-2 text-[13px] text-fg sm:h-8">
+        <option value="inbounds">{t('traffic.byInbound')}</option>
+        <option value="protocols">{t('traffic.byProtocol')}</option>
+        <option value="users">{t('traffic.byUser')}</option>
+      </select>
+    </label>
+  {/if}
+  <SearchInput bind:value={() => proxyName(query), (value) => (query = value)} placeholder={view === 'inbounds' ? t('traffic.search') : view === 'domains' ? t('analysis.searchDomains') : view === 'ips' ? t('analysis.searchIPs') : view === 'applications' ? t('analysis.searchApplications') : view === 'networks' ? t('analysis.searchNetworks') : t('analysis.searchProxies')} />
   {#if view !== 'proxies'}
     <label class="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <span class="sr-only">{t('analysis.exitNode')}</span>
@@ -193,6 +222,7 @@
   {#if query || (proxyFilter && view !== 'proxies')}
     <Button size="sm" variant="ghost" onclick={() => { query = ''; proxyFilter = '' }}>{t('analysis.clearFilters')}</Button>
   {/if}
+  <ExportDomains domains={exportDomains} name={view} testId="analysis-export-domains" />
   <span class="ml-auto font-mono text-xs text-fg-3">{t('analysis.found', { count: sorted.length })}</span>
 </div>
 
@@ -207,7 +237,7 @@
     <table class="w-full table-fixed text-[13px]">
       <caption class="sr-only">{t('analysis.tableCaption', { view: views.find((item) => item.value === view)?.label ?? '' })}</caption>
       <thead><tr class="text-left">
-        {@render sortHead('name', view === 'domains' ? t('analysis.domain') : view === 'ips' ? t('analysis.ip') : t('analysis.exitNode'), 'w-auto sm:w-[32%]')}
+        {@render sortHead('name', view === 'inbounds' ? t(dimension === 'inbounds' ? 'traffic.byInbound' : dimension === 'protocols' ? 'traffic.byProtocol' : 'traffic.byUser') : view === 'domains' ? t('analysis.domain') : view === 'ips' ? t('analysis.ip') : view === 'applications' ? t('analysis.application') : view === 'networks' ? t('analysis.network') : t('analysis.exitNode'), 'w-auto sm:w-[32%]')}
         <th class="{th} hidden w-[18%] text-left lg:table-cell">{view === 'ips' ? t('analysis.regionASN') : t('analysis.associations')}</th>
         {@render sortHead('download', t('analysis.downloaded'), 'hidden text-right xl:table-cell')}
         {@render sortHead('upload', t('analysis.uploaded'), 'hidden text-right xl:table-cell')}
@@ -223,6 +253,8 @@
                 <span class="block break-all font-mono text-xs leading-5">{rowName(row)}</span>
               </button>
               <span class="mt-0.5 block truncate text-xs text-fg-3">{related(row)}{#if view === 'ips' && 'countries' in row && row.countries.length}{' · '}{row.countries.join(', ')}{/if}</span>
+              {#if 'processPath' in row}<span class="mt-0.5 block truncate font-mono text-xs text-fg-3" title={row.processPath}>{row.sourceIP || '—'}{row.uid !== undefined ? ` · UID ${row.uid}` : ''}</span>{/if}
+              {#if 'dimension' in row && row.dimension === 'users'}<span class="mt-0.5 block truncate text-xs text-fg-3" title={inboundName(row)}>{inboundName(row)}</span>{/if}
             </td>
             <td class="hidden truncate px-3 py-3 text-xs text-fg-2 lg:table-cell">
               {#if view === 'ips' && 'countries' in row}
@@ -254,5 +286,7 @@
 {/if}
 
 <p class="mt-4 max-w-3xl text-xs leading-5 text-fg-3">{t('analysis.sessionHint')}{#if view === 'ips'}{' '}{t('analysis.geoHint')}{/if}{#if paused}{' '}{t('analysis.pauseHint')}{/if}</p>
+{#if view === 'applications' || view === 'networks'}<p class="mt-2 max-w-3xl text-xs leading-5 text-fg-3">{t(view === 'applications' ? 'analysis.applicationsHint' : 'analysis.networksHint')}</p>{/if}
+{#if view === 'inbounds'}<p class="mt-2 max-w-3xl text-xs leading-5 text-fg-3">{t('traffic.inboundHint')}</p>{/if}
 
 <Confirm bind:open={confirmReset} title={t('analysis.resetTitle')} description={t('analysis.resetDescription')} action={t('analysis.resetAction')} onconfirm={reset} />

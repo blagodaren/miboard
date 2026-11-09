@@ -359,47 +359,99 @@ export async function request<T = unknown>(
 export function stream<T>(
   path: string,
   onData: (data: T) => void,
-  opts: { query?: Record<string, string | number>; onState?: (open: boolean) => void } = {},
+  opts: {
+    query?: Record<string, string | number>
+    onState?: (open: boolean) => void
+    onStale?: () => void
+    idleTimeoutMs?: number
+    connectTimeoutMs?: number
+  } = {},
 ): () => void {
+  // Each stream belongs to the controller that created it, including every retry.
+  const backend = { ...current }
+  const idleTimeout = opts.idleTimeoutMs ?? (['/traffic', '/connections', '/memory'].includes(path) ? 15000 : 0)
+  const connectTimeout = opts.connectTimeoutMs ?? 10000
   let ws: WebSocket | null = null
   let closed = false
   let delay = 1000
-  let timer: ReturnType<typeof setTimeout>
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let watchdog: ReturnType<typeof setTimeout> | undefined
+  let opened = false
+  let deadline = 0
+
+  const clearWatchdog = () => { clearTimeout(watchdog); watchdog = undefined; deadline = 0 }
+  const retry = () => {
+    if (closed || timer !== undefined) return
+    const wait = Math.min(15000, Math.round(delay * (0.8 + Math.random() * 0.4)))
+    delay = Math.min(delay * 2, 15000)
+    timer = setTimeout(() => { timer = undefined; open() }, wait)
+  }
+  const fail = (socket: WebSocket, stale = false) => {
+    if (closed || ws !== socket) return
+    ws = null
+    clearWatchdog()
+    if (opened) { opened = false; opts.onState?.(false) }
+    if (stale) opts.onStale?.()
+    // Invalidate before close: native close/error events can arrive later.
+    try { socket.close() } catch { /* The failed socket is already abandoned. */ }
+    retry()
+  }
+  const arm = (socket: WebSocket, timeout: number) => {
+    clearWatchdog()
+    if (closed || ws !== socket || !(timeout > 0)) return
+    deadline = Date.now() + timeout
+    watchdog = setTimeout(() => fail(socket, true), timeout)
+  }
 
   const open = () => {
-    const url = new URL(current.url.replace(/^http/, 'ws') + path)
-    if (current.secret) url.searchParams.set('token', current.secret)
+    if (closed) return
+    const url = new URL(backend.url.replace(/^http/, 'ws') + path)
+    if (backend.secret) url.searchParams.set('token', backend.secret)
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, String(v))
-    let isOpen = false
-    ws = new WebSocket(url)
-    ws.onopen = () => {
-      if (closed || isOpen) return
-      isOpen = true
-      delay = 1000
+    let socket: WebSocket
+    try { socket = new WebSocket(url) } catch { opts.onStale?.(); retry(); return }
+    ws = socket
+    opened = false
+    arm(socket, connectTimeout)
+    socket.onopen = () => {
+      if (closed || ws !== socket || opened) return
+      if (deadline && Date.now() >= deadline) { fail(socket, true); return }
+      opened = true
       opts.onState?.(true)
+      arm(socket, idleTimeout)
     }
-    ws.onmessage = (e) => {
+    socket.onmessage = (e) => {
+      if (closed || ws !== socket || !opened) return
+      // A queued frame after sleep must not erase an unobserved interval before wake runs.
+      if (deadline && Date.now() >= deadline) { fail(socket, true); return }
       try {
         onData(JSON.parse(e.data))
+        // A TCP handshake alone does not prove that telemetry is flowing.
+        delay = 1000
+        arm(socket, idleTimeout)
       } catch {
-        /* битый кадр — пропускаем */
+        /* Invalid frames do not keep a stalled stream alive. */
       }
     }
-    ws.onclose = () => {
-      if (closed) return
-      if (isOpen) {
-        isOpen = false
-        opts.onState?.(false)
-      }
-      timer = setTimeout(open, delay)
-      delay = Math.min(delay * 2, 15000)
-    }
+    socket.onclose = () => fail(socket)
+    socket.onerror = () => fail(socket)
   }
+  // Timers may be throttled while a tab or device sleeps. Check wall time on return.
+  const wake = () => {
+    if (closed || document.hidden) return
+    if (ws && deadline && Date.now() >= deadline) fail(ws, true)
+  }
+  document.addEventListener?.('visibilitychange', wake)
+  globalThis.addEventListener?.('online', wake)
   open()
   return () => {
     closed = true
     clearTimeout(timer)
+    clearWatchdog()
+    document.removeEventListener?.('visibilitychange', wake)
+    globalThis.removeEventListener?.('online', wake)
     ws?.close()
+    ws = null
   }
 }
 
@@ -416,6 +468,16 @@ export type Proxy = {
   history: Delay[]
   extra?: Record<string, { alive: boolean; history: Delay[] }>
   udp?: boolean
+  uot?: boolean
+  xudp?: boolean
+  tfo?: boolean
+  mptcp?: boolean
+  smux?: boolean
+  interface?: string
+  'routing-mark'?: number
+  'dialer-proxy'?: string
+  expectedStatus?: string
+  emptyFallback?: string
   alive?: boolean
   hidden?: boolean
   icon?: string
@@ -443,6 +505,9 @@ export type ProxyProvider = {
   type?: string
   vehicleType?: string
   proxies?: Proxy[]
+  /** mihomo serializes the provider's configured HealthCheckURL as testUrl. */
+  testUrl?: string
+  expectedStatus?: string
   updatedAt?: string
   subscriptionInfo?: { Upload?: number; Download?: number; Total?: number; Expire?: number }
 }
@@ -455,14 +520,31 @@ export type ConnMeta = {
   destinationIP: string
   destinationPort: string
   /** null/undefined: mihomo ещё не проверяло адрес; []: GeoIP не дал результата. */
+  sourceGeoIP?: string[] | null
   destinationGeoIP?: string[] | null
+  sourceIPASN?: string
   destinationIPASN?: string
   host: string
   sniffHost?: string
   process?: string
   processPath?: string
   remoteDestination?: string
+  inboundIP?: string
+  inboundPort?: string
   inboundName?: string
+  inboundUser?: string
+  rematchName?: string
+  dnsMode?: string
+  uid?: number
+  specialProxy?: string
+  specialRules?: string
+  dscp?: number
+  id?: string
+  smartBlock?: string
+  smartTarget?: string
+  wildcardTarget?: string
+  exitGeoIP?: string
+  exitIPASN?: string
 }
 export type Connection = {
   id: string
@@ -471,8 +553,13 @@ export type Connection = {
   download: number
   start: string
   chains: string[]
+  providerChains?: string[] | null
   rule: string
   rulePayload: string
+  maxUploadRate?: number
+  maxDownloadRate?: number
+  downloadSpeed?: number
+  uploadSpeed?: number
 }
 export type ConnSnapshot = {
   downloadTotal: number
@@ -481,7 +568,11 @@ export type ConnSnapshot = {
   memory?: number
 }
 
-export type Rule = { type: string; payload: string; proxy: string; size?: number }
+export type Rule = {
+  type: string; payload: string; proxy: string; size?: number
+  index?: number
+  extra?: { disabled: boolean; hitCount: number; hitAt: string; missCount: number; missAt: string }
+}
 export type RuleProvider = {
   name: string
   behavior: string
@@ -502,7 +593,29 @@ export type Configs = {
   'socks-port'?: number
   'allow-lan'?: boolean
   'unified-delay'?: boolean
-  tun?: { enable: boolean }
+  tun?: {
+    enable: boolean; device?: string; stack?: string; mtu?: number
+    'auto-route'?: boolean; 'auto-detect-interface'?: boolean; 'dns-hijack'?: string[]
+    [key: string]: unknown
+  }
+  ipv6?: boolean
+  sniffing?: boolean
+  'find-process-mode'?: string
+  'tcp-concurrent'?: boolean
+  'interface-name'?: string
+  'routing-mark'?: number
+  'bind-address'?: string
+  'redir-port'?: number
+  'tproxy-port'?: number
+  'geox-url'?: { 'geo-ip'?: string; mmdb?: string; asn?: string; 'geo-site'?: string }
+  'geo-auto-update'?: boolean
+  'geo-update-interval'?: number
+  'geodata-mode'?: boolean
+  'geodata-loader'?: string
+  'geosite-matcher'?: string
+  'keep-alive-idle'?: number
+  'keep-alive-interval'?: number
+  'disable-keep-alive'?: boolean
   'lgbm-auto-update'?: boolean
   'lgbm-update-interval'?: number
   'lgbm-url'?: string
@@ -511,19 +624,24 @@ export type Configs = {
 
 export type LogLine = { type: string; payload: string }
 
+export type DnsRecord = { name: string; type: number; TTL: number; data: string }
 export type DnsResponse = {
   Status: number
-  Answer?: { name: string; type: number; TTL: number; data: string }[]
+  Answer?: DnsRecord[]
+  Authority?: DnsRecord[]
+  Additional?: DnsRecord[]
+  Question?: { Name: string; Qtype: number; Qclass: number }[]
+  TC?: boolean; RD?: boolean; RA?: boolean; AD?: boolean; CD?: boolean
 }
 
 // ——— эндпоинты ———
 
 export const api = {
   version: (b?: Backend) => request<Version>('/version', { timeout: 5000 }, b),
-  dnsQuery: (name: string, type: 'A' | 'AAAA', b?: Backend, signal?: AbortSignal) =>
+  dnsQuery: (name: string, type: string, b?: Backend, signal?: AbortSignal) =>
     request<DnsResponse>('/dns/query', { query: { name, type }, timeout: 5000, signal }, b),
-  configs: () => request<Configs>('/configs'),
-  patchConfigs: (body: Partial<Configs> | Record<string, unknown>) => request('/configs', { method: 'PATCH', body }),
+  configs: (b?: Backend, signal?: AbortSignal) => request<Configs>('/configs', { signal }, b),
+  patchConfigs: (body: Partial<Configs> | Record<string, unknown>, b?: Backend) => request('/configs', { method: 'PATCH', body }, b),
   proxies: (b?: Backend) => request<{ proxies: Record<string, Proxy> }>('/proxies', {}, b),
   proxyProviders: (b?: Backend) => request<{ providers: Record<string, ProxyProvider> }>('/providers/proxies', {}, b),
   smartWeights: (b?: Backend) => request<SmartWeights>('/group/weights', { timeout: 5000 }, b),
@@ -551,8 +669,19 @@ export const api = {
       timeout: timeout + 2000,
       signal,
     }, b),
-  rules: () => request<{ rules: Rule[] }>('/rules'),
-  ruleProviders: () => request<{ providers: Record<string, RuleProvider> }>('/providers/rules'),
+  rules: (b?: Backend, signal?: AbortSignal) => request<{ rules: Rule[] }>('/rules', { signal }, b),
+  disableRules: (disabled: Record<string, boolean>, b?: Backend, signal?: AbortSignal) =>
+    request<void>('/rules/disable', { method: 'PATCH', body: disabled, signal }, b),
+  getStorage: <T = unknown>(key: string, b?: Backend, signal?: AbortSignal) =>
+    request<T | null>(`/storage/${encodeURIComponent(key)}`, { signal }, b),
+  putStorage: (key: string, value: unknown, b?: Backend, signal?: AbortSignal) =>
+    request<void>(`/storage/${encodeURIComponent(key)}`, { method: 'PUT', body: value, signal }, b),
+  deleteStorage: (key: string, b?: Backend, signal?: AbortSignal) =>
+    request<void>(`/storage/${encodeURIComponent(key)}`, { method: 'DELETE', signal }, b),
+  ruleProviders: (b?: Backend, signal?: AbortSignal) =>
+    request<{ providers: Record<string, RuleProvider> }>('/providers/rules', { signal }, b),
+  updateRuleProvider: (name: string, b?: Backend, signal?: AbortSignal) =>
+    request<void>(`/providers/rules/${encodeURIComponent(name)}`, { method: 'PUT', timeout: 30000, signal }, b),
   closeConnection: (id: string) => request(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   closeSmartConnection: (id: string, b?: Backend) =>
     request(`/connections/smart/${encodeURIComponent(id)}`, { method: 'DELETE' }, b),

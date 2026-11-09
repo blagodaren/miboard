@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { chromium } from 'playwright'
+import { APP_UPDATE_URL, stubAppUpdates } from './app-update-fixture.mjs'
 import { GeoDatabase } from '../src/lib/geo-db.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -83,6 +84,7 @@ async function eventually(check, message, timeout = 10_000) {
 
 async function newPage(viewport = { width: 1440, height: 1000 }, colorScheme = 'light', locale = 'ru') {
   const context = await browser.newContext({ viewport, colorScheme, reducedMotion: 'reduce' })
+  await stubAppUpdates(context)
   await context.addInitScript((locale) => {
     localStorage.setItem('miboard.locale', locale)
     localStorage.removeItem('miboard.theme')
@@ -97,6 +99,7 @@ async function newPage(viewport = { width: 1440, height: 1000 }, colorScheme = '
   page.on('request', (request) => {
     const url = new URL(request.url())
     if (!['http:', 'https:'].includes(url.protocol)) return
+    if (url.href === APP_UPDATE_URL) return
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) externalRequests.push(request.url())
   })
   return { context, page, expectedFailures }
