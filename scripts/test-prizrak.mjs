@@ -87,7 +87,7 @@ try {
   await ordinary.page.getByRole('switch', { name: 'TUN', exact: true }).waitFor()
   assert.equal(await section(ordinary.page).count(), 0, 'Ordinary mihomo has no Prizrak settings')
   await open(ordinary.page, vanilla, 'proxies', 'Proxies')
-  await ordinary.page.getByRole('button', { name: 'Test all groups', exact: true }).waitFor()
+  await ordinary.page.getByRole('button', { name: 'Test all', exact: true }).waitFor()
   assert.equal(await ordinary.page.getByRole('button', { name: 'Node weights', exact: true }).count(), 0)
   await open(ordinary.page, vanilla, 'connections', 'Connections')
   assert.equal(await ordinary.page.getByRole('button', { name: /^Switch node for / }).count(), 0)

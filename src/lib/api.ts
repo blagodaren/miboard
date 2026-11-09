@@ -420,6 +420,8 @@ export type Proxy = {
   hidden?: boolean
   icon?: string
   testUrl?: string
+  'provider-name'?: string
+  fixed?: string
   useLightGBM?: boolean
   collectData?: boolean
   sampleRate?: number
@@ -436,7 +438,14 @@ export type SmartWeights = {
   message?: string
 }
 
-export type ProxyProvider = { vehicleType?: string; proxies?: Proxy[] }
+export type ProxyProvider = {
+  name?: string
+  type?: string
+  vehicleType?: string
+  proxies?: Proxy[]
+  updatedAt?: string
+  subscriptionInfo?: { Upload?: number; Download?: number; Total?: number; Expire?: number }
+}
 
 export type ConnMeta = {
   network: string
@@ -511,8 +520,8 @@ export type DnsResponse = {
 
 export const api = {
   version: (b?: Backend) => request<Version>('/version', { timeout: 5000 }, b),
-  dnsQuery: (name: string, type: 'A' | 'AAAA', b?: Backend) =>
-    request<DnsResponse>('/dns/query', { query: { name, type }, timeout: 5000 }, b),
+  dnsQuery: (name: string, type: 'A' | 'AAAA', b?: Backend, signal?: AbortSignal) =>
+    request<DnsResponse>('/dns/query', { query: { name, type }, timeout: 5000, signal }, b),
   configs: () => request<Configs>('/configs'),
   patchConfigs: (body: Partial<Configs> | Record<string, unknown>) => request('/configs', { method: 'PATCH', body }),
   proxies: (b?: Backend) => request<{ proxies: Record<string, Proxy> }>('/proxies', {}, b),
@@ -522,6 +531,8 @@ export const api = {
     request<{ weights: SmartWeight[] | null }>(`/group/${encodeURIComponent(group)}/weights`, { signal }, b),
   select: (group: string, name: string, b?: Backend, signal?: AbortSignal) =>
     request(`/proxies/${encodeURIComponent(group)}`, { method: 'PUT', body: { name }, signal }, b),
+  clearFixedProxy: (group: string, b?: Backend, signal?: AbortSignal) =>
+    request(`/proxies/${encodeURIComponent(group)}`, { method: 'DELETE', signal }, b),
   groupDelay: (group: string, url: string, timeout = 5000, b?: Backend, signal?: AbortSignal) =>
     request<Record<string, number>>(`/group/${encodeURIComponent(group)}/delay`, {
       query: { url, timeout },

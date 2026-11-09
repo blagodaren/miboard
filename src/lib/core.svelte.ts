@@ -15,6 +15,7 @@ import {
 import { t } from './i18n.svelte'
 import { AnalysisTracker } from './analysis'
 import { TrafficHistory } from './traffic-history'
+import { connectionJournal } from './connection-journal.svelte'
 
 export type ConnRow = Connection & { dl: number; ul: number }
 
@@ -92,6 +93,7 @@ class Core {
       useBackend(b)
       saveBackend(b)
       this.backend = b
+      void connectionJournal.activateBackend(b.url)
       this.version = v.version
       // REST доступен, но связь считается живой только после открытия WebSocket.
       this.status = 'lost'
@@ -112,6 +114,7 @@ class Core {
     ++this.#generation
     this.#stop()
     this.#reset()
+    void connectionJournal.activateBackend('')
     this.clearError()
     this.status = 'setup'
     if (location.hash !== '#/setup') location.hash = '/setup'
@@ -222,6 +225,7 @@ class Core {
           })
           this.#prev = next
           this.conns = rows
+          connectionJournal.observe(d.connections ?? [])
           this.#analysisTracker.ingest(d.connections ?? [])
           this.analysis = this.#analysisTracker.snapshot()
           this.connectionsReady = true
@@ -229,6 +233,7 @@ class Core {
         { query: { interval: 1000 }, onState: (open) => {
           if (generation !== this.#generation) return
           this.connectionsOnline = open
+          if (!open) connectionJournal.pause()
           onState(open)
         } },
       ),
@@ -236,6 +241,7 @@ class Core {
   }
 
   #stop() {
+    connectionJournal.pause(true)
     this.#stops.forEach((s) => s())
     this.#stops = []
     this.streamsOpen = 0

@@ -1,6 +1,6 @@
 {
   "name": "miboard",
-  "version": "0.1.1-alpha",
+  "version": "0.1.2",
   "description": "A lightweight, self-hosted dashboard for mihomo",
   "engines": {
     "node": ">=24"
@@ -12,8 +12,8 @@
     "prebuild:cdn-fonts": "node scripts/licenses.mjs",
     "build:cdn-fonts": "vite build --mode cdn-fonts",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test scripts/analysis.test.ts scripts/overview.test.ts scripts/devices.test.ts scripts/device-flow.test.ts scripts/rules-analytics.test.ts scripts/rule-chain-graph.test.ts scripts/test-backends.mjs scripts/test-proxy-sort.ts scripts/test-proxy-selection.ts scripts/test-proxy-batch.ts scripts/test-proxy-icon.ts scripts/test-latency.ts scripts/test-latency-distribution.ts scripts/test-traffic-history.ts scripts/test-geography.mjs scripts/test-geodb.mjs scripts/test-geo-resolver.mjs scripts/test-release.mjs scripts/test-palette.mjs",
-    "test:ui": "npm run build && node scripts/test-i18n.mjs && node scripts/test-rules.mjs && node scripts/test-latency-ui.mjs && node scripts/test-proxy-sort-ui.mjs && node scripts/test-proxy-selection-ui.mjs && node scripts/test-prizrak.mjs && node scripts/test-dashboard-ui.mjs",
+    "test": "node --test scripts/analysis.test.ts scripts/overview.test.ts scripts/devices.test.ts scripts/device-flow.test.ts scripts/rules-analytics.test.ts scripts/rule-chain-graph.test.ts scripts/test-backends.mjs scripts/test-proxy-sort.ts scripts/test-proxy-selection.ts scripts/test-proxy-batch.ts scripts/test-proxy-icon.ts scripts/test-latency.ts scripts/test-latency-distribution.ts scripts/test-traffic-history.ts scripts/test-geography.mjs scripts/test-geodb.mjs scripts/test-geo-resolver.mjs scripts/test-release.mjs scripts/test-palette.mjs scripts/test-domain-diagnostics.ts scripts/journal.test.ts scripts/test-stability.ts scripts/test-providers.ts scripts/test-settings-transfer.ts",
+    "test:ui": "npm run build && node scripts/test-i18n.mjs && node scripts/test-rules.mjs && node scripts/test-latency-ui.mjs && node scripts/test-proxy-sort-ui.mjs && node scripts/test-proxy-selection-ui.mjs && node scripts/test-prizrak.mjs && node scripts/test-diagnostics-ui.mjs && node scripts/test-journal-ui.mjs && node scripts/test-providers-stability-ui.mjs && node scripts/test-settings-transfer-ui.mjs && node scripts/test-dashboard-ui.mjs",
     "test:prizrak": "npm run build && node scripts/test-prizrak.mjs",
     "test:fonts": "node scripts/test-fonts-ui.mjs",
     "test:theme": "node scripts/check-theme.mjs",
@@ -27,6 +27,10 @@
     "test:latency": "node --test scripts/test-latency.ts scripts/test-latency-distribution.ts",
     "test:latency:ui": "npm run build && node scripts/test-latency-ui.mjs",
     "test:analysis": "node --test scripts/analysis.test.ts",
+    "test:diagnostics": "node --test scripts/test-domain-diagnostics.ts",
+    "test:journal": "node --test scripts/journal.test.ts",
+    "test:stability": "node --test scripts/test-stability.ts scripts/test-providers.ts",
+    "test:settings-transfer": "node --test scripts/test-settings-transfer.ts",
     "test:devices": "node --test scripts/devices.test.ts scripts/device-flow.test.ts",
     "test:devices:ui": "node scripts/test-devices-ui.mjs",
     "test:overview": "node --test scripts/overview.test.ts scripts/test-traffic-history.ts",

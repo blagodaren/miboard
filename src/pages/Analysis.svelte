@@ -10,6 +10,7 @@
   import SearchInput from '../components/SearchInput.svelte'
   import Confirm from '../components/Confirm.svelte'
   import AnalysisDetails from '../components/AnalysisDetails.svelte'
+  import DomainDiagnostics from '../components/DomainDiagnostics.svelte'
 
   type View = 'domains' | 'ips' | 'proxies'
   type Row = DomainStat | IPStat | ProxyStat
@@ -31,6 +32,14 @@
   let paused = $state(false)
   let frozen = $state.raw<AnalysisSnapshot | null>(null)
   let confirmReset = $state(false)
+  let diagnosticsOpen = $state(false)
+  let diagnosticDomain = $state('')
+  let diagnosticRequest = $state(0)
+  function diagnose(domain = '') {
+    diagnosticDomain = domain
+    diagnosticRequest++
+    diagnosticsOpen = true
+  }
 
   const stats = $derived(paused && frozen ? frozen : core.analysis)
   const totalTraffic = $derived(stats.totals.download + stats.totals.upload)
@@ -112,12 +121,15 @@
 
 <PageHeader title={t('analysis.title')} meta={t('analysis.meta', { time: sessionTime })}>
   {#snippet actions()}
+    <Button size="sm" onclick={() => diagnose()} aria-expanded={diagnosticsOpen} aria-controls="domain-diagnostics">{t('diagnostics.open')}</Button>
     <Button size="sm" onclick={togglePause} aria-pressed={paused}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('analysis.resume')}{:else}<IconPause strokeWidth={1.5} />{t('analysis.pause')}{/if}
     </Button>
     <Button size="sm" variant="ghost" onclick={() => (confirmReset = true)}><IconRefresh strokeWidth={1.5} />{t('analysis.newSession')}</Button>
   {/snippet}
 </PageHeader>
+
+{#if diagnosticsOpen}<DomainDiagnostics initialHost={diagnosticDomain} requestId={diagnosticRequest} onclose={() => diagnosticsOpen = false} />{/if}
 
 <section class="grid grid-cols-2 overflow-hidden rounded-2xl border border-line bg-card lg:grid-cols-4" aria-label={t('analysis.sessionStats')}>
   {#each [
@@ -229,7 +241,7 @@
               <button class="flex min-h-11 w-full items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-raised hover:text-fg" aria-label={t(selected === row.name ? 'analysis.hideDetails' : 'analysis.showDetails', { name: rowName(row) })} aria-expanded={selected === row.name} aria-controls="analysis-details-{index}" onclick={() => (selected = selected === row.name ? '' : row.name)}><IconChevron class="size-4 transition-transform {selected === row.name ? 'rotate-180' : ''}" strokeWidth={1.5} /></button>
             </td>
           </tr>
-          <tr hidden={selected !== row.name} id="analysis-details-{index}"><td colspan="7" class="p-0">{#if selected === row.name}<AnalysisDetails {row} {view} onnavigate={navigate} />{/if}</td></tr>
+          <tr hidden={selected !== row.name} id="analysis-details-{index}"><td colspan="7" class="p-0">{#if selected === row.name}<AnalysisDetails {row} {view} onnavigate={navigate} ondiagnose={diagnose} />{/if}</td></tr>
         {:else}
           <tr class="border-t border-line"><td colspan="7" class="px-5 py-12 text-center"><p class="text-fg-2">{query || proxyFilter ? t('analysis.noResults') : view === 'domains' ? t('analysis.noDomains') : t('analysis.emptySession')}</p><p class="mx-auto mt-2 max-w-md text-xs text-fg-3">{query || proxyFilter ? t('analysis.changeFilters') : view === 'domains' ? t('analysis.noDomainsHint') : t('analysis.emptySessionHint')}</p></td></tr>
         {/each}

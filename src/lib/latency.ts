@@ -13,9 +13,9 @@ export type DelaySettings = {
 export const DELAY_STORAGE_KEY = 'miboard.latency.v1'
 export const IPV6_TEST_URL = 'https://ipv6.google.com/generate_204'
 export const DEFAULT_DELAY_SETTINGS: Readonly<DelaySettings> = Object.freeze({
-  mode: 'core',
-  url: 'https://cp.cloudflare.com/generate_204',
-  timeout: 15000,
+  mode: 'panel',
+  url: 'https://www.gstatic.com/generate_204',
+  timeout: 5000,
   yellow: 400,
   red: 800,
   ipv6: false,
@@ -66,6 +66,32 @@ export function saveDelaySettings(settings: DelaySettings): boolean {
 
 export function delayTestUrl(group: Proxy, settings: DelaySettings): string {
   return settings.independent ? group.testUrl || settings.url : settings.url
+}
+
+/** Dashboard orchestration applies only to groups that can choose individual members. */
+export function delayGroupSettings(group: Proxy, settings: DelaySettings): DelaySettings {
+  const panel = settings.mode === 'panel' && ['selector', 'loadbalance', 'smart'].includes(group.type.toLowerCase())
+  return {
+    ...settings,
+    mode: panel ? 'panel' : 'core',
+    url: delayTestUrl(group, settings),
+    timeout: panel ? Math.min(2000, settings.timeout) : Math.max(5000, settings.timeout),
+  }
+}
+
+const UNTESTABLE_TYPES = new Set(['reject', 'rejectdrop', 'block'])
+const BULK_EXCLUDED_TYPES = new Set([
+  ...UNTESTABLE_TYPES, 'direct', 'compatible', 'pass', 'passrule', 'rematch',
+  'dns', 'relay', 'selector', 'fallback', 'urltest', 'smart', 'loadbalance',
+])
+
+export function isLatencyTestable(proxy?: Proxy): boolean {
+  return !UNTESTABLE_TYPES.has(proxy?.type.toLowerCase() ?? '')
+}
+
+/** Shared Test all measures endpoint nodes, including hidden and unreferenced endpoints. */
+export function isBulkLatencyNode(proxy: Proxy): boolean {
+  return !proxy.all?.length && !BULK_EXCLUDED_TYPES.has(proxy.type.toLowerCase())
 }
 
 /** A group without a selected leaf cannot prove IPv6 connectivity via its own URLTest. */
@@ -119,7 +145,7 @@ export function proxyDelayValue(proxy: Proxy | undefined, url: string): number |
   return typeof delay === 'number' && Number.isFinite(delay) ? delay : undefined
 }
 
-export type DelayTarget = { name: string; provider?: string }
+export type DelayTarget = { name: string; provider?: string; ipv6Target?: DelayTarget }
 export type DelayClient = {
   groupDelay: (group: string, url: string, timeout: number, signal?: AbortSignal) => Promise<Record<string, number>>
   proxyDelay: (target: DelayTarget, url: string, timeout: number, signal?: AbortSignal) => Promise<{ delay: number }>
@@ -130,33 +156,64 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
   const limit = Math.max(1, Math.floor(concurrency) || 5)
   let active = 0
   const queue: Array<() => void> = []
-  const pending = new Map<string, Promise<{ delay: number }>>()
-  let batchCache: Map<string, Promise<{ delay: number }>> | null = null
+  type ProbeResult = { name: string; supported: boolean }
+  type NodeTest = { promise: Promise<{ delay: number }>; probe: Promise<ProbeResult | undefined> }
+  const pending = new Map<string, NodeTest>()
+  let batchCache: Map<string, NodeTest> | null = null
   const controller = new AbortController()
   let disposed = false
 
-  function nodeTest(target: DelayTarget, settings: DelaySettings): Promise<{ delay: number }> {
-    const key = JSON.stringify([target.provider ?? null, target.name, settings.url, settings.timeout])
+  const endpoint = (target: DelayTarget): DelayTarget => ({ name: target.name, ...(target.provider ? { provider: target.provider } : {}) })
+  const normalizedDelay = (delay: number) => Number.isFinite(delay) && delay > 0 ? delay : 0
+  const assertActive = () => { if (disposed) throw new Error('Latency test cancelled') }
+  const nodeKey = (target: DelayTarget, settings: DelaySettings, ipv6Target = target.ipv6Target ?? target) => JSON.stringify([
+    target.provider ?? null, target.name, settings.url, settings.timeout,
+    settings.ipv6 ? [ipv6Target.provider ?? null, ipv6Target.name] : null,
+  ])
+
+  function nodeTest(target: DelayTarget, settings: DelaySettings, ipv6Target = target.ipv6Target ?? target): NodeTest {
+    const key = nodeKey(target, settings, ipv6Target)
     const existing = batchCache?.get(key) ?? pending.get(key)
     if (existing) {
       // A request started before the campaign may still serve its first group.
       batchCache?.set(key, existing)
       return existing
     }
+    let publishProbe!: (result: ProbeResult | undefined) => void
+    const probe = new Promise<ProbeResult | undefined>((resolve) => { publishProbe = resolve })
     const promise = new Promise<{ delay: number }>((resolve, reject) => {
       const start = () => {
         if (disposed) {
           pending.delete(key)
+          publishProbe(undefined)
           reject(new Error('Latency test cancelled'))
           return
         }
         active++
-        Promise.resolve().then(() => {
-          if (disposed) throw new Error('Latency test cancelled')
-          return client.proxyDelay(target, settings.url, settings.timeout, controller.signal)
+        Promise.resolve().then(async () => {
+          assertActive()
+          // A slot covers the complete IPv6 → main sequence, never two global phases.
+          if (settings.ipv6) {
+            let supported = false
+            try {
+              const result = await client.proxyDelay(endpoint(ipv6Target), IPV6_TEST_URL, 2000, controller.signal)
+              supported = normalizedDelay(result.delay) > 0
+            } catch {
+              // An optional probe cannot prevent the normal latency measurement.
+            }
+            assertActive()
+            publishProbe({ name: ipv6Target.name, supported })
+            // Deliver the probe to subscribers before starting the main request.
+            await probe
+          } else {
+            publishProbe(undefined)
+          }
+          assertActive()
+          return client.proxyDelay(endpoint(target), settings.url, settings.timeout, controller.signal)
         })
           .then(resolve, reject)
           .finally(() => {
+            publishProbe(undefined)
             active--
             pending.delete(key)
             queue.shift()?.()
@@ -165,15 +222,78 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
       if (active < limit) start()
       else queue.push(start)
     })
-    pending.set(key, promise)
-    batchCache?.set(key, promise)
-    return promise
+    const operation = { promise, probe }
+    pending.set(key, operation)
+    batchCache?.set(key, operation)
+    return operation
+  }
+
+  async function testNode(
+    target: DelayTarget,
+    settings: DelaySettings,
+    onIPv6?: (name: string, supported: boolean) => void,
+    ipv6Target?: DelayTarget,
+  ): Promise<{ delay: number }> {
+    assertActive()
+    const operation = nodeTest(target, settings, ipv6Target)
+    const [result] = await Promise.all([
+      operation.promise,
+      operation.probe.then((probe) => {
+        if (!disposed && probe) onIPv6?.(probe.name, probe.supported)
+      }),
+    ])
+    assertActive()
+    return { delay: normalizedDelay(result.delay) }
+  }
+
+  async function testGroup(
+    group: string,
+    targets: DelayTarget[],
+    settings: DelaySettings,
+    onResult: (name: string, delay: number) => void,
+    onIPv6?: (name: string, supported: boolean) => void,
+  ): Promise<void> {
+    assertActive()
+    const unique = [...new Map(targets.map((target) => [settings.mode === 'core' ? target.name : nodeKey(target, settings), target])).values()]
+    if (!unique.length) return
+    if (settings.mode === 'core') {
+      if (settings.ipv6) {
+        let results: Record<string, number> = {}
+        try {
+          results = await client.groupDelay(group, IPV6_TEST_URL, settings.timeout, controller.signal)
+        } catch {
+          // Group IPv6 failure remains separate from the main group test.
+        }
+        if (disposed) return
+        for (const target of unique) onIPv6?.(target.name, normalizedDelay(results[target.name]) > 0)
+      }
+      if (disposed) return
+      const results = await client.groupDelay(group, settings.url, settings.timeout, controller.signal)
+      if (disposed) return
+      for (const target of unique) onResult(target.name, normalizedDelay(results[target.name]))
+      return
+    }
+
+    let failed = 0
+    let lastError: unknown
+    await Promise.all(unique.map(async (target) => {
+      let delay = 0
+      try {
+        const result = await testNode(target, settings, onIPv6)
+        delay = result.delay
+      } catch (error) {
+        failed++
+        lastError = error
+      }
+      if (!disposed) onResult(target.name, delay)
+    }))
+    if (failed === unique.length) throw lastError
   }
 
   return {
     beginBatch(): () => void {
       if (disposed) return () => {}
-      const cache = new Map<string, Promise<{ delay: number }>>()
+      const cache = new Map<string, NodeTest>()
       batchCache = cache
       return () => {
         // A late cleanup from an older campaign must not clear the current one.
@@ -189,56 +309,26 @@ export function createDelayTester(client: DelayClient, concurrency = 5) {
       controller.abort()
       while (queue.length) queue.shift()?.()
     },
-    async testNode(target: DelayTarget, settings: DelaySettings): Promise<{ delay: number }> {
-      if (disposed) throw new Error('Latency test cancelled')
-      // A ping click always checks one endpoint, even when group tests use core mode.
-      const result = await nodeTest(target, settings)
-      if (disposed) throw new Error('Latency test cancelled')
-      return { delay: Number.isFinite(result.delay) && result.delay > 0 ? result.delay : 0 }
+    testNode,
+    testGroup,
+    testNodes(targets: DelayTarget[], settings: DelaySettings, onResult: (name: string, delay: number) => void, onIPv6?: (name: string, supported: boolean) => void): Promise<void> {
+      return testGroup('', targets, { ...settings, mode: 'panel', timeout: Math.min(2000, settings.timeout) }, onResult, onIPv6)
     },
-    async testIPv6(targets: DelayTarget[], timeout: number, onResult: (name: string, supported: boolean) => void): Promise<void> {
+    /** Compatibility for standalone probes; application tests use the complete node pipeline. */
+    async testIPv6(targets: DelayTarget[], _timeout: number, onResult: (name: string, supported: boolean) => void): Promise<void> {
       if (disposed) return
-      const settings = { ...DEFAULT_DELAY_SETTINGS, mode: 'panel' as const, url: IPV6_TEST_URL, timeout: Math.min(2000, timeout) }
+      const settings = { ...DEFAULT_DELAY_SETTINGS, mode: 'panel' as const, url: IPV6_TEST_URL, timeout: 2000, ipv6: false }
       const unique = [...new Map(targets.map((target) => [JSON.stringify([target.provider ?? null, target.name]), target])).values()]
       await Promise.all(unique.map(async (target) => {
         let supported = false
         try {
-          const result = await nodeTest(target, settings)
+          const result = await testNode(target, settings)
           supported = Number.isFinite(result.delay) && result.delay > 0
         } catch {
           // Failure of the optional IPv6 probe must not prevent the normal test.
         }
         if (!disposed) onResult(target.name, supported)
       }))
-    },
-    async testGroup(group: string, targets: DelayTarget[], settings: DelaySettings, onResult: (name: string, delay: number) => void): Promise<void> {
-      if (disposed) throw new Error('Latency test cancelled')
-      const unique = [...new Map(targets.map((target) => [target.name, target])).values()]
-      if (!unique.length) return
-      if (settings.mode === 'core') {
-        const results = await client.groupDelay(group, settings.url, settings.timeout, controller.signal)
-        if (disposed) return
-        for (const target of unique) {
-          const delay = results[target.name]
-          onResult(target.name, typeof delay === 'number' && Number.isFinite(delay) && delay > 0 ? delay : 0)
-        }
-        return
-      }
-
-      let failed = 0
-      let lastError: unknown
-      await Promise.all(unique.map(async (target) => {
-        let delay = 0
-        try {
-          const result = await nodeTest(target, settings)
-          if (Number.isFinite(result.delay) && result.delay > 0) delay = result.delay
-        } catch (error) {
-          failed++
-          lastError = error
-        }
-        if (!disposed) onResult(target.name, delay)
-      }))
-      if (failed === unique.length) throw lastError
     },
   }
 }

@@ -10,6 +10,9 @@ import {
   delayHistorySample,
   delayMeasurementName,
   delayTestUrl,
+  delayGroupSettings,
+  isLatencyTestable,
+  isBulkLatencyNode,
   proxyDelayValue,
   readDelaySettings,
   saveDelaySettings,
@@ -18,7 +21,7 @@ import {
 } from '../src/lib/latency.ts'
 import type { DelayClient, DelaySettings, DelayTarget } from '../src/lib/latency.ts'
 
-const settings = (patch: Partial<DelaySettings> = {}): DelaySettings => ({ ...DEFAULT_DELAY_SETTINGS, ...patch })
+const settings = (patch: Partial<DelaySettings> = {}): DelaySettings => ({ ...DEFAULT_DELAY_SETTINGS, mode: 'core', ...patch })
 const panel = (patch: Partial<DelaySettings> = {}): DelaySettings => settings({ mode: 'panel', ...patch })
 const target = (name: string, provider?: string): DelayTarget => provider ? { name, provider } : { name }
 const history = (...values: number[]) => values.map((delay, index) => ({ time: String(index), delay }))
@@ -51,6 +54,44 @@ function deferred<T>() {
 
 // Let promise queues settle without tying the concurrency assertions to wall-clock time.
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve))
+
+test('new installations use the dashboard, gstatic and five-second defaults', () => {
+  assert.equal(DEFAULT_DELAY_SETTINGS.mode, 'panel')
+  assert.equal(DEFAULT_DELAY_SETTINGS.url, 'https://www.gstatic.com/generate_204')
+  assert.equal(DEFAULT_DELAY_SETTINGS.timeout, 5000)
+  assert.equal(DEFAULT_DELAY_SETTINGS.yellow, 400)
+  assert.equal(DEFAULT_DELAY_SETTINGS.red, 800)
+})
+
+test('group policy uses dashboard pipelines only for selectors, load balancers and Smart groups', () => {
+  const preferences = panel({ url: 'https://global.test/204', timeout: 1234, independent: true })
+  for (const type of ['Selector', 'selector', 'LOADBALANCE', 'Smart']) {
+    const group = { ...node(), type, testUrl: 'https://group.test/204' }
+    assert.deepEqual(delayGroupSettings(group, preferences), { ...preferences, mode: 'panel', url: group.testUrl })
+    assert.equal(delayGroupSettings(group, panel({ timeout: 15000 })).timeout, 2000)
+    assert.equal(delayGroupSettings(group, settings({ timeout: 1234 })).mode, 'core')
+    assert.equal(delayGroupSettings(group, settings({ timeout: 1234 })).timeout, 5000)
+  }
+  for (const type of ['URLTest', 'Fallback', 'Relay', 'Unknown']) {
+    const group = { ...node(), type }
+    assert.equal(delayGroupSettings(group, preferences).mode, 'core')
+    assert.equal(delayGroupSettings(group, preferences).timeout, 5000)
+    assert.equal(delayGroupSettings(group, panel({ timeout: 15000 })).timeout, 15000)
+  }
+  assert.equal(preferences.timeout, 1234, 'Planning must not overwrite the persisted setting')
+})
+
+test('group tests allow DIRECT while shared Test all excludes built-ins and every group type', () => {
+  for (const type of ['Reject', 'REJECTDROP', 'block']) assert.equal(isLatencyTestable({ ...node(), type }), false)
+  assert.equal(isLatencyTestable(undefined), true)
+  assert.equal(isLatencyTestable({ ...node(), type: 'Direct' }), true)
+  for (const type of ['Direct', 'reject', 'RejectDrop', 'Block', 'Compatible', 'Pass', 'PassRule', 'ReMatch', 'DNS', 'Relay', 'Selector', 'Fallback', 'URLTest', 'Smart', 'LoadBalance']) {
+    assert.equal(isBulkLatencyNode({ ...node(), type }), false, type)
+  }
+  assert.equal(isBulkLatencyNode({ ...node(), hidden: true }), true, 'Hidden endpoints still participate')
+  assert.equal(isBulkLatencyNode({ ...node(), all: [] }), true)
+  assert.equal(isBulkLatencyNode({ ...node(), all: ['child'] }), false)
+})
 
 test('settings accept safe HTTP(S) endpoints and the supported numeric boundaries', () => {
   assert.equal(validDelaySettings(settings()), true)
@@ -417,7 +458,7 @@ test('an empty group completes without requesting a node or reporting an error',
   await tester.testGroup('empty', [], panel(), () => assert.fail('No node result'))
 })
 
-test('IPv6 probes use individual provider-aware requests and cap their timeout at two seconds', async () => {
+test('standalone IPv6 probes use provider-aware requests and a fixed two-second timeout', async () => {
   const calls: { target: DelayTarget; url: string; timeout: number }[] = []
   const results: Record<string, boolean> = {}
   const tester = createDelayTester({
@@ -434,7 +475,7 @@ test('IPv6 probes use individual provider-aware requests and cap their timeout a
   assert.deepEqual(calls.find((call) => call.target.name === 'supported')?.target, target('supported', 'subscription'))
   calls.length = 0
   await tester.testIPv6([target('supported')], 500, () => {})
-  assert.equal(calls[0].timeout, 500)
+  assert.equal(calls[0].timeout, 2000)
 })
 
 test('IPv6 and regular measurements share the scheduler and only deduplicate identical URLs and timeouts', async () => {
@@ -486,6 +527,198 @@ test('IPv6 failures remain separate from main latency and do not fail a subseque
   assert.deepEqual(v6Results, { a: false, b: false })
   await tester.testGroup('group', [target('a'), target('b')], panel(), (name, delay) => { mainResults[name] = delay })
   assert.deepEqual(mainResults, { a: 91, b: 91 })
+})
+
+test('a single ping probes the resolved provider leaf at 2000ms before its named main request', async () => {
+  const calls: unknown[][] = []
+  const statuses: unknown[] = []
+  const main = target('named selector')
+  const leaf = target('selected leaf', 'subscription / one')
+  const preferences = settings({ ipv6: true, timeout: 500, independent: true })
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('A single ping must not use the group endpoint') },
+    async proxyDelay(selected, url, timeout) {
+      calls.push([selected, url, timeout])
+      if (url === IPV6_TEST_URL) throw new Error('No IPv6 route')
+      assert.deepEqual(statuses, [[leaf.name, false]], 'The optional result reaches the UI before the main response')
+      return { delay: 73 }
+    },
+  })
+  assert.deepEqual(await tester.testNode(main, preferences, (...result) => { statuses.push(result) }, leaf), { delay: 73 })
+  assert.deepEqual(calls, [[leaf, IPV6_TEST_URL, 2000], [main, preferences.url, 500]])
+})
+
+test('a concurrency slot covers IPv6 and main so queued nodes cannot split one pipeline', async () => {
+  const calls: string[] = []
+  const gates = new Map<string, ReturnType<typeof deferred<{ delay: number }>>>()
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('Unexpected group request') },
+    async proxyDelay(selected, url) {
+      const key = `${selected.name}:${url === IPV6_TEST_URL ? 'ipv6' : 'main'}`
+      calls.push(key)
+      const gate = deferred<{ delay: number }>()
+      gates.set(key, gate)
+      return gate.promise
+    },
+  }, 2)
+  const job = tester.testNodes(['a', 'b', 'c'].map(name => target(name)), settings({ ipv6: true }), () => {})
+  await tick()
+  assert.deepEqual(calls, ['a:ipv6', 'b:ipv6'])
+  gates.get('a:ipv6')!.resolve({ delay: 1 })
+  await tick()
+  assert.deepEqual(calls, ['a:ipv6', 'b:ipv6', 'a:main'], 'The first main test starts while another IPv6 probe is still pending')
+  gates.get('a:main')!.resolve({ delay: 40 })
+  await tick()
+  assert.deepEqual(calls, ['a:ipv6', 'b:ipv6', 'a:main', 'c:ipv6'], 'The third node only starts after a full slot is released')
+  gates.get('b:ipv6')!.resolve({ delay: 1 })
+  gates.get('c:ipv6')!.resolve({ delay: 1 })
+  await tick()
+  gates.get('b:main')!.resolve({ delay: 50 })
+  gates.get('c:main')!.resolve({ delay: 60 })
+  await job
+})
+
+test('pipeline dedup includes the IPv6 target and notifies every shared consumer', async () => {
+  const calls: string[] = []
+  const gates = new Map<string, ReturnType<typeof deferred<{ delay: number }>>>()
+  const statuses: string[] = []
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('Unexpected group request') },
+    async proxyDelay(selected, url) {
+      calls.push(`${selected.provider ?? ''}/${selected.name}:${url === IPV6_TEST_URL ? 'ipv6' : 'main'}`)
+      if (url !== IPV6_TEST_URL) return { delay: 52 }
+      const gate = deferred<{ delay: number }>()
+      gates.set(selected.provider!, gate)
+      return gate.promise
+    },
+  })
+  const preferences = panel({ ipv6: true })
+  const a = { ...target('same main'), ipv6Target: target('same leaf', 'provider-a') }
+  const b = { ...target('same main'), ipv6Target: target('same leaf', 'provider-b') }
+  const jobs = [
+    tester.testNode(a, preferences, () => { statuses.push('a') }),
+    tester.testNode(a, preferences, () => { statuses.push('shared a') }),
+    tester.testNode(b, preferences, () => { statuses.push('b') }),
+  ]
+  await tick()
+  assert.deepEqual(calls, ['provider-a/same leaf:ipv6', 'provider-b/same leaf:ipv6'])
+  gates.get('provider-a')!.resolve({ delay: 1 })
+  gates.get('provider-b')!.resolve({ delay: 1 })
+  assert.deepEqual(await Promise.all(jobs), [{ delay: 52 }, { delay: 52 }, { delay: 52 }])
+  assert.deepEqual(statuses.sort(), ['a', 'b', 'shared a'])
+  assert.equal(calls.filter(call => call.endsWith(':main')).length, 2, 'Different probe identities cannot share a complete pipeline')
+})
+
+test('bulk node testing caps only the main timeout and keeps provider-aware IPv6 at 2000ms', async () => {
+  const calls: unknown[][] = []
+  const statuses: unknown[] = []
+  const results: unknown[] = []
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('Shared Test all uses node endpoints even when saved mode is core') },
+    async proxyDelay(selected, url, timeout) { calls.push([selected, url, timeout]); return { delay: 41 } },
+  })
+  const selected = { ...target('main'), ipv6Target: target('leaf', 'provider') }
+  for (const timeout of [500, 15000]) {
+    calls.length = 0
+    await tester.testNodes([selected], settings({ timeout, ipv6: true }), (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+    assert.deepEqual(calls, [[target('leaf', 'provider'), IPV6_TEST_URL, 2000], [target('main'), DEFAULT_DELAY_SETTINGS.url, Math.min(2000, timeout)]])
+  }
+  assert.deepEqual(statuses, [['leaf', true], ['leaf', true]])
+  assert.deepEqual(results, [['main', 41], ['main', 41]])
+})
+
+test('core IPv6 uses the group endpoint before the main request and reports each member', async () => {
+  const calls: unknown[][] = []
+  const statuses: unknown[] = []
+  const results: unknown[] = []
+  const preferences = delayGroupSettings({ ...node(), type: 'URLTest' }, panel({ timeout: 1234, ipv6: true }))
+  const tester = createDelayTester({
+    async groupDelay(group, url, timeout, signal) {
+      calls.push([group, url, timeout])
+      assert(signal instanceof AbortSignal)
+      if (url === IPV6_TEST_URL) return { a: 21, b: 0 }
+      assert.deepEqual(statuses, [['a', true], ['b', false], ['missing', false]])
+      return { a: 72, b: -1 }
+    },
+    async proxyDelay() { assert.fail('A core group cannot issue individual IPv6 or main requests') },
+  })
+  await tester.testGroup('automatic', ['a', 'b', 'missing'].map(name => target(name)), preferences,
+    (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+  assert.deepEqual(calls, [['automatic', IPV6_TEST_URL, 5000], ['automatic', preferences.url, 5000]])
+  assert.deepEqual(results, [['a', 72], ['b', 0], ['missing', 0]])
+})
+
+test('failed core IPv6 reports false without preventing the main group measurement', async () => {
+  const statuses: unknown[] = []
+  const results: unknown[] = []
+  const tester = createDelayTester({
+    async groupDelay(_group, url) {
+      if (url === IPV6_TEST_URL) throw new Error('No IPv6 route')
+      return { node: 48 }
+    },
+    async proxyDelay() { assert.fail('Unexpected node request') },
+  })
+  await tester.testGroup('core', [target('node')], settings({ ipv6: true }),
+    (...result) => { results.push(result) }, (...result) => { statuses.push(result) })
+  assert.deepEqual(statuses, [['node', false]])
+  assert.deepEqual(results, [['node', 48]])
+})
+
+test('disposal during node IPv6 rejects queued work and prevents main requests and late callbacks', async () => {
+  const gate = deferred<{ delay: number }>()
+  const calls: string[] = []
+  let signal: AbortSignal | undefined
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('Unexpected group request') },
+    async proxyDelay(selected, url, _timeout, requestSignal) {
+      assert.equal(url, IPV6_TEST_URL, 'A disposed IPv6 pipeline cannot start its main request')
+      calls.push(selected.name)
+      signal = requestSignal
+      return gate.promise
+    },
+  }, 1)
+  const jobs = Promise.allSettled(['active', 'queued'].map(name =>
+    tester.testNode(target(name), settings({ ipv6: true }), () => assert.fail('No late IPv6 callback'))))
+  await tick()
+  tester.dispose()
+  assert.equal(signal?.aborted, true)
+  gate.resolve({ delay: 30 })
+  assert((await jobs).every(result => result.status === 'rejected'))
+  assert.deepEqual(calls, ['active'])
+})
+
+test('disposal during core IPv6 ignores its late result and never starts the main group request', async () => {
+  const gate = deferred<Record<string, number>>()
+  let calls = 0
+  const tester = createDelayTester({
+    async groupDelay(_group, url) { calls++; assert.equal(url, IPV6_TEST_URL); return gate.promise },
+    async proxyDelay() { assert.fail('Unexpected node request') },
+  })
+  const job = tester.testGroup('core', [target('node')], settings({ ipv6: true }),
+    () => assert.fail('No late main result'), () => assert.fail('No late probe result'))
+  tester.dispose()
+  gate.resolve({ node: 28 })
+  await job
+  assert.equal(calls, 1)
+})
+
+test('campaigns reuse the complete probe/main pipeline while replaying status to each consumer', async () => {
+  const calls: string[] = []
+  const statuses: unknown[] = []
+  const tester = createDelayTester({
+    async groupDelay() { assert.fail('Unexpected group request') },
+    async proxyDelay(_target, url) { calls.push(url); return { delay: 31 } },
+  })
+  const preferences = panel({ ipv6: true })
+  const finish = tester.beginBatch()
+  for (let index = 0; index < 2; index++) {
+    await tester.testNode(target('node'), preferences, (...result) => { statuses.push(result) })
+  }
+  assert.deepEqual(calls, [IPV6_TEST_URL, preferences.url])
+  assert.deepEqual(statuses, [['node', true], ['node', true]])
+  finish()
+  await tester.testNode(target('node'), preferences)
+  assert.deepEqual(calls, [IPV6_TEST_URL, preferences.url, IPV6_TEST_URL, preferences.url])
 })
 
 test('disposing panel tests aborts active requests and prevents queued nodes and late callbacks', async () => {

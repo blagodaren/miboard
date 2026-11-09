@@ -81,11 +81,12 @@ async function openSettings(page, locale = 'en') {
 
 const groupName = 'Latency lab'
 const groupUrl = 'https://core.example/group-check'
+const defaultUrl = 'https://www.gstatic.com/generate_204'
 const ipv6Url = 'https://ipv6.google.com/generate_204'
 const names = ['direct-node', 'provider-node', 'slow-node']
 const node = (name) => ({ name, type: 'Vless', udp: true, history: [], extra: {} })
 
-async function proxyFixtures(page, historyValues = () => ({}), extraValues = historyValues) {
+async function proxyFixtures(page, historyValues = () => ({}), extraValues = historyValues, { groupType = 'Selector', groupExtra = {} } = {}) {
   const fixtureNode = (name) => {
     const value = historyValues()[name]
     const extra = extraValues()[name]
@@ -98,7 +99,7 @@ async function proxyFixtures(page, historyValues = () => ({}), extraValues = his
   }
   await page.route(`${origin}/proxies`, (route) => route.fulfill({ json: { proxies: {
     GLOBAL: { name: 'GLOBAL', type: 'Selector', all: [groupName], history: [] },
-    [groupName]: { name: groupName, type: 'Selector', all: [names[0], names[2], names[1]], now: names[0], history: [], testUrl: groupUrl },
+    [groupName]: { name: groupName, type: groupType, all: [names[0], names[2], names[1]], now: names[0], history: [], testUrl: groupUrl, ...groupExtra },
     [names[0]]: fixtureNode(names[0]),
   } } }))
   await page.route(`${origin}/providers/proxies`, (route) => route.fulfill({ json: { providers: {
@@ -116,6 +117,7 @@ const groupCard = (page, group = groupName) => page.locator('section').filter({ 
 const nodeCard = (page, name, group = groupName) => groupCard(page, group).locator('[data-proxy-node]').filter({ has: page.locator(`span[title="${name}"]`) })
 const displayedNames = (page) => groupCard(page).locator('[data-proxy-node]').evaluateAll((cards) => cards.map((card) => card.dataset.proxyNode))
 const strip = (page, group = groupName) => page.getByTestId('proxy-latency-strip').and(page.locator(`[data-group="${group}"]`))
+const allTest = (page) => page.getByRole('button', { name: /^Test all(?: (?:groups|nodes))?$/ })
 
 async function distribution(page, group = groupName) {
   return strip(page, group).getByTestId('latency-distribution').evaluate((element) =>
@@ -194,6 +196,9 @@ try {
   const page = main.page
   await openSettings(page)
   const delay = section(page)
+  assert.equal(await page.locator('#latency-url').inputValue(), defaultUrl)
+  assert.equal(await page.locator('#latency-timeout').inputValue(), '5000')
+  assert.equal(await delay.getByRole('radio', { name: 'Panel', exact: true }).getAttribute('aria-checked'), 'true')
   await delay.getByText('Enabled', { exact: true }).waitFor()
   for (const label of ['Test URL', 'Test timeout', 'Yellow threshold', 'Red threshold']) await delay.getByLabel(label, { exact: true }).waitFor()
   const ipv6Switch = delay.getByRole('switch', { name: 'IPv6 test', exact: true })
@@ -257,7 +262,7 @@ try {
     }
   }
   await delay.getByRole('button', { name: 'По умолчанию', exact: true }).click()
-  assert.deepEqual(await saved(page), { mode: 'core', url: 'https://cp.cloudflare.com/generate_204', timeout: 15000, yellow: 400, red: 800, ipv6: false, independent: false })
+  assert.deepEqual(await saved(page), { mode: 'panel', url: defaultUrl, timeout: 5000, yellow: 400, red: 800, ipv6: false, independent: false })
   await main.context.close()
   console.log('PASS: RU/EN settings, both modes, switch autosave/reload/save/reset, invalid input focus, 375/390px light/dark layouts')
 
@@ -273,6 +278,161 @@ try {
     await state.context.close()
   }
   console.log('PASS: unified-delay enabled, disabled and unavailable states use the current core configuration')
+
+  for (const groupType of ['Selector', 'LoadBalance', 'Smart', 'Fallback', 'URLTest']) {
+    const state = await session({ settings: { mode: 'panel', url: defaultUrl, timeout: 6500, yellow: 400, red: 800, ipv6: false, independent: false } })
+    await proxyFixtures(state.page, () => ({}), () => ({}), { groupType, groupExtra: groupType === 'Smart' ? { fixed: names[0] } : {} })
+    const calls = []
+    await state.page.route(`${origin}/proxies/${encodeURIComponent(groupName)}`, async (route) => {
+      calls.push({ method: route.request().method(), pathname: new URL(route.request().url()).pathname })
+      await route.fulfill({ status: 204 })
+    })
+    await state.page.route(/\/(delay|healthcheck)\?/, async (route) => {
+      const url = new URL(route.request().url())
+      calls.push({ method: 'GET', pathname: decodeURIComponent(url.pathname), url: url.searchParams.get('url'), timeout: url.searchParams.get('timeout') })
+      await route.fulfill({ json: url.pathname.startsWith('/group/') ? Object.fromEntries(names.map((name) => [name, 50])) : { delay: 50 } })
+    })
+    await openProxies(state.page)
+    const trigger = state.page.getByRole('button', { name: `Test latency for ${groupName}`, exact: true })
+    await trigger.click()
+    await poll(async () => calls.length > 0 && await trigger.isEnabled(), `${groupType}: group test finished`)
+    const measurements = calls.filter((call) => call.method === 'GET')
+    const usesPanel = ['Selector', 'LoadBalance', 'Smart'].includes(groupType)
+    assert.equal(measurements.length, usesPanel ? 3 : 1, `${groupType}: dashboard mode dispatches only supported strategy groups per-node`)
+    assert(measurements.every((call) => call.pathname.startsWith('/group/') !== usesPanel))
+    assert(measurements.every((call) => call.url === defaultUrl && call.timeout === (usesPanel ? '2000' : '6500')), 'Dashboard workers cap at 2000 ms; automatic core groups retain the larger configured timeout')
+    if (groupType === 'Smart') assert.equal(calls[0].method, 'DELETE', 'A fixed Smart group is cleared before dashboard testing')
+    const countBefore = calls.length
+    const single = nodeCard(state.page, names[0]).getByRole('button', { name: `Retest latency for ${names[0]}`, exact: true })
+    await single.click()
+    await poll(async () => calls.length > countBefore && await single.isEnabled(), `${groupType}: single test finished`)
+    assert.equal(calls.length, countBefore + 1)
+    assert.equal(calls.at(-1).timeout, '6500', 'Single-node clicks use the full timeout even in dashboard mode')
+    assert.equal(calls.at(-1).pathname, `/proxies/${names[0]}/delay`)
+    await state.context.close()
+  }
+  console.log('PASS: strategy-specific dashboard/core dispatch, timeout cap/minimum, fixed Smart clearing and full-timeout single clicks')
+
+  for (const mode of ['core', 'panel']) {
+    const ipv6 = mode === 'core'
+    const state = await session({ settings: { mode, url: defaultUrl, timeout: 6500, yellow: 400, red: 800, ipv6, independent: false } })
+    const leaves = Array.from({ length: 7 }, (_, index) => `bulk-leaf-${index}`)
+    const excluded = ['Direct', 'Compatible', 'Pass', 'PassRule', 'Rematch', 'Dns', 'Relay', 'Reject', 'RejectDrop', 'Block']
+    const special = Object.fromEntries(excluded.map((type) => [`special-${type}`, { ...node(`special-${type}`), type }]))
+    await state.page.route(`${origin}/proxies`, (route) => route.fulfill({ json: { proxies: {
+      GLOBAL: { name: 'GLOBAL', type: 'Selector', all: [groupName], history: [] },
+      [groupName]: { name: groupName, type: 'Selector', all: leaves.slice(0, 2), now: leaves[0], history: [] },
+      'Hidden bulk group': { name: 'Hidden bulk group', type: 'Selector', all: [leaves[2]], now: leaves[2], hidden: true, history: [] },
+      ...Object.fromEntries(leaves.slice(0, 4).map((name, index) => [name, { ...node(name), ...(index === 1 ? { 'provider-name': 'bulk-provider' } : {}), ...(index === 3 ? { hidden: true } : {}) }])),
+      ...special,
+    } } }))
+    await state.page.route(`${origin}/providers/proxies`, (route) => route.fulfill({ json: { providers: {
+      'bulk-provider': { vehicleType: 'HTTP', proxies: [leaves[1], leaves[2], ...leaves.slice(4)].map(node) },
+      default: { vehicleType: 'HTTP', proxies: [node(leaves[0])] },
+      'manual-compatible': { vehicleType: 'Compatible', proxies: [node(leaves[3])] },
+    } } }))
+    const calls = []
+    let active = 0
+    let peak = 0
+    let releaseWave
+    const firstWave = new Promise((resolve) => { releaseWave = resolve })
+    let released = false
+    await state.page.route(/\/(delay|healthcheck)\?/, async (route) => {
+      const url = new URL(route.request().url())
+      const pathname = decodeURIComponent(url.pathname)
+      const name = pathname.split('/').at(-2)
+      calls.push({ pathname, name, ipv6: url.searchParams.get('url') === ipv6Url, url: url.searchParams.get('url'), timeout: url.searchParams.get('timeout') })
+      active++
+      peak = Math.max(peak, active)
+      if (!released) await firstWave
+      active--
+      await route.fulfill({ json: { delay: 50 } })
+    })
+    try {
+      await state.page.goto(`${base}#/proxies?secret=test`)
+      const trigger = allTest(state.page)
+      await poll(async () => await trigger.isEnabled(), `${mode}: bulk metadata loaded`)
+      await state.page.getByRole('searchbox').fill(leaves[0])
+      await trigger.click()
+      await poll(() => calls.length >= 5, `${mode}: five worker slots start`)
+      await state.page.waitForTimeout(100)
+      assert.equal(calls.length, 5, 'All-node campaigns have five slots even with many hidden/unreferenced nodes')
+      released = true
+      releaseWave()
+      await poll(async () => calls.length >= leaves.length * (ipv6 ? 2 : 1) && await trigger.isEnabled(), `${mode}: all-node campaign settles`)
+      assert.equal(peak, 5)
+      assert.equal(calls.length, leaves.length * (ipv6 ? 2 : 1))
+      const mainCalls = calls.filter((call) => !call.ipv6)
+      assert.deepEqual(mainCalls.map((call) => call.name).sort(), [...leaves].sort(), 'Every real root/provider leaf is checked once, independent of visible groups and search')
+      assert(mainCalls.every((call) => call.url === defaultUrl && call.timeout === '2000'))
+      assert(calls.every((call) => !call.pathname.startsWith('/group/')), 'Shared all-node testing ignores core/dashboard mode')
+      for (const name of leaves.slice(1, 3)) assert(mainCalls.some((call) => call.pathname === `/providers/proxies/bulk-provider/${name}/healthcheck`), 'Provider ownership takes priority even when the node also appears in /proxies')
+      for (const name of [leaves[0], leaves[3]]) assert(mainCalls.some((call) => call.pathname === `/proxies/${name}/delay`), 'Default and Compatible providers do not capture manual root nodes')
+      if (ipv6) {
+        assert(calls.filter((call) => call.ipv6).every((call) => call.timeout === '2000'))
+        for (const name of leaves) assert(calls.findIndex((call) => call.name === name && call.ipv6) < calls.findIndex((call) => call.name === name && !call.ipv6))
+        assert(calls.findIndex((call) => !call.ipv6) < calls.findLastIndex((call) => call.ipv6), 'Workers run IPv6→normal per node instead of a separate whole-batch IPv6 phase')
+      }
+    } finally {
+      released = true
+      releaseWave()
+      await state.context.close()
+    }
+  }
+  console.log('PASS: shared Test all covers hidden/unreferenced metadata once, excludes special/group types, uses provider ownership and five IPv6→normal worker slots')
+
+  {
+    const state = await session({ settings: { mode: 'core', url: defaultUrl, timeout: 1234, yellow: 400, red: 800, ipv6: false, independent: true } })
+    const groups = [groupName, 'Independent B', 'Independent C', 'Independent hidden']
+    await state.page.route(`${origin}/configs`, (route) => route.fulfill({ json: { mode: 'global', 'log-level': 'info', 'unified-delay': true } }))
+    await state.page.route(`${origin}/proxies`, (route) => route.fulfill({ json: { proxies: {
+      GLOBAL: { name: 'GLOBAL', type: 'Selector', all: groups.slice(0, 3), now: groupName, history: [] },
+      ...Object.fromEntries(groups.map((name, index) => [name, { name, type: 'Selector', all: [`independent-leaf-${index}`], now: `independent-leaf-${index}`, history: [], testUrl: `https://group-${index}.example/check`, ...(index === 3 ? { hidden: true } : {}) }])),
+      ...Object.fromEntries(groups.map((_, index) => [`independent-leaf-${index}`, node(`independent-leaf-${index}`)])),
+    } } }))
+    await state.page.route(`${origin}/providers/proxies`, (route) => route.fulfill({ json: { providers: {} } }))
+    const calls = []
+    let active = 0
+    let peak = 0
+    let releaseGroups
+    let released = false
+    const gate = new Promise((resolve) => { releaseGroups = resolve })
+    await state.page.route(/\/group\/.*\/delay\?/, async (route) => {
+      const url = new URL(route.request().url())
+      calls.push(url)
+      active++
+      peak = Math.max(peak, active)
+      if (!released) await gate
+      active--
+      const name = decodeURIComponent(url.pathname).split('/')[2]
+      const index = groups.indexOf(name)
+      await route.fulfill({ json: { [`independent-leaf-${index}`]: 50 } })
+    })
+    try {
+      await state.page.goto(`${base}#/proxies?secret=test`)
+      const trigger = allTest(state.page)
+      await poll(async () => await trigger.isEnabled(), 'independent group metadata loaded')
+      await trigger.click()
+      await poll(() => calls.length >= 3, 'three independent group slots start')
+      await state.page.waitForTimeout(100)
+      assert.equal(calls.length, 3)
+      released = true
+      releaseGroups()
+      await poll(async () => calls.length === 4 && await trigger.isEnabled(), 'independent hidden group finishes')
+      assert.equal(peak, 3)
+      assert.deepEqual(calls.map((url) => decodeURIComponent(url.pathname).split('/')[2]).sort(), [...groups].sort(), 'Independent all tests hidden groups and excludes GLOBAL even in global mode')
+      assert(calls.every((url) => url.searchParams.get('timeout') === '5000'))
+      for (const url of calls) {
+        const index = groups.indexOf(decodeURIComponent(url.pathname).split('/')[2])
+        assert.equal(url.searchParams.get('url'), `https://group-${index}.example/check`)
+      }
+    } finally {
+      released = true
+      releaseGroups()
+      await state.context.close()
+    }
+  }
+  console.log('PASS: independent Test all schedules three groups at a time, retains group URLs and includes hidden groups without GLOBAL')
 
   const testPreferences = { ...preferences, ipv6: false, independent: false }
   const panel = await session({ settings: testPreferences })
@@ -325,6 +485,8 @@ try {
     const values = { 'manual-fast': 40, 'nested-leaf': 200, 'provider-yellow': 500, 'provider-slow': 900, 'provider-dead': 0 }
     const members = ['manual-fast', nested, 'provider-yellow', 'provider-slow', 'provider-dead', 'provider-unknown']
     let revision = 0
+    let proxyReads = 0
+    state.page.on('request', (request) => { if (new URL(request.url()).pathname === '/proxies') proxyReads++ })
     const fixtureNode = (name) => ({ ...node(name), history: values[name] === undefined ? [] : [{ time: `2026-11-09T00:00:0${revision}Z`, delay: values[name] }] })
     const fixtureGroup = (name, all, extra = {}) => ({ name, type: 'Selector', all, now: all[0], history: [], ...extra })
     await state.page.route(`${origin}/proxies`, (route) => route.fulfill({ json: { proxies: {
@@ -389,8 +551,23 @@ try {
     await expectDistribution(state.page, { fast: 2, ok: 1, slow: 2, none: 1, total: 6 })
     await expectDistribution(state.page, { fast: 2, ok: 1, slow: 2, none: 1, total: 6 }, collapsed)
     await state.page.screenshot({ path: path.join(screenshotDir, 'proxies-static-latency-distribution.png'), fullPage: true, animations: 'disabled' })
+    const readsBeforeVisibility = proxyReads
+    values['provider-dead'] = 0
+    revision++
+    await state.page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await state.page.waitForTimeout(100)
+    assert.equal(proxyReads, readsBeforeVisibility, 'Hiding the page does not launch a metadata refresh')
+    await state.page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await poll(async () => proxyReads > readsBeforeVisibility && (await nodeCard(state.page, 'provider-dead').locator('.num').innerText()).trim() === '—', 'returning to the page refreshes core history instead of retaining a stale manual result')
+    await expectDistribution(state.page, { fast: 1, ok: 1, slow: 2, none: 2, total: 6 })
     await state.context.close()
-    console.log('PASS: permanent distribution covers full and collapsed groups, reflects thresholds/retests, and keeps failed/unknown latency neutral')
+    console.log('PASS: permanent distribution covers collapsed groups, thresholds/retests and visible-page metadata refresh without stale manual values')
   }
 
   {
@@ -438,13 +615,13 @@ try {
         await route.fulfill({ json: { delay } })
       })
       await state.page.goto(`${base}#/proxies?secret=test`)
-      const trigger = state.page.getByRole('button', { name: 'Test all groups', exact: true })
+      const trigger = allTest(state.page)
       const pings = state.page.locator('[data-proxy-node] .num')
       await poll(async () => await trigger.isEnabled(), 'overlapping group metadata loaded')
       assert.equal(await pings.count(), 6, 'All three overlapping groups are open')
       assert.deepEqual(await pings.allTextContents(), Array(6).fill('80 ms'))
       await trigger.click()
-      await state.page.getByText('Test completed: 3/3 groups', { exact: true }).waitFor()
+      await poll(async () => calls.length === 2 && await trigger.isEnabled(), 'shared node campaign completion')
       assert.equal(calls.length, 2, 'A campaign measures two distinct nodes once, rather than twice per group')
       assert.deepEqual(calls.map((call) => call.name).sort(), [...sharedNames].sort())
       assert(calls.every((call) => call.url === sharedUrl && call.timeout === String(testPreferences.timeout)), 'Bulk requests keep the shared URL and timeout')
@@ -507,7 +684,9 @@ try {
       calls.push({ pathname, url: url.searchParams.get('url') })
       const values = { [names[0]]: 55, [aliases[0]]: 497, [aliases[1]]: 777, [names[1]]: 60, [names[2]]: 70 }
       if (pathname.startsWith('/group/')) refreshed = true
-      return route.fulfill({ json: pathname.startsWith('/group/') ? values : { delay: values[pathname.split('/').at(-2)] } })
+      const groupValues = { ...values }
+      if (!scenario.leafMember) delete groupValues[names[0]]
+      return route.fulfill({ json: pathname.startsWith('/group/') ? groupValues : { delay: values[pathname.split('/').at(-2)] } })
     })
     await openProxies(state.page)
     const trigger = state.page.getByRole('button', { name: `Test latency for ${groupName}`, exact: true })
@@ -515,20 +694,19 @@ try {
     await poll(async () => await trigger.isEnabled(), 'shared core aliases test completion')
     if (scenario.leafMember) assert.equal(await nodeCard(state.page, names[0]).locator('.num').innerText(), '55 ms', `${scenario.name}: alias/background history must not overwrite the directly measured leaf`)
     for (const [index, alias] of aliases.entries()) {
-      const expected = scenario.independent ? `${index ? 777 : 497} ms` : '55 ms'
+      const expected = scenario.independent ? `${index ? 777 : 497} ms` : scenario.leafMember ? '55 ms' : '777 ms'
       assert.equal(await nodeCard(state.page, alias).locator('.num').innerText(), expected, `${scenario.name}: shared aliases agree, while independent named samples remain separate`)
     }
     assert.equal(calls.filter(call => call.pathname.startsWith('/group/')).length, 1, 'Core mode retains one group request')
-    if (!scenario.leafMember) assert.deepEqual(calls.filter(call => !call.pathname.startsWith('/group/')).map(call => call.pathname), [`/proxies/${names[0]}/delay`], 'Aliases without a direct leaf member share exactly one real endpoint follow-up')
-    else assert.equal(calls.length, 1, 'A directly measured member does not need extra endpoint requests')
-    assert(calls.every(call => call.url === testPreferences.url), 'Core and endpoint follow-up requests keep the same URL')
+    assert.equal(calls.length, 1, 'Core aliases use the returned map or refreshed leaf history without endpoint follow-ups')
+    assert(calls.every(call => call.url === testPreferences.url), 'Core group requests keep the selected test URL')
     const retestedName = scenario.leafMember ? names[0] : aliases[0]
     await nodeCard(state.page, retestedName).getByRole('button', { name: `Retest latency for ${retestedName}`, exact: true }).click()
     await poll(async () => await trigger.isEnabled(), 'single leaf retest after aliased core test')
     assert.equal(await nodeCard(state.page, retestedName).locator('.num').innerText(), '55 ms', 'Group and individual endpoint results use the same measured identity')
     await state.context.close()
   }
-  console.log('PASS: core aliases preserve exact endpoint values across order/history refreshes, share missing-leaf follow-ups and retain independent samples')
+  console.log('PASS: core aliases preserve direct results or refreshed URL history without endpoint follow-ups; independent samples remain separate')
 
   {
     const state = await session({ settings: { ...testPreferences, mode: 'core', independent: false } })
@@ -609,7 +787,7 @@ try {
   assert.equal(coreRequests.length, 1, 'Core mode makes one group request')
   assert.equal(decodeURIComponent(coreRequests[0].pathname), `/group/${groupName}/delay`)
   assert.equal(coreRequests[0].searchParams.get('url'), groupUrl, 'The core group test URL takes precedence')
-  assert.equal(coreRequests[0].searchParams.get('timeout'), '1234')
+  assert.equal(coreRequests[0].searchParams.get('timeout'), '5000', 'Core groups apply the upstream 5000 ms minimum')
   assert.match(await nodeCard(core.page, names[1]).innerText(), /333 ms/)
   assert.match(await nodeCard(core.page, names[2]).innerText(), /777 ms/)
   await assertLatencyColor(core.page, names[0], '--warning')
@@ -623,7 +801,8 @@ try {
   assert.equal((await nodeCard(core.page, names[1]).locator('.num').innerText()).trim(), '—')
   await assertLatencyColor(core.page, names[1], '--text-3')
   assert.doesNotMatch(await nodeCard(core.page, names[1]).innerText(), /333 ms/, 'A failed new test must not retain its previous manual result')
-  await assertOrder(core.page, [names[0], names[2], names[1]], 'A provider node whose refreshed history is zero sorts after measured nodes', coreRequests.map(String))
+  for (const name of names) assert.equal((await nodeCard(core.page, name).locator('.num').innerText()).trim(), '—', 'A failed core group clears every current result instead of restoring stale successful history')
+  await assertOrder(core.page, [names[0], names[2], names[1]], 'Unavailable results retain the configured stable order instead of inventing latency differences', coreRequests.map(String))
   await core.context.close()
   console.log('PASS: failed repeat test replaces stale manual values with current URL-specific history and re-sorts unreachable nodes')
 
@@ -675,6 +854,10 @@ try {
       const name = pathname.split('/').at(-2)
       const ipv6 = url.searchParams.get('url') === ipv6Url
       calls.push({ pathname, name, ipv6, url: url.searchParams.get('url'), timeout: url.searchParams.get('timeout') })
+      if (ipv6 && pathname.startsWith('/group/')) {
+        general = { [names[0]]: 99, [names[1]]: 0, [names[2]]: 99 }
+        return route.fulfill({ json: { [nestedName]: 0, [names[0]]: 99, [names[2]]: 99 } })
+      }
       if (ipv6) {
         general[name] = name === names[1] ? 0 : 99
         if (name === names[1]) {
@@ -699,17 +882,20 @@ try {
     await poll(async () => calls.some((call) => !call.ipv6), `${mode} main test starts after IPv6`)
     await poll(async () => await trigger.isEnabled(), `${mode} IPv6 and main tests complete`)
     const ipv6Calls = calls.filter((call) => call.ipv6)
-    assert.equal(ipv6Calls.length, 3, 'IPv6 checks each distinct endpoint once')
-    assert(ipv6Calls.every((call) => !call.pathname.startsWith('/group/') && call.name !== nestedName), 'IPv6 checks leaf endpoints, never a strategy group')
-    assert(ipv6Calls.some((call) => call.pathname === '/providers/proxies/provider-tests/provider-node/healthcheck'), 'A nested provider leaf uses its provider endpoint')
-    assert(ipv6Calls.every((call) => call.timeout === String(Math.min(2000, timeout))), 'IPv6 timeout is bounded by the main timeout and 2000 ms')
     if (mode === 'core') {
       const mainCalls = calls.filter((call) => !call.ipv6)
-      assert.equal(mainCalls.length, 2, 'The group request is followed by one canonical leaf check for the nested-only member')
+      assert.equal(ipv6Calls.length, 1, 'Core IPv6 is one group request')
+      assert.equal(ipv6Calls[0].pathname, `/group/${groupName}/delay`)
+      assert.equal(ipv6Calls[0].timeout, String(Math.max(5000, timeout)))
+      assert.equal(mainCalls.length, 1, 'Core mode needs no alias leaf follow-up')
       assert.equal(mainCalls[0].pathname, `/group/${groupName}/delay`)
-      assert.equal(mainCalls[1].pathname, '/providers/proxies/provider-tests/provider-node/healthcheck', 'A strategy result is confirmed through its actual provider leaf')
-      assert(calls.slice(0, 3).every((call) => call.ipv6), 'The main group test runs after the IPv6 requests to restore main latency history')
-      assert(calls[3].pathname.startsWith('/group/'))
+      assert.deepEqual(calls.map((call) => call.ipv6), [true, false], 'The IPv6 group request precedes the normal group request')
+    } else {
+      assert.equal(ipv6Calls.length, 3, 'Panel IPv6 checks each distinct endpoint once')
+      assert(ipv6Calls.every((call) => !call.pathname.startsWith('/group/') && call.name !== nestedName), 'Panel IPv6 checks selected leaves')
+      assert(ipv6Calls.some((call) => call.pathname === '/providers/proxies/provider-tests/provider-node/healthcheck'))
+      assert(ipv6Calls.every((call) => call.timeout === '2000'), 'Node IPv6 always uses 2000 ms even when the normal timeout is lower')
+      for (const name of names) assert(calls.findIndex((call) => call.name === name && call.ipv6) < calls.findIndex((call) => call.name === name && !call.ipv6), 'Each node finishes IPv6 before its normal test')
     }
     assert(calls.filter((call) => !call.ipv6).every((call) => call.url === testPreferences.url && call.timeout === String(timeout)))
     await nodeCard(state.page, nestedName).locator('[aria-label="IPv6 unavailable"]').waitFor()
@@ -717,6 +903,15 @@ try {
     assert.match(await nodeCard(state.page, nestedName).innerText(), /15,000 ms/, 'A failed IPv6 check must not replace the main latency')
     assert.match(await nodeCard(state.page, names[0]).innerText(), /410 ms/)
     assert.equal(await state.page.getByRole('alert').count(), 0, 'Partial IPv6 failure is shown in its badge, not as a main-test failure')
+    const beforeSingle = calls.length
+    const single = nodeCard(state.page, names[0]).getByRole('button', { name: `Retest latency for ${names[0]}`, exact: true })
+    await single.click()
+    await poll(async () => calls.length >= beforeSingle + 2 && await single.isEnabled(), `${mode}: single IPv6 and normal test finish`)
+    const singleCalls = calls.slice(beforeSingle)
+    assert.equal(singleCalls.length, 2)
+    assert.deepEqual(singleCalls.map((call) => call.url), [ipv6Url, testPreferences.url])
+    assert.deepEqual(singleCalls.map((call) => call.timeout), ['2000', String(timeout)])
+    assert(singleCalls.every((call) => call.pathname === `/proxies/${names[0]}/delay`), 'A single click always checks one endpoint, regardless of group mode')
     await state.page.screenshot({ path: path.join(screenshotDir, `proxies-ipv6-${mode}.png`), fullPage: true, animations: 'disabled' })
     if (mode === 'core') {
       for (const width of [320, 360, 375, 640]) {
@@ -743,7 +938,7 @@ try {
     }
     await state.context.close()
   }
-  console.log('PASS: IPv6 uses only leaf/provider endpoints with a bounded timeout; failures keep the main latency intact in both modes')
+  console.log('PASS: panel IPv6 uses leaf pipelines at 2000 ms; core IPv6 uses a group request before the normal group request')
   assert.deepEqual(errors, [], 'Unexpected browser runtime errors')
   console.log(`Screenshots: ${screenshotDir}`)
 } finally {

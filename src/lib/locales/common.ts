@@ -91,7 +91,7 @@ export const ru: Record<keyof typeof en, Message> = {
   'mode.routing': 'Режим маршрутизации',
   'mode.rule': 'Правила',
   'mode.global': 'Глобально',
-  'mode.direct': 'Напрямую',
+  'mode.direct': 'Прямой',
   'setup.title': 'Подключение к mihomo',
   'setup.description': 'Адрес external-controller и secret из конфига ядра',
   'setup.apiUrl': 'Адрес API',

@@ -114,10 +114,13 @@
       </div>
 
       <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
-        <label for="latency-timeout" class="sm:pt-2">{t('latency.timeout')}</label>
+        <div class="min-w-0 sm:pt-2">
+          <label for="latency-timeout">{t('latency.timeout')}</label>
+          <p id="latency-timeout-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.timeoutHint')}</p>
+        </div>
         <div class="min-w-0 sm:justify-self-end">
           <div class="flex items-center gap-3">
-            <input id="latency-timeout" class="{inputClass} !w-28 font-mono num" type="number" min="1" max="32767" step="1" bind:value={timeout} aria-invalid={!!(touched.timeout && errors.timeout)} aria-describedby="latency-timeout-unit latency-timeout-error" oninput={edit} onblur={() => touched.timeout = true} />
+            <input id="latency-timeout" class="{inputClass} !w-28 font-mono num" type="number" min="1" max="32767" step="1" bind:value={timeout} aria-invalid={!!(touched.timeout && errors.timeout)} aria-describedby="latency-timeout-hint latency-timeout-unit latency-timeout-error" oninput={edit} onblur={() => touched.timeout = true} />
             <span id="latency-timeout-unit" class="text-[13px] text-fg-3">{t('latency.ms')}</span>
           </div>
           <p id="latency-timeout-error" class="mt-1 text-xs text-bad" aria-live="polite">{touched.timeout ? errors.timeout ?? '' : ''}</p>

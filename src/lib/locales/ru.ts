@@ -7,5 +7,9 @@ import { ru as backends } from './backends'
 import { ru as latency } from './latency'
 import { ru as prizrak } from './prizrak'
 import { ru as devices } from './devices'
+import { ru as journal } from './journal'
+import { ru as proxyTools } from './proxy-tools'
+import { ru as transfer } from './transfer'
+import { ru as diagnostics } from './diagnostics'
 
-export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices }
+export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices, ...journal, ...proxyTools, ...transfer, ...diagnostics }

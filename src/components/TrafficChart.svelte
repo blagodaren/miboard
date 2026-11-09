@@ -72,11 +72,13 @@
           y: { range: (_u, _min, max) => [0, Math.max((max ?? 0) * 1.15, 32 * 1024)] },
         },
         axes: [
-          { ...axis, grid: { show: false }, size: 32, space: 76, values: (_u, ts) => {
-            const seconds = (data.t[data.t.length - 1] ?? 0) - (data.t[0] ?? 0) < 600
-            return ts.map((time) => new Date(time * 1000).toLocaleTimeString(i18n.intlLocale, {
-              hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } as const : {}),
-            }))
+          { ...axis, grid: { show: false }, size: 32, space: 76,
+            incrs: [1, 2, 5, 10, 15, 30, 60, 300, 600, 900, 1800, 3600, 7200, 10800, 14400, 21600, 28800, 43200, 86400],
+            values: (_u, ts) => {
+              const seconds = (data.t[data.t.length - 1] ?? 0) - (data.t[0] ?? 0) < 600
+              return ts.map((time) => new Date(time * 1000).toLocaleTimeString(i18n.intlLocale, {
+                hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } as const : {}),
+              }))
           } },
           { ...axis, size: el.clientWidth < 500 ? 64 : 76, space: 48, values: (_u, vs) => vs.map((v) => speed(v)) },
         ],

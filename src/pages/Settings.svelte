@@ -12,6 +12,8 @@
   import LanguageSelect from '../components/LanguageSelect.svelte'
   import DelaySettings from '../components/DelaySettings.svelte'
   import PrizrakSettings from '../components/PrizrakSettings.svelte'
+  import SettingsTransfer from '../components/SettingsTransfer.svelte'
+  import JournalSettings from '../components/JournalSettings.svelte'
 
   type ActionResult = { status: 'busy' } | { status: 'done' } | { status: 'error'; error: unknown }
   let done = $state<Record<string, ActionResult | undefined>>({})
@@ -125,6 +127,7 @@
   {/if}
 
   <DelaySettings />
+  <JournalSettings />
 
   {#if core.prizrak}
     <PrizrakSettings />
@@ -159,6 +162,8 @@
       </div>
     </div>
   </section>
+
+  <SettingsTransfer />
 
   <p class="px-1 font-mono text-xs text-fg-3">MIBoard {appVersion}</p>
 </div>

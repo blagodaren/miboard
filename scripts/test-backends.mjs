@@ -63,6 +63,10 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
       if (id === './api') return api
       if (id === './analysis') return analysis
       if (id === './traffic-history') return trafficHistory
+      // Journal persistence is covered separately; these tests isolate controller lifecycle.
+      if (id === './connection-journal.svelte') return { connectionJournal: {
+        activateBackend: async () => {}, observe() {}, pause() {},
+      } }
       return require(id)
     },
   })

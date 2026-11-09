@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, errorMessage, type Proxy, type ProxyProvider } from '../lib/api'
+  import { api, request as apiRequest, errorMessage, type Proxy, type ProxyProvider } from '../lib/api'
   import { core } from '../lib/core.svelte'
   import { count, delayBand } from '../lib/format'
   import { t, i18n } from '../lib/i18n.svelte'
   import { readProxySort, saveProxySort, sortableProviderNames, sortProxyNames, type ProxySort, type ProxySortKey } from '../lib/proxy-sort'
   import { planProxySelection, SELECTABLE_PROXY_TYPES } from '../lib/proxy-selection'
-  import { createDelayTester, delayTestUrl, delayHistorySample, delayMeasurementName, resolveProxyLeaf, IPV6_TEST_URL, type DelaySettings, type DelayTarget } from '../lib/latency'
+  import { createDelayTester, delayTestUrl, delayGroupSettings, delayHistorySample, delayMeasurementName, isLatencyTestable, isBulkLatencyNode, resolveProxyLeaf, IPV6_TEST_URL, type DelaySettings, type DelayTarget } from '../lib/latency'
   import { delaySettings } from '../lib/latency.svelte'
   import { runProxyGroupBatch } from '../lib/proxy-batch'
   import { IconCheck, IconClose, IconChevron, IconZap, IconCopy } from '../lib/icons'
@@ -19,6 +19,8 @@
   import LatencyDistribution from '../components/LatencyDistribution.svelte'
   import SmartGroupDetails from '../components/SmartGroupDetails.svelte'
   import ProxySelectionNotice, { type ProxySelectionNoticeData } from '../components/ProxySelectionNotice.svelte'
+  import ProxyStability from '../components/ProxyStability.svelte'
+  import ProxyProviders from '../components/ProxyProviders.svelte'
 
   const SELECTABLE = SELECTABLE_PROXY_TYPES
   const backend = { ...core.backend }
@@ -34,12 +36,17 @@
   let proxies = $state<Record<string, Proxy>>({})
   let providerNodes = $state<Record<string, Proxy>>({})
   let proxyProviders = $state.raw<Record<string, ProxyProvider>>({})
+  let providerError = $state<string | null>(null)
+  let stabilityBusy = $state(false)
+  let providersBusy = $state(false)
+  const toolsBusy = $derived(stabilityBusy || providersBusy)
   let nodeProviders = $state<Record<string, string>>({})
   type Measurement = { delay: number; history: string; request: number; name: string; settings: DelaySettings }
   let measurements = $state<Record<string, Measurement>>({})
   const measurementRequests = new Map<string, number>()
   let measurementSequence = 0
   let ipv6Results = $state<Record<string, boolean>>({})
+  const ipv6Requests = new Map<string, number>()
   let loading = $state(true)
   let metadataLoading = $state(true)
   let loadSequence = 0
@@ -51,7 +58,7 @@
   let testing = $state<Record<string, { done: number; total: number; ipv6: boolean }>>({})
   const progressFor = (group: string) => testing[JSON.stringify(group)]
   let nodeTesting = $state<Record<string, boolean>>({})
-  let batch = $state<{ running: boolean; done: number; total: number; failed: number } | null>(null)
+  let batch = $state<{ kind: 'groups' | 'nodes'; running: boolean; done: number; total: number; failed: number } | null>(null)
   const groupsTesting = $derived(Object.keys(testing).length > 0)
   const nodesTesting = $derived(Object.keys(nodeTesting).length > 0)
   let testError = $state.raw<{ name: string; error: unknown } | null>(null)
@@ -91,7 +98,7 @@
   const currentBackend = () => active && core.backend.url === backend.url && core.backend.secret === backend.secret
 
   async function applySelectionToAll(group: string) {
-    if (!currentBackend() || selectionBusy || nodesSelecting || metadataLoading || groupsTesting || nodesTesting || batch?.running) return
+    if (!currentBackend() || toolsBusy || selectionBusy || nodesSelecting || metadataLoading || groupsTesting || nodesTesting || batch?.running) return
     const plan = planProxySelection(proxies, group)
     if (!plan.node) return
     clearAppliedFeedback()
@@ -150,16 +157,17 @@
     }
   }
 
-  async function load() {
+  async function load(signal?: AbortSignal): Promise<boolean> {
     const sequence = ++loadSequence
     pendingLoads++
     metadataLoading = true
     // Провайдеры дополняют /proxies; старые ядра могут дублировать их узлы.
-    const providers = api.proxyProviders(backend).then((data) => {
-      if (!active || sequence !== loadSequence) return
+    const providers = apiRequest<{ providers: Record<string, ProxyProvider> }>('/providers/proxies', { signal }, backend).then((data) => {
+      if (!active || signal?.aborted || sequence !== loadSequence) return false
       const nodes: Record<string, Proxy> = Object.create(null)
       const owners: Record<string, string> = Object.create(null)
       for (const [name, provider] of Object.entries(data.providers)) {
+        if (name === 'default' || provider.vehicleType === 'Compatible') continue
         for (const node of provider.proxies ?? []) {
           nodes[node.name] ??= node
           owners[node.name] ??= name
@@ -168,33 +176,45 @@
       providerNodes = nodes
       proxyProviders = data.providers
       nodeProviders = owners
-    }).catch(() => {
+      providerError = null
+      return true
+    }).catch((error) => {
       // Старые ядра могут не поддерживать этот эндпоинт; обычные прокси доступны.
+      if (active && !signal?.aborted && sequence === loadSequence) providerError = errorMessage(error)
+      return false
     })
+    let proxiesLoaded = false
     try {
-      const data = await api.proxies(backend)
-      if (active && sequence === loadSequence) {
+      const data = await apiRequest<{ proxies: Record<string, Proxy> }>('/proxies', { signal }, backend)
+      if (active && !signal?.aborted && sequence === loadSequence) {
         proxies = data.proxies
         error = null
         failedSelection = ''
+        proxiesLoaded = true
       }
     } catch (e) {
-      if (active && sequence === loadSequence) {
+      if (active && !signal?.aborted && sequence === loadSequence) {
         error = e instanceof Error ? e : new Error(String(e))
         failedSelection = ''
       }
     } finally {
       if (active && sequence === loadSequence) loading = false
     }
-    await providers
+    const providersLoaded = await providers
     pendingLoads--
     if (active) metadataLoading = pendingLoads > 0
+    return providersLoaded && proxiesLoaded
   }
   onMount(() => {
     void load()
     void core.refreshConfigs()
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible' && currentBackend() && !toolsBusy) void load()
+    }
+    document.addEventListener('visibilitychange', refreshVisible)
     return () => {
       active = false
+      document.removeEventListener('visibilitychange', refreshVisible)
       clearAppliedFeedback()
       selectionController?.abort()
       batchController.abort()
@@ -265,9 +285,32 @@
     return sample && Number.isFinite(sample.delay) ? sample.delay > 0 : undefined
   }
   const ipv6Label = (supported: boolean | undefined) => t(supported === true ? 'latency.ipv6Available' : supported === false ? 'latency.ipv6Unavailable' : 'latency.ipv6Untested')
-  const requestTarget = (name: string): DelayTarget => ({ name, ...(!Object.hasOwn(proxies, name) && Object.hasOwn(nodeProviders, name) ? { provider: nodeProviders[name] } : {}) })
+  const requestTarget = (name: string): DelayTarget => {
+    const hinted = nodeMetadata(name)?.['provider-name']
+    const hintedProvider = hinted && Object.hasOwn(proxyProviders, hinted) ? proxyProviders[hinted] : undefined
+    const provider = hinted
+      ? (hinted !== 'default' && hintedProvider && hintedProvider.vehicleType !== 'Compatible' ? hinted : undefined)
+      : nodeProviders[name]
+    return { name, ...(provider ? { provider } : {}) }
+  }
   const effectiveSettings = (group: Proxy) => ({ ...delaySettings.value, url: delayTestUrl(group, delaySettings.value) })
   const nodeBusy = (name: string, group: Proxy) => !!nodeTesting[measurementKey(name, effectiveSettings(group))]
+
+  function beginIPv6(leaves: string[], request: number) {
+    for (const leaf of new Set(leaves)) {
+      ipv6Requests.set(leaf, request)
+      delete ipv6Results[JSON.stringify(leaf)]
+    }
+  }
+
+  function recordIPv6(leaf: string, supported: boolean, request: number) {
+    if (currentBackend() && ipv6Requests.get(leaf) === request) ipv6Results[JSON.stringify(leaf)] = supported
+  }
+
+  const allTestGroups = $derived(Object.values(proxies).filter((group) => group.name !== 'GLOBAL' && !!group.all?.length))
+  const allTestNodes = $derived(Object.values({ ...providerNodes, ...proxies }).filter(isBulkLatencyNode))
+  const stabilityTargets = $derived(allTestNodes.map((node) => requestTarget(node.name)))
+  const hasAllTestTargets = $derived(delaySettings.value.independent ? allTestGroups.length > 0 : allTestNodes.length > 0)
 
   const q = $derived(query.trim().toLowerCase())
   const sortableNodes = $derived(sortableProviderNames(proxies, proxyProviders))
@@ -280,7 +323,7 @@
 
   async function select(g: Proxy, name: string) {
     const key = JSON.stringify(g.name)
-    if (!currentBackend() || selectionBusy || selecting[key] || !SELECTABLE.has(g.type) || g.now === name) return
+    if (!currentBackend() || toolsBusy || selectionBusy || selecting[key] || !SELECTABLE.has(g.type) || g.now === name) return
     clearAppliedFeedback()
     const prev = g.now
     selecting[key] = true
@@ -298,69 +341,59 @@
   }
 
   async function test(g: Proxy, inBatch = false) {
-    if (selectionBusy || progressFor(g.name) || (!inBatch && (loading || metadataLoading))) return
+    if (!currentBackend() || toolsBusy || selectionBusy || progressFor(g.name) || (!inBatch && (loading || metadataLoading))) return
     const testKey = JSON.stringify(g.name)
-    const settings = { ...delaySettings.value, url: delayTestUrl(g, delaySettings.value) }
-    const members = [...new Set(g.all ?? [])]
-      .filter((name) => nodeMetadata(name)?.type !== 'Reject' && nodeMetadata(name)?.type !== 'RejectDrop')
+    const settings = delayGroupSettings(g, effectiveSettings(g))
+    const members = [...new Set(g.all ?? [])].filter((name) => isLatencyTestable(nodeMetadata(name)))
     const entries = members.map((name) => {
       const historyName = delayMeasurementName(name, settings.independent, nodeMetadata)
-      return { name, historyName, key: measurementKey(name, settings), target: requestTarget(settings.mode === 'core' ? name : historyName) }
+      const leaf = resolveProxyLeaf(name, nodeMetadata)
+      const target = requestTarget(settings.mode === 'core' ? name : historyName)
+      if (leaf) target.ipv6Target = requestTarget(leaf)
+      return { name, historyName, leaf, key: measurementKey(name, settings), target }
     })
     const targets = entries.map((entry) => entry.target)
-    const directKeys = new Set(entries.filter((entry) => entry.name === entry.historyName).map((entry) => entry.key))
-    // Strategy groups can use a different URL; their raw delays do not describe the shared leaf.
-    const fallback = settings.mode === 'core' && !settings.independent
-      ? [...new Map(entries.filter((entry) => !directKeys.has(entry.key)).map((entry) => [entry.key, entry])).values()]
-      : []
-    const total = new Set(targets.map((target) => target.name)).size + fallback.length
+    const total = new Set(targets.map((target) => target.name)).size
     const request = beginMeasurements(entries.map((entry) => entry.key))
-    testing[testKey] = { done: 0, total, ipv6: false }
+    if (settings.ipv6) beginIPv6(entries.flatMap((entry) => entry.leaf ? [entry.leaf] : []), request)
+    testing[testKey] = { done: 0, total, ipv6: settings.ipv6 && settings.mode === 'core' }
     if (!inBatch) {
       testError = null
       batch = null
     }
     let mainFailed = false
+    let ipv6Done = 0
     try {
-      if (settings.ipv6) {
-        // Automatic groups may ignore a supplied URL, so IPv6 must test actual leaves.
-        const leaves = [...new Set(members.map((name) => resolveProxyLeaf(name, nodeMetadata)).filter((name): name is string => !!name))]
-        for (const leaf of leaves) delete ipv6Results[JSON.stringify(leaf)]
-        testing[testKey] = { done: 0, total: leaves.length, ipv6: true }
-        await tester.testIPv6(leaves.map(requestTarget), settings.timeout, (name, supported) => {
-          if (!active) return
-          ipv6Results[JSON.stringify(name)] = supported
-          testing[testKey].done++
-        })
-        if (!active) return
-        testing[testKey] = { done: 0, total, ipv6: false }
+      if (settings.mode === 'panel' && g.fixed) {
+        // A fixed automatic selection must be released before checking its candidates.
+        await api.clearFixedProxy(g.name, backend, batchController.signal).catch(() => {})
       }
+      if (!currentBackend()) return
       await tester.testGroup(g.name, targets, settings, (name, delay) => {
-        if (!active) return
+        if (!currentBackend()) return
         for (const entry of entries) {
           if (entry.target.name !== name) continue
           if (settings.mode === 'core' && delayMeasurementName(entry.name, settings.independent, nodeMetadata) !== entry.historyName) continue
+          // An automatic group's result may use its own URL. Read the refreshed
+          // leaf history for aliases instead of attributing that result to the leaf.
           if (settings.mode === 'core' && !settings.independent && entry.name !== entry.historyName) continue
           recordMeasurement(entry.key, entry.historyName, settings, delay, request)
         }
+        testing[testKey].ipv6 = false
         testing[testKey].done++
+      }, (name, supported) => {
+        if (!currentBackend()) return
+        if (settings.mode === 'core') {
+          const leaf = entries.find((entry) => entry.name === name)?.leaf
+          if (leaf) recordIPv6(leaf, supported, request)
+          ipv6Done++
+          testing[testKey] = ipv6Done < total
+            ? { done: ipv6Done, total, ipv6: true }
+            : { done: 0, total, ipv6: false }
+        } else {
+          recordIPv6(name, supported, request)
+        }
       })
-      await Promise.all(fallback.map(async (entry) => {
-        if (!active || measurementRequests.get(entry.key) !== request
-          || delayMeasurementName(entry.name, settings.independent, nodeMetadata) !== entry.historyName) {
-          if (active) testing[testKey].done++
-          return
-        }
-        try {
-          const result = await tester.testNode(requestTarget(entry.historyName), settings)
-          recordMeasurement(entry.key, entry.historyName, settings, result.delay, request)
-        } catch (error) {
-          recordMeasurement(entry.key, entry.historyName, settings, 0, request)
-          if (active) testError = { name: entry.historyName, error }
-        } finally {
-          if (active) testing[testKey].done++
-        }
-      }))
     } catch (error) {
       mainFailed = true
       if (active) testError = { name: g.name, error }
@@ -368,11 +401,9 @@
     } finally {
       if (active) {
         await refreshMeasurements(request)
-        if (mainFailed && settings.ipv6) {
+        if (mainFailed) {
           for (const entry of entries) {
-            const leaf = resolveProxyLeaf(entry.historyName, nodeMetadata)
-            // Legacy cores have no URL buckets to distinguish the optional probe.
-            if (leaf && !nodeMetadata(leaf)?.extra) recordMeasurement(entry.key, entry.historyName, settings, 0, request)
+            recordMeasurement(entry.key, entry.historyName, settings, 0, request)
           }
         }
         delete testing[testKey]
@@ -381,17 +412,38 @@
   }
 
   async function testAll() {
-    if (selectionBusy || batch?.running || groupsTesting || nodesTesting || loading || metadataLoading) return
-    const targets = groups.filter((group) => (group.all?.length ?? 0) > 0)
-    if (!targets.length) return
+    if (!currentBackend() || toolsBusy || selectionBusy || batch?.running || groupsTesting || nodesTesting || loading || metadataLoading || !hasAllTestTargets) return
     testError = null
-    batch = { running: true, done: 0, total: targets.length, failed: 0 }
     const release = tester.beginBatch()
     try {
-      const result = await runProxyGroupBatch(targets, (group) => test(group, true), (done, total) => {
-        if (active && batch) batch = { ...batch, done, total }
-      }, { concurrency: 2, signal: batchController.signal })
-      if (active) batch = { running: false, done: result.completed, total: targets.length, failed: result.failed }
+      if (delaySettings.value.independent) {
+        const targets = [...allTestGroups]
+        batch = { kind: 'groups', running: true, done: 0, total: targets.length, failed: 0 }
+        const result = await runProxyGroupBatch(targets, (group) => test(group, true), (done, total) => {
+          if (active && batch) batch = { ...batch, done, total }
+        }, { concurrency: 3, signal: batchController.signal })
+        if (active) batch = { kind: 'groups', running: false, done: result.completed, total: targets.length, failed: result.failed }
+      } else {
+        const settings = { ...delaySettings.value, mode: 'panel' as const, timeout: Math.min(2000, delaySettings.value.timeout) }
+        const targets = allTestNodes.map((node) => requestTarget(node.name))
+        const request = beginMeasurements(targets.map((target) => measurementKey(target.name, settings)))
+        if (settings.ipv6) beginIPv6(targets.map((target) => target.name), request)
+        batch = { kind: 'nodes', running: true, done: 0, total: targets.length, failed: 0 }
+        try {
+          await tester.testNodes(targets, settings, (name, delay) => {
+            if (!currentBackend() || !batch) return
+            recordMeasurement(measurementKey(name, settings), name, settings, delay, request)
+            batch = { ...batch, done: batch.done + 1, failed: batch.failed + (delay > 0 ? 0 : 1) }
+          }, (name, supported) => recordIPv6(name, supported, request))
+        } catch (error) {
+          if (currentBackend()) testError = { name: t('proxies.testAll'), error }
+        } finally {
+          if (active) {
+            await refreshMeasurements(request)
+            if (batch) batch = { ...batch, running: false }
+          }
+        }
+      }
     } finally {
       release()
     }
@@ -400,7 +452,7 @@
   async function retestNode(group: Proxy, name: string) {
     const settings = effectiveSettings(group)
     const key = measurementKey(name, settings)
-    if (selectionBusy || nodeTesting[key] || progressFor(group.name) || batch?.running || metadataLoading) return
+    if (!currentBackend() || toolsBusy || !isLatencyTestable(nodeMetadata(name)) || selectionBusy || nodeTesting[key] || progressFor(group.name) || batch?.running || metadataLoading) return
     const target = requestTarget(delayMeasurementName(name, settings.independent, nodeMetadata))
     nodeTesting[key] = true
     batch = null
@@ -409,13 +461,9 @@
     let failed = false
     try {
       const leaf = settings.ipv6 ? resolveProxyLeaf(name, nodeMetadata) : undefined
-      if (leaf) {
-        delete ipv6Results[JSON.stringify(leaf)]
-        await tester.testIPv6([requestTarget(leaf)], settings.timeout, (node, supported) => {
-          if (active) ipv6Results[JSON.stringify(node)] = supported
-        })
-      }
-      const result = await tester.testNode(target, settings)
+      if (leaf) beginIPv6([leaf], request)
+      const result = await tester.testNode(target, { ...settings, ipv6: !!leaf },
+        (node, supported) => recordIPv6(node, supported, request), leaf ? requestTarget(leaf) : undefined)
       recordMeasurement(key, target.name, settings, result.delay, request)
     } catch (error) {
       failed = true
@@ -436,7 +484,7 @@
 
 <PageHeader title={t('proxies.title')} meta={groups.length ? t('proxies.groups', { count: groups.length }) : undefined}>
   {#snippet actions()}
-    <Button size="sm" onclick={testAll} disabled={selectionBusy || loading || metadataLoading || !groups.length || groupsTesting || nodesTesting || !!batch?.running} aria-label={t('proxies.testAll')}><IconZap strokeWidth={1.5} />{t(batch?.running ? 'proxies.testingAll' : 'proxies.testAll')}</Button>
+    <Button size="sm" onclick={testAll} disabled={toolsBusy || selectionBusy || loading || metadataLoading || !hasAllTestTargets || groupsTesting || nodesTesting || !!batch?.running} aria-label={t('proxies.testAll')}><IconZap strokeWidth={1.5} />{t(batch?.running ? 'proxies.testingAll' : 'proxies.testAll')}</Button>
     <SearchInput bind:value={query} placeholder={t('proxies.search')} />
   {/snippet}
 </PageHeader>
@@ -446,10 +494,21 @@
   · {t(core.configs?.['unified-delay'] === true ? 'latency.unifiedOn' : core.configs?.['unified-delay'] === false ? 'latency.unifiedOff' : 'latency.unifiedUnknownShort')}
 </p>
 
+<div class="mb-4 grid items-start gap-3 lg:grid-cols-2">
+  <ProxyStability {backend} targets={stabilityTargets} settings={delaySettings.value}
+    disabled={providersBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
+    onrunning={(running) => { stabilityBusy = running }} oncomplete={() => { if (currentBackend()) void load() }} />
+  <ProxyProviders {backend} providers={proxyProviders} loadError={providerError}
+    disabled={stabilityBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
+    onreload={load} onbusy={(busy) => { providersBusy = busy }} />
+</div>
+
 {#if batch}
   <div class="mb-4 rounded-xl border border-line bg-card px-4 py-3" role="status">
     <div class="mb-2 flex items-center justify-between gap-3 text-[13px]">
-      <span>{t(batch.running ? 'proxies.batchProgress' : batch.failed ? 'proxies.batchFailed' : 'proxies.batchDone', { done: batch.done, total: batch.total, failed: batch.failed })}</span>
+      <span>{t(batch.kind === 'nodes'
+        ? batch.running ? 'proxies.batchNodesProgress' : batch.failed ? 'proxies.batchNodesFailed' : 'proxies.batchNodesDone'
+        : batch.running ? 'proxies.batchProgress' : batch.failed ? 'proxies.batchFailed' : 'proxies.batchDone', { done: batch.done, total: batch.total, failed: batch.failed })}</span>
       {#if !batch.running}<button class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-3 hover:bg-hover hover:text-fg" aria-label={t('proxies.dismissTestSummary')} onclick={() => (batch = null)}><IconClose class="size-4" strokeWidth={1.5} /></button>{/if}
     </div>
     <LatencyProgress label={t('proxies.testAll')} done={batch.done} total={batch.total} />
@@ -492,7 +551,7 @@
               </span>
               <span class="num hidden shrink-0 font-mono text-xs text-fg-3 sm:inline">{count(g.all?.length ?? 0)}</span>
             </button>
-            <Button size="sm" variant="ghost" onclick={() => test(g)} disabled={selectionBusy || !!progressFor(g.name) || nodesTesting || metadataLoading || !!batch?.running} aria-label={t('proxies.testGroup', { name: g.name })}>
+            <Button size="sm" variant="ghost" onclick={() => test(g)} disabled={toolsBusy || selectionBusy || !!progressFor(g.name) || nodesTesting || metadataLoading || !!batch?.running} aria-label={t('proxies.testGroup', { name: g.name })}>
               <IconZap strokeWidth={1.5} />
               <span class="hidden sm:inline" role="status">{progressFor(g.name) ? `${progressFor(g.name).ipv6 ? 'IPv6 · ' : ''}${t('latency.testProgress', { done: progressFor(g.name).done, total: progressFor(g.name).total })}` : t('proxies.latency')}</span>
             </Button>
@@ -520,7 +579,7 @@
                   aria-label={t('proxies.selectionApplyAllLabel', { node: g.now ?? '', group: g.name })}
                   title={g.now && g.all?.includes(g.now) ? t('proxies.selectionApplyAllLabel', { node: g.now, group: g.name }) : t('proxies.selectionNothingToApply')}
                   aria-busy={selectionBusy && selectionSource === g.name}
-                  disabled={!g.now || !g.all?.includes(g.now) || selectionBusy || nodesSelecting || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
+                  disabled={!g.now || !g.all?.includes(g.now) || toolsBusy || selectionBusy || nodesSelecting || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
                   onclick={() => applySelectionToAll(g.name)}
                 >
                   {#if appliedGroup === g.name}<IconCheck strokeWidth={1.5} aria-hidden="true" />{:else}<IconCopy strokeWidth={1.5} aria-hidden="true" />{/if}
@@ -535,7 +594,7 @@
                 {@const busy = nodeBusy(name, g)}
                 <div class="relative min-w-0 {delaySettings.value.ipv6 ? 'h-[104px] sm:h-[88px]' : 'h-[88px] sm:h-[72px]'}" data-proxy-node={name}>
                 <button
-                  disabled={!selectable || selectionBusy || !!selecting[JSON.stringify(g.name)]}
+                  disabled={!selectable || toolsBusy || selectionBusy || !!selecting[JSON.stringify(g.name)]}
                   aria-pressed={sel}
                   onclick={() => select(g, name)}
                   class="absolute inset-0 flex w-full min-w-0 flex-col justify-between rounded-[var(--radius-control)] border px-3 py-3 text-left transition-colors duration-150
@@ -561,7 +620,7 @@
                     </span>
                   {/if}
                 </button>
-                <button class="num absolute bottom-1 right-1 inline-flex h-11 min-w-12 items-center justify-end rounded-md px-2 font-mono text-xs transition-colors hover:bg-hover disabled:cursor-wait disabled:opacity-60 sm:h-7 {bandClass[delayBand(d, delaySettings.value.yellow, delaySettings.value.red)]}" aria-label={t(busy ? 'proxies.testingNode' : 'proxies.retestNode', { name })} aria-describedby={!busy && d !== undefined && d <= 0 ? delayStatusId(g.name, name) : undefined} title={`${t('proxies.retestNode', { name })}${!busy && d !== undefined && d <= 0 ? ` · ${t('proxies.noResponse')}` : ''}`} aria-busy={busy} disabled={selectionBusy || busy || metadataLoading || !!progressFor(g.name) || !!batch?.running} onclick={() => retestNode(g, name)}>
+                <button class="num absolute bottom-1 right-1 inline-flex h-11 min-w-12 items-center justify-end rounded-md px-2 font-mono text-xs transition-colors hover:bg-hover disabled:cursor-wait disabled:opacity-60 sm:h-7 {bandClass[delayBand(d, delaySettings.value.yellow, delaySettings.value.red)]}" aria-label={t(busy ? 'proxies.testingNode' : 'proxies.retestNode', { name })} aria-describedby={!busy && d !== undefined && d <= 0 ? delayStatusId(g.name, name) : undefined} title={`${t('proxies.retestNode', { name })}${!busy && d !== undefined && d <= 0 ? ` · ${t('proxies.noResponse')}` : ''}`} aria-busy={busy} disabled={!isLatencyTestable(nodeMetadata(name)) || toolsBusy || selectionBusy || busy || metadataLoading || !!progressFor(g.name) || !!batch?.running} onclick={() => retestNode(g, name)}>
                   {busy ? '…' : delayText(d)}
                 </button>
                 {#if !busy && d !== undefined && d <= 0}<span id={delayStatusId(g.name, name)} class="sr-only">{t('proxies.noResponse')}</span>{/if}

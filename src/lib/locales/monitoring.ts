@@ -102,7 +102,7 @@ export const ru: Record<keyof typeof en, Message> = {
   'overview.title': 'Обзор',
   'overview.modeRule': 'по правилам',
   'overview.modeGlobal': 'глобальный',
-  'overview.modeDirect': 'напрямую',
+  'overview.modeDirect': 'прямой',
   'overview.meta': 'Режим: {mode} · {host}',
   'overview.summary': 'Сводка',
   'overview.download': 'Загрузка',

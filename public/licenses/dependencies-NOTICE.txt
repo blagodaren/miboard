@@ -1,4 +1,4 @@
-MIBoard 0.1.1-alpha — MIT
+MIBoard 0.1.2 — MIT
 
 MIT License
 

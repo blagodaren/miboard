@@ -3,11 +3,13 @@
   import { bytes } from '../lib/format'
   import { proxyName } from '../lib/analysis-display'
   import { t } from '../lib/i18n.svelte'
+  import Button from './Button.svelte'
 
-  let { row, view, onnavigate }: {
+  let { row, view, onnavigate, ondiagnose }: {
     row: DomainStat | IPStat | ProxyStat
     view: 'domains' | 'ips' | 'proxies'
     onnavigate: (view: 'domains' | 'ips' | 'proxies', value: string) => void
+    ondiagnose?: (domain: string) => void
   } = $props()
 
   let limits = $state<Record<string, number>>({})
@@ -27,6 +29,7 @@
 </script>
 
 <div class="border-t border-line bg-raised px-4 py-4 sm:px-5">
+  {#if view === 'domains' && ondiagnose}<Button class="mb-3" size="sm" onclick={() => ondiagnose?.(row.name)}>{t('diagnostics.open')}</Button>{/if}
   <div class="num flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs text-fg-2">
     <span class="text-traffic-down-ink">↓ {bytes(row.download)}</span>
     <span class="text-traffic-up-ink">↑ {bytes(row.upload)}</span>

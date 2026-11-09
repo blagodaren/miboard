@@ -49,7 +49,8 @@
   $effect(() => {
     if (viewportWidth > 0 && graph.nodes.length && !initiallyFitted) {
       initiallyFitted = true
-      untrack(() => { void fitView() })
+      // Keep node labels readable in narrow panels; the overview remains one click away.
+      untrack(() => { void (viewportWidth < 640 ? centerView() : fitView()) })
     }
   })
 
