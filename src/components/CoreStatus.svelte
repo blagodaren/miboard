@@ -3,13 +3,15 @@
   import { core } from '../lib/core.svelte'
   import { t, type MessageKey } from '../lib/i18n.svelte'
   import { bytes } from '../lib/format'
-  import { appendMemorySample, memoryChart, visibleConfigUrl, type MemorySample } from '../lib/core-status'
+  import { appendMemorySample, coreDetailSections, memoryChart, visibleConfigUrl, type MemorySample } from '../lib/core-status'
 
   const id = $props.id()
   const backendUrl = core.backend.url
   let samples = $state.raw<MemorySample[]>([])
   const chart = $derived(memoryChart(samples))
   const live = $derived(core.memoryReady && core.memoryOnline && core.backend.url === backendUrl)
+  const details = $derived(coreDetailSections(core.configs))
+  const disabledFlags = new Set(['disable-keep-alive', 'disable-icmp-forwarding'])
   type Field = { label: MessageKey; value: unknown }
   const supplied = (fields: Field[]) => fields.filter(field => field.value !== undefined && field.value !== null)
   const display = (value: unknown): string => typeof value === 'boolean' ? t(value ? 'coreTools.enabled' : 'coreTools.disabled')
@@ -80,6 +82,29 @@
     {#if network.length}
       <details class="mt-4 border-t border-line"><summary>{t('coreTools.network')}</summary><p class="mb-3 text-xs text-fg-3">{t('coreTools.readOnly')}</p>{@render fields(network)}</details>
     {:else if !core.configs}<p class="mt-4 text-[13px] text-fg-3">{t('coreTools.configMissing')}</p>{/if}
+    {#each details as section (section.id)}
+      <details class="mt-2 border-t border-line" data-testid="core-details-{section.id}">
+        <summary>{t(section.title)}</summary>
+        <p class="mb-3 text-xs leading-relaxed text-fg-3">{t(section.hint)}</p>
+        <dl class="fields detail-fields">
+          {#each section.fields as field (field.key)}
+            <div data-field={field.key}>
+              <dt>{t(field.label)}</dt>
+              <dd>
+                {#if Array.isArray(field.value)}
+                  {#if field.value.length}
+                    <ul class="config-values">{#each field.value.slice(0, 5) as entry}<li>{entry}</li>{/each}</ul>
+                    {#if field.value.length > 5}
+                      <details class="list-more"><summary>{t('coreDetails.more', { count: field.value.length - 5 })}</summary><ul class="config-values">{#each field.value.slice(5) as entry}<li>{entry}</li>{/each}</ul></details>
+                    {/if}
+                  {:else}<span class="text-fg-3">{t('coreDetails.empty')}</span>{/if}
+                {:else}{display(disabledFlags.has(field.key) && typeof field.value === 'boolean' ? !field.value : field.value)}{/if}
+              </dd>
+            </div>
+          {/each}
+        </dl>
+      </details>
+    {/each}
     {#if geo.length}
       <details class="mt-2 border-t border-line"><summary>{t('coreTools.geo')}</summary><p class="mb-3 text-xs leading-relaxed text-fg-3">{t('coreTools.geoHint')}</p>{@render fields(geo)}</details>
     {/if}
@@ -97,5 +122,8 @@
   .fields > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
   dt { color: var(--text-3); overflow-wrap: anywhere; }
   dd { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+  .detail-fields { padding-bottom: 12px; }
+  .config-values { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-family: var(--font-mono); font-size: 12px; }
+  .list-more summary { color: var(--accent-ink); font-size: 12px; }
   @media (max-width: 420px) { .fields > div { grid-template-columns: minmax(0, 1fr); gap: 3px; } dd { text-align: left; } }
 </style>

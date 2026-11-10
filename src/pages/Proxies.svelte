@@ -23,6 +23,7 @@
   import LatencyProgress from '../components/LatencyProgress.svelte'
   import LatencyDistribution from '../components/LatencyDistribution.svelte'
   import SmartGroupDetails from '../components/SmartGroupDetails.svelte'
+  import GroupFallback from '../components/GroupFallback.svelte'
   import ProxyStability from '../components/ProxyStability.svelte'
   import ProxyProviders from '../components/ProxyProviders.svelte'
   import NodeDiagnostics from '../components/NodeDiagnostics.svelte'
@@ -689,6 +690,7 @@
           </div>
 
           {#if isOpen}
+            <GroupFallback fallback={g.emptyFallback} />
             {#if g.type === 'Smart'}<SmartGroupDetails group={g} {backend} />{/if}
             <ProxySortControls group={g.name} {order} onchange={(key) => changeSorting(g.name, key)} onreverse={() => toggleDirection(g.name)}>
               {#snippet actions()}

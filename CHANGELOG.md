@@ -1,5 +1,31 @@
 # Журнал изменений
 
+## [0.1.4] — 2026-11-10
+
+### Русский
+
+- Структурированные логи с временем ядра, поиском по дополнительным полям и
+  раскрываемыми подробностями; совместимость с обычным форматом старых ядер.
+- Диагностика маршрутов и исключений TUN, ограничений LAN, уровня логирования,
+  TCP keep-alive и дополнительных параметров ядра в настройках.
+- Отображение резервного выхода пустой прокси-группы, если ядро передаёт `emptyFallback`.
+- Скачивание профилей памяти heap/allocs по запросу для ядер с доступным pprof.
+
+Дополнительные поля показываются только при наличии в ответе ядра. Для профилей
+памяти ядро должно быть запущено с `log-level: debug`; панель не меняет этот режим.
+
+### English
+
+- Structured logs with core timestamps, field search and expandable details,
+  with compatibility for legacy log output.
+- Read-only TUN routes and exclusions, LAN access restrictions, core log level,
+  TCP keep-alive and additional runtime settings.
+- Empty-group fallback display when the core reports `emptyFallback`.
+- On-demand heap/allocs profile downloads for cores with pprof support.
+
+Optional fields appear only when reported by the core. Memory profiles require
+the core to have been started with `log-level: debug`; the panel does not enable it.
+
 ## [0.1.3] — 2026-11-10
 
 ### Интерфейс

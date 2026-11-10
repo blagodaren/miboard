@@ -363,6 +363,8 @@ export function stream<T>(
     query?: Record<string, string | number>
     onState?: (open: boolean) => void
     onStale?: () => void
+    /** Includes failures before opening, for optional protocol negotiation. */
+    onFailure?: () => void
     idleTimeoutMs?: number
     connectTimeoutMs?: number
   } = {},
@@ -394,6 +396,7 @@ export function stream<T>(
     if (stale) opts.onStale?.()
     // Invalidate before close: native close/error events can arrive later.
     try { socket.close() } catch { /* The failed socket is already abandoned. */ }
+    opts.onFailure?.()
     retry()
   }
   const arm = (socket: WebSocket, timeout: number) => {
@@ -409,7 +412,7 @@ export function stream<T>(
     if (backend.secret) url.searchParams.set('token', backend.secret)
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, String(v))
     let socket: WebSocket
-    try { socket = new WebSocket(url) } catch { opts.onStale?.(); retry(); return }
+    try { socket = new WebSocket(url) } catch { opts.onStale?.(); opts.onFailure?.(); retry(); return }
     ws = socket
     opened = false
     arm(socket, connectTimeout)
@@ -585,6 +588,61 @@ export type RuleProvider = {
 }
 
 export type Mode = 'rule' | 'global' | 'direct'
+export type TunConfigs = {
+  'enable': boolean
+  'device'?: string
+  'stack'?: string
+  'dns-mode'?: string
+  'dns-hijack'?: string[]
+  'auto-route'?: boolean
+  'auto-detect-interface'?: boolean
+  'mtu'?: number
+  'gso'?: boolean
+  'gso-max-size'?: number
+  'inet4-address'?: string[]
+  'inet6-address'?: string[]
+  'iproute2-table-index'?: number
+  'iproute2-rule-index'?: number
+  'auto-redirect'?: boolean
+  'auto-redirect-input-mark'?: number
+  'auto-redirect-output-mark'?: number
+  'auto-redirect-iproute2-fallback-rule-index'?: number
+  'loopback-address'?: string[]
+  'strict-route'?: boolean
+  'route-address'?: string[]
+  'route-address-set'?: string[]
+  'route-exclude-address'?: string[]
+  'route-exclude-address-set'?: string[]
+  'include-interface'?: string[]
+  'exclude-interface'?: string[]
+  'include-uid'?: number[]
+  'include-uid-range'?: string[]
+  'exclude-uid'?: number[]
+  'exclude-uid-range'?: string[]
+  'exclude-src-port'?: number[]
+  'exclude-src-port-range'?: string[]
+  'exclude-dst-port'?: number[]
+  'exclude-dst-port-range'?: string[]
+  'include-android-user'?: number[]
+  'include-package'?: string[]
+  'exclude-package'?: string[]
+  'include-mac-address'?: string[]
+  'exclude-mac-address'?: string[]
+  'endpoint-independent-nat'?: boolean
+  'udp-timeout'?: number
+  'icmp-timeout'?: number
+  'disable-icmp-forwarding'?: boolean
+  'congestion-controller'?: string
+  'file-descriptor'?: number
+  'inet4-route-address'?: string[]
+  'inet6-route-address'?: string[]
+  'inet4-route-exclude-address'?: string[]
+  'inet6-route-exclude-address'?: string[]
+  'recvmsgx'?: boolean
+  'sendmsgx'?: boolean
+  [key: string]: unknown
+}
+
 export type Configs = {
   mode: Mode
   'log-level': string
@@ -593,11 +651,16 @@ export type Configs = {
   'socks-port'?: number
   'allow-lan'?: boolean
   'unified-delay'?: boolean
-  tun?: {
-    enable: boolean; device?: string; stack?: string; mtu?: number
-    'auto-route'?: boolean; 'auto-detect-interface'?: boolean; 'dns-hijack'?: string[]
-    [key: string]: unknown
-  }
+  tun?: TunConfigs
+  'lan-allowed-ips'?: string[]
+  'lan-disallowed-ips'?: string[]
+  'skip-auth-prefixes'?: string[]
+  /** Runtime /configs contains usernames, not the YAML username:password entries. */
+  authentication?: string[]
+  'inbound-tfo'?: boolean
+  'inbound-mptcp'?: boolean
+  'global-ua'?: string
+  'etag-support'?: boolean
   ipv6?: boolean
   sniffing?: boolean
   'find-process-mode'?: string

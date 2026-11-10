@@ -20,6 +20,10 @@ import { en as apiRulesDns } from './api-rules-dns'
 import { en as nodeDiagnostics } from './node-diagnostics'
 import { en as trafficTools } from './traffic-tools'
 import { en as proxyPreferences } from './proxy-preferences'
+import { en as proxyFallback } from './proxy-fallback'
+import { en as coreProfiles } from './core-profiles'
+import { en as coreDetails } from './core-details'
+import { en as logDetails } from './log-details'
 import { en as liveUpdates } from './live-updates'
 
-export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices, ...journal, ...proxyTools, ...transfer, ...diagnostics, ...notifications, ...pwa, ...connectionDetails, ...observations, ...apiRulesDns, ...nodeDiagnostics, ...coreTools, ...trafficTools, ...proxyPreferences, ...liveUpdates }
+export default { ...common, ...monitoring, ...routing, ...geography, ...analysis, ...backends, ...latency, ...prizrak, ...devices, ...journal, ...proxyTools, ...transfer, ...diagnostics, ...notifications, ...pwa, ...connectionDetails, ...observations, ...apiRulesDns, ...nodeDiagnostics, ...coreTools, ...trafficTools, ...proxyPreferences, ...liveUpdates, ...proxyFallback, ...coreProfiles, ...coreDetails, ...logDetails }

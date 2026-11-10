@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -215,6 +215,14 @@ Tests: `npm run test:rules` and `npm run test:rules:analytics`.
 Click a node protocol or its provider-table name for diagnostics. For ambiguous same-name group entries, select the provider first. Latency histories are split by URL; a generic history with unknown URL stays separate. The chart, timestamps, median and failures use measurements already held by the core. Reported UDP/UOT/XUDP/TFO/MPTCP/SMUX, interface and dialer-proxy describe adapter configuration, not tested reachability.
 
 **Settings → Connection and core → Core status** shows memory with up to five minutes of observations while this screen is open, network/TUN settings and geodata sources. It is read-only; unavailable fields remain unavailable.
+
+Expandable sections show the actual core log level, TCP keep-alive, LAN restrictions and usernames, TUN routes and exclusions by network, interface, application, UID, MAC and port, plus TUN transport settings. These are configured values; their effects depend on the OS, TUN and routing settings. Lists initially show five entries and expand to reveal the rest. Passwords and raw SS/VMess/TUIC inbound configurations are not displayed.
+
+**Memory profiles** downloads heap or allocations snapshots in Go pprof format, only on request. The core must support pprof and have been started with `log-level: debug`. The panel does not enable debug or force garbage collection. Downloads are limited to 32 MB and canceled on navigation or controller changes. Files are saved locally.
+
+**Logs** requests structured output and also accepts the legacy format. A connection failure before the first valid record triggers one fallback to legacy output. Rows show the core-provided time, falling back to browser receipt time when absent. Expand a row for both available times and extra fields. Search covers messages and fields; field-specific filtering appears only when fields are available. Standard mihomo may return an empty field list. The subscription level does not change the core's logging configuration.
+
+Expanded proxy groups show `emptyFallback` as the exit used when the core's filtered node list is empty. Its active state is not inferred from `all` or `now`, because the core may already insert that fallback into the list. Filtering cards in the panel does not activate it.
 
 Subscription warnings are on by default and configurable per server. They warn below 10% allowance or within three days of expiry, with separate exhausted/expired states. Metadata refreshes every ten minutes while visible without launching health checks. Duplicate warnings are suppressed across reloads and multiple providers are grouped. A closed dashboard does not monitor subscriptions.
 

@@ -4,12 +4,12 @@
 
 ## Скачать
 
-- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
-- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
 
 Для каждого архива есть контрольная сумма:
-[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist.zip.sha256)
-и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.3/dist-cdn-fonts.zip.sha256).
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip.sha256)
+и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist-cdn-fonts.zip.sha256).
 
 CDN-варианту для загрузки шрифтов нужен доступ к `unpkg.com`. При недоступности
 CDN панель использует системные шрифты; цветные флаги на Windows могут быть
@@ -44,7 +44,7 @@ CDN панель использует системные шрифты; цвет�
 `node scripts/readme-screenshots.mjs`. Скрипт использует синтетические данные
 в изолированном fixture и сохраняет изображения в `docs/images/`.
 
-## Релиз 0.1.3
+## Релиз 0.1.4
 
 1. Запустить `npm run test:ui`. Проверки используют локальный mock, без подключения
    к пользовательскому контроллеру.
@@ -54,7 +54,7 @@ CDN панель использует системные шрифты; цвет�
 3. Запустить `npm run test:fonts` для обеих готовых сборок.
 4. Отправить проверенные исходники в `main` репозитория `blagodaren/miboard`.
    Сборки, архивы, снимки UI-проверок, `node_modules/` и `.env*` исключены из Git.
-5. Создать и отправить тег `v0.1.3`. Workflow сверит тег с `package.json`,
+5. Создать и отправить тег `v0.1.4`. Workflow сверит тег с `package.json`,
    повторит проверки и создаст GitHub release с обоими ZIP и контрольными суммами.
    Версии без суффикса становятся `latest`; версии с суффиксом остаются предварительными.
 

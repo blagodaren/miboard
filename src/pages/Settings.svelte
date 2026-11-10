@@ -20,6 +20,7 @@
   import JournalSettings from '../components/JournalSettings.svelte'
   import AppSettings from '../components/AppSettings.svelte'
   import CoreStatus from '../components/CoreStatus.svelte'
+  import CoreProfiles from '../components/CoreProfiles.svelte'
   import SettingsSync from '../components/SettingsSync.svelte'
   import ProviderAlertSettings from '../components/ProviderAlertSettings.svelte'
   import LiveUpdateSettings from '../components/LiveUpdateSettings.svelte'
@@ -201,6 +202,7 @@
       {/if}
 
       <CoreStatus />
+      <CoreProfiles />
 
       {#if core.prizrak}
         <PrizrakSettings />

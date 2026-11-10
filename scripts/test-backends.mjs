@@ -489,6 +489,19 @@ test('остановленный stream не меняет состояние; ne
   assert.equal(s.timers.size, 0)
 })
 
+test('failure hook handles rejected handshakes once and permits cleanup without retry', () => {
+  const s = session()
+  s.api.useBackend({ url: 'http://router.test:9090', secret: 'token' })
+  let failures = 0
+  const stop = s.api.stream('/logs', () => {}, { onFailure: () => { failures++; stop() } })
+  const socket = s.sockets[0]
+  socket.onerror()
+  socket.onclose()
+  assert.equal(failures, 1)
+  assert.equal(s.timers.size, 0)
+  assert.equal(socket.closed, true)
+})
+
 test('поздний ответ старого сервера не заменяет новый профиль при переключении Core', async () => {
   let releaseOld
   const s = session({}, 'https://dashboard.test/', async (url) => {
