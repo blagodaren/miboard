@@ -20,6 +20,8 @@ The `#/setup` page manages server names, API URLs and secrets. Saving a profile 
 
 Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname=...&port=...&secret=...` format. The dashboard removes credentials from its address after reading them. Treat such URLs as credentials and do not share or publish them.
 
+For embedding (for example in a router web UI iframe where the profile sets the mode), `hideMode=1` hides the rule / global / direct switch: `http://<host>:9090/ui/miboard/?hideMode=1#/setup?hostname=...`. It removes the switch from the sidebar, the mobile header and **Settings → Connection and core**. The flag is read on page load; put it in `?query` rather than only in `#/...?query` so it survives a reload inside the frame. It only hides the control: the core API still accepts mode changes.
+
 Separate hosting needs CORS on the core. For a local development server:
 
 ```yaml

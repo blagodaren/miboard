@@ -7,6 +7,7 @@
   import { api, errorMessage, type Mode } from '../lib/api'
   import { core, router, theme, type Theme } from '../lib/core.svelte'
   import { t } from '../lib/i18n.svelte'
+  import { embed } from '../lib/embed'
   import { IconLogout, IconServer, IconProxies } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
   import Button from '../components/Button.svelte'
@@ -176,10 +177,12 @@
         <section>
           <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.core')}</h2>
           <div class="rounded-panel border border-line bg-card">
-            {#snippet modeCtl()}
-              <Segmented full label={t('mode.routing')} value={cfg.mode} options={modes} onchange={(m) => core.setMode(m)} />
-            {/snippet}
-            {@render row(t('mode.label'), t('settings.modeHint'), modeCtl)}
+            {#if !embed.hideMode}
+              {#snippet modeCtl()}
+                <Segmented full label={t('mode.routing')} value={cfg.mode} options={modes} onchange={(m) => core.setMode(m)} />
+              {/snippet}
+              {@render row(t('mode.label'), t('settings.modeHint'), modeCtl)}
+            {/if}
 
             {#snippet tunCtl()}
               <Toggle label="TUN" checked={!!cfg.tun?.enable} disabled={busy.tun} onchange={(v) => patch('tun', () => 'TUN', { tun: { enable: v } })} />
