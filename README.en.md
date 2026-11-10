@@ -10,7 +10,7 @@
   <a href="README.md">Русский</a> · <strong>English</strong>
 </p>
 <p align="center">
-  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.4"><img src="https://img.shields.io/badge/release-0.1.4-e8a33d?style=flat-square" alt="Release 0.1.4"></a>
+  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.5"><img src="https://img.shields.io/badge/release-0.1.5-e8a33d?style=flat-square" alt="Release 0.1.5"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="MIT license"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/languages-RU%20%2F%20EN-64748b?style=flat-square" alt="Russian and English"></a>
@@ -73,10 +73,10 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 
 ## Download
 
-| Version 0.1.4 | Choose this when | Verify |
+| Version 0.1.5 | Choose this when | Verify |
 | --- | --- | --- |
-| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip.sha256) |
-| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist-cdn-fonts.zip.sha256) |
+| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip.sha256) |
+| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist-cdn-fonts.zip.sha256) |
 
 Both archives have the same functionality. If the CDN is unavailable, the second build falls back to system fonts; color flags may be unavailable on Windows.
 
@@ -89,10 +89,10 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip"
 ```
 
-For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The URL pins version 0.1.4; `releases/latest/download/dist.zip` follows the latest stable release.
+For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The URL pins version 0.1.5; `releases/latest/download/dist.zip` follows the latest stable release.
 
 **2. Apply the configuration and open the dashboard.**
 

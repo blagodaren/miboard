@@ -12,7 +12,7 @@ external-controller: 127.0.0.1:9090
 secret: "ваш-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.4/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip"
 ```
 
 Для доступа с других устройств используйте адрес доверенного LAN-интерфейса ядра и ограничьте доступ межсетевым экраном. Не публикуйте контроллер в интернете без защиты.

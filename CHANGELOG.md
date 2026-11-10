@@ -1,5 +1,29 @@
 # Журнал изменений
 
+## [0.1.5] — 2026-11-10
+
+### Русский
+
+- Параметр URL `?hideMode=1` скрывает переключатель rule / global / direct
+  в боковой панели, мобильной шапке и настройках. Полезно для встраивания
+  MIBoard в интерфейс роутера, где режим задаётся профилем.
+- Флаг действует при навигации и сохраняется после перезагрузки, если передан
+  перед `#`. Без параметра поведение панели не меняется. Это настройка
+  интерфейса; API ядра по-прежнему принимает смену режима.
+
+Спасибо [@prettyleaf](https://github.com/prettyleaf) за [PR #1](https://github.com/blagodaren/miboard/pull/1).
+
+### English
+
+- The `?hideMode=1` URL parameter hides the rule / global / direct switch
+  in the sidebar, mobile header and settings. This supports embedding MIBoard
+  in router interfaces where a profile controls the routing mode.
+- The flag persists during navigation and across reloads when placed before
+  `#`. Without it, dashboard behavior is unchanged. This is a UI option;
+  the core API still accepts mode changes.
+
+Thanks to [@prettyleaf](https://github.com/prettyleaf) for [PR #1](https://github.com/blagodaren/miboard/pull/1).
+
 ## [0.1.4] — 2026-11-10
 
 ### Русский
