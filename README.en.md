@@ -11,6 +11,7 @@
 </p>
 <p align="center">
   <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.5"><img src="https://img.shields.io/badge/release-0.1.5-e8a33d?style=flat-square" alt="Release 0.1.5"></a>
+  <a href="https://github.com/blagodaren/miboard/releases"><img src="https://img.shields.io/github/downloads/blagodaren/miboard/total?style=flat-square&amp;color=e8a33d" alt="Total release asset downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="MIT license"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/languages-RU%20%2F%20EN-64748b?style=flat-square" alt="Russian and English"></a>
