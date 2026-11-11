@@ -17,6 +17,7 @@
   import ConnectionDetails from '../components/ConnectionDetails.svelte'
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
+  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey } from '../lib/connection-columns'
 
   type SortKey = 'rate' | 'total' | 'start' | 'host'
   const LIMIT = 300
@@ -27,11 +28,7 @@
   let selected = $state('')
   let detailsOpen = $state(false)
   let selectedSnapshot = $state.raw<DisplayRow | null>(null)
-  const columnOptions = ['type', 'process', 'sniffHost', 'source', 'destination', 'inbound', 'dnsMode', 'provider', 'peakSpeed'] as const
-  type ColumnKey = typeof columnOptions[number]
-  const defaultColumns: ColumnKey[] = ['type', 'source', 'destination', 'inbound']
-  const columnsKey = 'miboard.connection-columns.v1'
-  let visibleColumns = $state<ColumnKey[]>([...defaultColumns])
+  let visibleColumns = $state<ColumnKey[]>(readConnectionColumns())
   let columnsOpen = $state(false)
   const columnCount = $derived(8 + visibleColumns.length)
   const visible = (column: ColumnKey) => visibleColumns.includes(column)
@@ -67,16 +64,9 @@
     } catch { /* Device labels are optional local metadata. */ }
   })
 
-  $effect(() => {
-    try {
-      const saved: unknown = JSON.parse(localStorage.getItem(columnsKey) ?? 'null')
-      if (Array.isArray(saved)) visibleColumns = columnOptions.filter(key => saved.includes(key))
-    } catch { /* Column preferences are optional. */ }
-  })
-
   function saveColumns(columns: ColumnKey[]) {
     visibleColumns = columns
-    try { localStorage.setItem(columnsKey, JSON.stringify(columns)) } catch { /* Keep this session's selection. */ }
+    try { localStorage.setItem(CONNECTION_COLUMNS_KEY, JSON.stringify(columns)) } catch { /* Keep this session's selection. */ }
   }
 
   function toggleColumn(column: ColumnKey, enabled: boolean) {

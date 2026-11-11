@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -194,11 +194,11 @@ Closed records persist in IndexedDB separately for each server. **Settings → D
 
 ## Settings transfer and sync
 
-**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode and expanded groups. Secrets are excluded by default and require an explicit opt-in. The journal and mihomo configuration are excluded.
+**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode, expanded groups, connection columns, subscription alerts and per-server journal retention. Secrets are excluded by default and require an explicit opt-in. Journal entries, alert acknowledgements and mihomo configuration are excluded.
 
 Import validates first and previews replacements. Applying merges records; an absent or empty secret never erases the stored one. It does not switch the live connection. Reload is explicit for applying interface preferences. Test: `npm run test:settings-transfer`.
 
-Core sync stores device names, the current core's group sorting and interface preferences at `/storage/miboard.settings.v1`. Server profiles, controller URLs, secrets and journal records are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
+Core sync stores device names, the current core's group sorting, subscription alert preference, journal retention and interface preferences at `/storage/miboard.settings.v1`. Server profiles, controller URLs, secrets and journal records are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
 
 ## Rules
 

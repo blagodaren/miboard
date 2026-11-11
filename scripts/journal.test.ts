@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import type { Connection } from '../src/lib/api.ts'
-import { ConnectionJournal, JournalTracker, JOURNAL_ACTIVE_LIMIT, JOURNAL_LIMIT, journalConnection, retainJournal, type JournalEntry, type JournalRecord, type JournalStore } from '../src/lib/connection-journal.ts'
+import { ConnectionJournal, JournalTracker, JOURNAL_ACTIVE_LIMIT, JOURNAL_LIMIT, JOURNAL_WRITE_INTERVAL, journalConnection, retainJournal, type JournalEntry, type JournalRecord, type JournalStore } from '../src/lib/connection-journal.ts'
+import { journalRetentionKey } from '../src/lib/journal-preferences.ts'
 
 const NOW = 1_800_000_000_000
 const connection = (id = 'one', patch: Partial<Connection> = {}): Connection => ({
@@ -23,6 +24,19 @@ function fixture(t: TestContext, initial = new Map<string, JournalRecord>()) {
   const journal = new ConnectionJournal(store, () => NOW)
   t.after(() => journal.flush())
   return { journal, data }
+}
+function preferences(t: TestContext) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const data = new Map<string, string>()
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, value) },
+  } })
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  })
+  return data
 }
 
 test('only disappearance from a later snapshot creates a completed record with last observed counters', () => {
@@ -125,6 +139,82 @@ test('journals persist per backend and switching servers never archives the prio
   await journal.activateBackend('http://a:9090')
   assert.deepEqual(journal.entries.map(e => e.connection.id), ['a-ended'])
   assert.equal(data.get('http://a:9090')!.entries.length, 1)
+})
+
+test('continuous closures are persisted once per batch window without delaying the next write', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const writes: JournalRecord[] = []
+  const journal = new ConnectionJournal({ async read() {}, async write(_key, record) { writes.push(structuredClone(record)) } }, () => NOW)
+  t.after(() => journal.flush())
+  await journal.activateBackend('a')
+  await journal.flush()
+  writes.length = 0
+  for (let second = 1; second <= 10; second++) {
+    journal.observe([connection(String(second))], NOW + second * 1000)
+    journal.observe([], NOW + second * 1000 + 1)
+    t.mock.timers.tick(1000)
+    await tick()
+    assert.equal(writes.length, Math.floor(second * 1000 / JOURNAL_WRITE_INTERVAL))
+  }
+  assert.deepEqual(writes.map(record => record.entries.length), [5, 10])
+  t.mock.timers.tick(JOURNAL_WRITE_INTERVAL * 3)
+  await tick()
+  await journal.flush()
+  assert.equal(writes.length, 2, 'Idle periods and redundant flushes do not rewrite the snapshot')
+})
+
+test('an explicit flush saves pending closures immediately and cancels their scheduled duplicate', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const writes: JournalRecord[] = []
+  const journal = new ConnectionJournal({ async read() {}, async write(_key, record) { writes.push(structuredClone(record)) } }, () => NOW)
+  t.after(() => journal.flush())
+  await journal.activateBackend('a')
+  await journal.flush()
+  writes.length = 0
+  journal.observe([connection('pending')], NOW - 1000)
+  journal.observe([], NOW)
+  t.mock.timers.tick(300)
+  await tick()
+  assert.equal(writes.length, 0)
+  await journal.flush()
+  assert.deepEqual(writes[0].entries.map(row => row.connection.id), ['pending'])
+  t.mock.timers.tick(JOURNAL_WRITE_INTERVAL)
+  await tick()
+  assert.equal(writes.length, 1)
+})
+
+test('legacy retention migrates per backend, while an existing portable preference takes precedence', async t => {
+  const saved = preferences(t)
+  saved.set(journalRetentionKey('b'), '1h')
+  const { journal } = fixture(t, new Map<string, JournalRecord>([
+    ['a', { retention: '7d', entries: [entry('a-old', NOW - 7200000)] }],
+    ['b', { retention: '7d', entries: [entry('b-old', NOW - 7200000)] }],
+  ]))
+  await journal.activateBackend('a')
+  assert.equal(journal.retention, '7d')
+  assert.equal(saved.get(journalRetentionKey('a')), '7d')
+  assert.equal(journal.entries.length, 1)
+  await journal.activateBackend('b')
+  assert.equal(journal.retention, '1h')
+  assert.deepEqual(journal.entries, [])
+})
+
+test('a journal flush cannot undo an imported retention preference waiting for reload', async t => {
+  const saved = preferences(t)
+  const { journal } = fixture(t)
+  await journal.activateBackend('a')
+  journal.setRetention('1h')
+  await journal.flush()
+  assert.equal(saved.get(journalRetentionKey('a')), '1h')
+  saved.set(journalRetentionKey('a'), 'off')
+  journal.observe([connection()], NOW - 1000)
+  journal.observe([], NOW)
+  await journal.flush()
+  assert.equal(journal.retention, '1h', 'An import does not change the active session until it is reloaded')
+  assert.equal(saved.get(journalRetentionKey('a')), 'off', 'Lifecycle flushes only write the journal snapshot')
+  await journal.activateBackend('a')
+  assert.equal(journal.retention, 'off')
+  assert.deepEqual(journal.entries, [])
 })
 
 test('late backend loads cannot replace the newly selected backend or its entries', async t => {

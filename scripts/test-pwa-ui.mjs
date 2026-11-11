@@ -255,6 +255,14 @@ try {
   })
   await settingsPage.goto(`${origin}${scope}#/settings?category=appearance`)
   await settingsPage.getByTestId('settings-category-panel-appearance').waitFor()
+  // The map has never been mounted in this document. Its lazy JS/CSS must still
+  // load with the network unavailable after the offline cache becomes ready.
+  await context.setOffline(true)
+  await settingsPage.evaluate(() => { location.hash = '/geography' })
+  await settingsPage.getByRole('heading', { name: /^(Geography|География)$/ }).waitFor()
+  await settingsPage.evaluate(() => { location.hash = '/settings?category=appearance' })
+  await settingsPage.getByTestId('settings-category-panel-appearance').waitFor()
+  await context.setOffline(false)
   await chooseSettingsCategory(settingsPage, 'maintenance')
   await settingsPage.getByTestId('pwa-check').click()
   const updateAction = settingsPage.getByTestId('pwa-check-result').getByRole('link')

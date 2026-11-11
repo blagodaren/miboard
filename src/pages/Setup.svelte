@@ -58,8 +58,7 @@
     const address = core.backend.url
     if (!message) { lastConnectionError = ''; return }
     untrack(() => {
-      const key: MessageKey | null = message === t('error.invalidSecret') ? 'error.invalidSecret'
-        : message === t('error.connection', { url: address }) ? 'error.connection' : null
+      const key = core.errorKey
       const identity = JSON.stringify([address, key ?? message])
       if (identity === lastConnectionError) return
       lastConnectionError = identity

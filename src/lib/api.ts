@@ -310,6 +310,13 @@ export function backend(): Backend {
   return current
 }
 
+function mayBeMixedContent(url: URL): boolean {
+  if (typeof location === 'undefined' || location.protocol !== 'https:' || url.protocol !== 'http:') return false
+  const host = url.hostname.replace(/\.$/, '')
+  // Loopback origins are potentially trustworthy. Do not mislabel their CORS/network failures.
+  return host !== 'localhost' && !host.endsWith('.localhost') && host !== '[::1]' && !/^127\./.test(host)
+}
+
 export async function request<T = unknown>(
   path: string,
   init: { method?: string; body?: unknown; query?: Record<string, string | number>; timeout?: number; signal?: AbortSignal } = {},
@@ -318,13 +325,17 @@ export async function request<T = unknown>(
   const url = new URL(b.url + path)
   for (const [k, v] of Object.entries(init.query ?? {})) url.searchParams.set(k, String(v))
   const ctrl = new AbortController()
-  const abort = () => ctrl.abort()
-  if (init.signal?.aborted) ctrl.abort()
+  let timedOut = false
+  let responseReceived = false
+  const abort = () => { if (!ctrl.signal.aborted) ctrl.abort() }
+  if (init.signal?.aborted) abort()
   else init.signal?.addEventListener('abort', abort, { once: true })
-  const timer = setTimeout(() => ctrl.abort(), init.timeout ?? 10000)
-  let res: Response
+  const timer = setTimeout(() => {
+    if (!ctrl.signal.aborted) { timedOut = true; ctrl.abort() }
+  }, init.timeout ?? 10000)
   try {
-    res = await fetch(url, {
+    ctrl.signal.throwIfAborted()
+    const res = await fetch(url, {
       method: init.method ?? 'GET',
       headers: {
         ...(b.secret ? { Authorization: `Bearer ${b.secret}` } : {}),
@@ -333,26 +344,38 @@ export async function request<T = unknown>(
       body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       signal: ctrl.signal,
     })
-  } catch (e) {
-    const key = ctrl.signal.aborted ? 'error.timeout' : 'error.offline'
+    responseReceived = true
+    ctrl.signal.throwIfAborted()
+    if (!res.ok) {
+      let msg = res.statusText
+      try {
+        const j: unknown = await res.json()
+        if (record(j)) msg = (typeof j.message === 'string' ? j.message : typeof j.error === 'string' ? j.error : '') || msg
+      } catch {
+        // HTTP errors may have no JSON body; cancellation still takes precedence.
+        ctrl.signal.throwIfAborted()
+      }
+      throw new ApiError(res.status, msg || `HTTP ${res.status}`)
+    }
+    if (res.status === 204) return undefined as T
+    const text = await res.text()
+    ctrl.signal.throwIfAborted()
+    try {
+      return (text ? JSON.parse(text) : undefined) as T
+    } catch {
+      throw new ApiError(res.status, t('error.invalidJson'), 'error.invalidJson')
+    }
+  } catch (error) {
+    if (ctrl.signal.aborted && !timedOut) throw ctrl.signal.reason
+    if (error instanceof ApiError) throw error
+    const key = timedOut ? 'error.timeout'
+      : !responseReceived && mayBeMixedContent(url) ? 'error.mixedContent' : 'error.offline'
     throw new ApiError(0, t(key), key)
   } finally {
+    // The deadline and caller cancellation also cover a slow response body.
     clearTimeout(timer)
     init.signal?.removeEventListener('abort', abort)
   }
-  if (!res.ok) {
-    let msg = res.statusText
-    try {
-      const j = await res.json()
-      msg = (typeof j.message === 'string' ? j.message : typeof j.error === 'string' ? j.error : '') || msg
-    } catch {
-      /* тело не JSON */
-    }
-    throw new ApiError(res.status, msg || `HTTP ${res.status}`)
-  }
-  if (res.status === 204) return undefined as T
-  const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
 }
 
 /** WebSocket с переподключением. Возвращает функцию закрытия */

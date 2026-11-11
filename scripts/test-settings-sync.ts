@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'settings-transfer', 'settings-sync']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'settings-sync']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -46,6 +46,36 @@ function session(seed: Record<string, unknown> = {}) {
 }
 const data = (extra: Record<string, unknown> = {}) => ({ deviceNames: {}, proxySort: [], preferences: {}, ...extra })
 const document = (extra: Record<string, unknown> = {}) => ({ format: 'miboard-sync', version: 1, revision: 'test-revision-0001', updatedAt: '2026-11-09T12:00:00.000Z', data: data(), ...extra })
+
+test('columns, alert opt-in and retention sync only the current core and survive older remote copies', () => {
+  const alertKey = (backend: string) => 'miboard.provider-alerts:' + encodeURIComponent(backend)
+  const retentionKey = (backend: string) => 'miboard.journal-retention.v1.' + encodeURIComponent(backend)
+  const source = session({
+    'miboard.connection-columns.v1': ['process', 'peakSpeed'],
+    [alertKey(url)]: { enabled: false, seen: { private: 'PRIVATE-ACK' } },
+    [alertKey(otherUrl)]: { enabled: true, seen: {} },
+    [retentionKey(url)]: '1h', [retentionKey(otherUrl)]: 'off',
+  })
+  const local = source.sync.localSyncData(url)
+  assert.deepEqual(plain(local.preferences.connectionColumns), ['process', 'peakSpeed'])
+  assert.equal(local.providerAlertsEnabled, false)
+  assert.equal(local.journalRetention, '1h')
+  const output = source.sync.createSyncDocument(local, url)
+  for (const privateValue of [url, otherUrl, 'PRIVATE-ACK', 'backendUrl']) assert.ok(!JSON.stringify(output).includes(privateValue))
+  const target = session({ [alertKey(otherUrl)]: { enabled: true, seen: { local: 'keep' } }, [retentionKey(otherUrl)]: '7d' })
+  const preview = target.sync.previewSync('pull', target.sync.parseSyncDocument(output, otherUrl), otherUrl)
+  for (const key of ['connectionColumns', 'providerAlertsEnabled', 'journalRetention']) assert.ok(preview.changes.some((change: { key: string }) => change.key === key))
+  target.sync.applySyncPull(preview, otherUrl)
+  assert.deepEqual(JSON.parse(target.store.get(alertKey(otherUrl))!), { enabled: false, seen: { local: 'keep' } })
+  assert.equal(target.store.get(retentionKey(otherUrl)), '1h')
+  assert.equal(target.store.has(retentionKey(url)), false, 'Source controller URL is never written by sync')
+  const before = target.snapshot()
+  target.sync.applySyncPull(target.sync.previewSync('pull', target.sync.parseSyncDocument(document(), otherUrl), otherUrl), otherUrl)
+  assert.deepEqual(target.snapshot(), before)
+  for (const extra of [{ providerAlertsEnabled: 'false' }, { journalRetention: 24 }, { journalRetention: 'forever' }, { preferences: { connectionColumns: ['secret'] } }]) {
+    assert.throws(() => target.sync.parseSyncDocument(document({ data: data(extra) }), otherUrl), (error: { code: string }) => error.code === 'invalid')
+  }
+})
 
 test('sync exports only the connected core names/sorts, never controller profiles, addresses or secrets', () => {
   const s = session({

@@ -32,7 +32,7 @@ async function launch() {
   }
   throw new Error('No browser available')
 }
-const copy = (revision, name = 'Remote laptop') => ({ format: 'miboard-sync', version: 1, revision, updatedAt: '2026-11-09T12:00:00Z', data: { deviceNames: { '192.168.1.10': name }, proxySort: [{ group: 'Main', key: 'latency', direction: 'desc' }], preferences: { theme: 'dark', groups: { Main: false } } } })
+const copy = (revision, name = 'Remote laptop') => ({ format: 'miboard-sync', version: 1, revision, updatedAt: '2026-11-09T12:00:00Z', data: { deviceNames: { '192.168.1.10': name }, proxySort: [{ group: 'Main', key: 'latency', direction: 'desc' }], preferences: { theme: 'dark', groups: { Main: false }, connectionColumns: ['dnsMode', 'source'] }, providerAlertsEnabled: false, journalRetention: '1h' } })
 async function open(locale = 'en', theme = 'light') {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, colorScheme: theme, reducedMotion: 'reduce', serviceWorkers: 'block' })
   await stubAppUpdates(context)
@@ -123,6 +123,8 @@ try {
   state.remote = copy('remote-revision-one', 'First remote')
   await page.getByTestId('sync-pull').click()
   await page.getByTestId('sync-preview').getByText('First remote', { exact: true }).waitFor()
+  await page.getByTestId('sync-preview').getByText('Subscription alerts', { exact: true }).waitFor()
+  await page.getByTestId('sync-preview').getByText('Keep completed connections', { exact: true }).waitFor()
   assert.equal((await names(page))['192.168.1.10'], 'Local laptop')
   state.remote = copy('remote-revision-two', 'Latest remote')
   await page.getByTestId('sync-apply').click()
@@ -133,6 +135,21 @@ try {
   await page.getByTestId('sync-notice').filter({ hasText: 'Preferences applied locally' }).waitFor()
   assert.deepEqual(await names(page), { '192.168.1.10': 'Latest remote', '192.168.1.20': 'Keep phone' })
   assert.equal(await credentials(page), originalCredentials)
+  const importedPreferences = await page.evaluate(origin => ({
+    columns: JSON.parse(localStorage.getItem('miboard.connection-columns.v1')),
+    alerts: JSON.parse(localStorage.getItem('miboard.provider-alerts:' + encodeURIComponent(origin))).enabled,
+    retention: localStorage.getItem('miboard.journal-retention.v1.' + encodeURIComponent(origin)),
+  }), origin)
+  assert.deepEqual(importedPreferences, { columns: ['dnsMode', 'source'], alerts: false, retention: '1h' })
+  await page.evaluate(() => {
+    const original = indexedDB.open.bind(indexedDB)
+    indexedDB.open = () => { throw new DOMException('Blocked fixture', 'SecurityError') }
+    window.restoreSyncIDB = () => { indexedDB.open = original }
+  })
+  await page.getByTestId('sync-push').click()
+  await page.getByTestId('sync-preview').waitFor()
+  await page.getByTestId('sync-cancel').click()
+  await page.evaluate(() => { window.restoreSyncIDB(); delete window.restoreSyncIDB })
   console.log('PASS: remote changes require a new confirmation; pull merges local entries without touching credentials')
 
   await page.getByTestId('sync-push').click()

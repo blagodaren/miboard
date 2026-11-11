@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { appBuildId } from './pwa-build.mjs'
+import { appBuildId, pwaBuild } from './pwa-build.mjs'
 
 test('every build input changes the offline cache identity, including entry HTML and font transformation', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'miboard-pwa-build-'))
@@ -27,6 +27,35 @@ test('every build input changes the offline cache identity, including entry HTML
     }
     writeFileSync(path.join(root, 'src/new-page.svelte'), '<h1>New page</h1>')
     assert.notEqual(appBuildId('production', root), first, 'Added source files invalidate the cache')
+  } finally {
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()))
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('offline manifest includes lazy page JavaScript and CSS with verified hashes', async () => {
+  const { createHash } = await import('node:crypto')
+  const root = mkdtempSync(path.join(os.tmpdir(), 'miboard-pwa-chunks-'))
+  const files = {
+    'index.html': '<html>entry</html>',
+    'assets/index-entry.js': 'import("./Geography-page.js")',
+    'assets/Geography-page.js': 'export default function Geography() {}',
+    'assets/Geography-page.css': '.map { display: grid }',
+    'assets/shared-chart.js': 'export const chart = true',
+  }
+  try {
+    for (const [name, content] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(root, name)), { recursive: true })
+      writeFileSync(path.join(root, name), content)
+    }
+    const plugin = pwaBuild('lazy-pages-fixture')
+    plugin.configResolved({ root, build: { outDir: '.' } })
+    plugin.closeBundle()
+    const worker = readFileSync(path.join(root, 'sw.js'), 'utf8')
+    const manifest = JSON.parse(worker.match(/^const STATIC_FILES = (.*);$/m)[1])
+    assert.deepEqual(manifest, Object.entries(files).sort(([a], [b]) => a.localeCompare(b)).map(([name, content]) => ({
+      path: name, sha256: createHash('sha256').update(content).digest('hex'),
+    })))
   } finally {
     assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()))
     rmSync(root, { recursive: true, force: true })

@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'settings-transfer']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -57,6 +57,68 @@ const profile = { url: 'http://router.test:9090', secret: 'keep-this-secret', na
 const aliasesKey = 'miboard.device-names.' + encodeURIComponent(profile.url)
 const sortKey = (group: string) => 'miboard.proxy-sort.v1' + JSON.stringify([profile.url, group])
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+
+test('columns, alert opt-in and per-core retention round-trip without exporting history or alert acknowledgements', () => {
+  const alertKey = 'miboard.provider-alerts:' + encodeURIComponent(profile.url)
+  const retentionKey = 'miboard.journal-retention.v1.' + encodeURIComponent(profile.url)
+  const source = session({
+    'miboard.connection-columns.v1': ['process', 'source', 'peakSpeed'],
+    [alertKey]: { enabled: false, seen: { 'PRIVATE-PROVIDER': 'PRIVATE-ACK' } },
+    [retentionKey]: '7d',
+  })
+  const output = source.transfer.exportSettings()
+  const document = JSON.parse(output)
+  assert.deepEqual(document.preferences.connectionColumns, ['process', 'source', 'peakSpeed'])
+  assert.deepEqual(document.providerAlerts, [{ backendUrl: profile.url, enabled: false }])
+  assert.deepEqual(document.journalRetentions, [{ backendUrl: profile.url, retention: '7d' }])
+  assert.ok(!output.includes('PRIVATE-') && !output.includes('entries'))
+  const target = session({ [alertKey]: { enabled: true, seen: { local: 'keep' } }, [retentionKey]: '1h' })
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(output))
+  assert.deepEqual(JSON.parse(target.store.get('miboard.connection-columns.v1')!), ['process', 'source', 'peakSpeed'])
+  assert.deepEqual(JSON.parse(target.store.get(alertKey)!), { enabled: false, seen: { local: 'keep' } })
+  assert.equal(target.store.get(retentionKey), '7d')
+  const before = target.snapshot()
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base())))
+  assert.deepEqual(target.snapshot(), before, 'Older backups preserve all newly supported settings')
+})
+
+test('invalid columns, duplicate backends and injected alert history fail the whole import', () => {
+  const s = session({ 'miboard.theme': 'dark' })
+  const before = s.snapshot()
+  for (const extra of [
+    { preferences: { connectionColumns: ['source', 'unknown'] } },
+    { preferences: { connectionColumns: ['source', 'source'] } },
+    { preferences: { connectionColumns: 'source' } },
+    { providerAlerts: [{ backendUrl: profile.url, enabled: 'false' }] },
+    { providerAlerts: [{ backendUrl: profile.url, enabled: false, seen: { provider: 'ack' } }] },
+    { providerAlerts: [{ backendUrl: profile.url, enabled: true }, { backendUrl: profile.url, enabled: false }] },
+    { journalRetentions: [{ backendUrl: profile.url, retention: 'forever' }] },
+    { journalRetentions: [{ backendUrl: profile.url, retention: '1h', entries: [] }] },
+    { journalRetentions: [{ backendUrl: 'https://user:secret@router.test', retention: '7d' }] },
+  ]) {
+    const preview = s.transfer.previewSettingsImport(JSON.stringify(base(extra)))
+    assert.ok(preview.invalid > 0, JSON.stringify(extra))
+    assert.throws(() => s.transfer.applySettingsImport(preview), { code: 'invalid' })
+  }
+  assert.deepEqual(s.snapshot(), before)
+  const emptyColumns = s.transfer.previewSettingsImport(JSON.stringify(base({ preferences: { connectionColumns: [] } })))
+  assert.equal(emptyColumns.invalid, 0, 'Hiding every optional column is supported')
+})
+
+test('a late quota failure rolls back columns, alert preferences and retention together', () => {
+  const alertKey = 'miboard.provider-alerts:' + encodeURIComponent(profile.url)
+  const retentionKey = 'miboard.journal-retention.v1.' + encodeURIComponent(profile.url)
+  const s = session({ 'miboard.theme': 'dark', 'miboard.connection-columns.v1': ['source'], [alertKey]: { enabled: true, seen: { local: 'keep' } }, [retentionKey]: '7d' })
+  const before = s.snapshot()
+  const preview = s.transfer.previewSettingsImport(JSON.stringify(base({
+    preferences: { connectionColumns: [], theme: 'light' },
+    providerAlerts: [{ backendUrl: profile.url, enabled: false }],
+    journalRetentions: [{ backendUrl: profile.url, retention: 'off' }],
+  })))
+  s.failNext('miboard.theme')
+  assert.throws(() => s.transfer.applySettingsImport(preview), { code: 'storage' })
+  assert.deepEqual(s.snapshot(), before)
+})
 
 test('export uses a semantic allowlist, omits secrets by default, and does not migrate or write storage', () => {
   const s = session({

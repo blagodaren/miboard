@@ -58,6 +58,8 @@ async function open(locale = 'en', theme = 'light') {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, colorScheme: theme, reducedMotion: 'reduce', acceptDownloads: true })
   await stubAppUpdates(context)
   await context.addInitScript(({ origin, locale, theme }) => {
+    if (sessionStorage.getItem('transfer-fixture-seeded')) return
+    sessionStorage.setItem('transfer-fixture-seeded', '1')
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
     localStorage.setItem('miboard.backend', JSON.stringify({ url: origin, secret: 'test', name: 'Current mock' }))
@@ -68,6 +70,9 @@ async function open(locale = 'en', theme = 'light') {
     localStorage.setItem('miboard.groups', JSON.stringify({ Main: true, Keep: false }))
     localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.10': 'Laptop', '192.168.1.20': 'Phone' }))
     localStorage.setItem('unrelated.private', 'not-portable')
+    localStorage.setItem('miboard.connection-columns.v1', JSON.stringify(['process', 'peakSpeed']))
+    localStorage.setItem('miboard.provider-alerts:' + encodeURIComponent(origin), JSON.stringify({ enabled: true, seen: {} }))
+    localStorage.setItem('miboard.journal-retention.v1.' + encodeURIComponent(origin), '7d')
   }, { origin, locale, theme })
   const page = await context.newPage()
   page.setDefaultTimeout(12000)
@@ -140,6 +145,9 @@ try {
   assert.equal(exported.format, 'miboard-settings')
   assert.equal(exported.servers.length, 2)
   assert.ok(exported.servers.every(server => !Object.hasOwn(server, 'secret')))
+  assert.deepEqual(exported.preferences.connectionColumns, ['process', 'peakSpeed'])
+  assert.deepEqual(exported.providerAlerts, [{ backendUrl: origin, enabled: true }])
+  assert.deepEqual(exported.journalRetentions, [{ backendUrl: origin, retention: '7d' }])
   assert.ok(!JSON.stringify(exported).includes('not-portable'))
   assert.deepEqual(await storage(page), original)
   await checkbox.check()
@@ -153,7 +161,9 @@ try {
     servers: [{ url: origin, name: 'Imported mock' }, { url: 'https://offline.invalid', name: 'Offline profile' }],
     deviceAliases: [{ backendUrl: origin, names: { '192.168.1.10': 'Imported laptop' } }],
     proxySort: [{ backendUrl: origin, group: 'Main', key: 'name', direction: 'desc' }],
-    preferences: { locale: 'ru', theme: 'dark', groups: { Main: false } },
+    preferences: { locale: 'ru', theme: 'dark', groups: { Main: false }, connectionColumns: ['type', 'source'] },
+    providerAlerts: [{ backendUrl: origin, enabled: false }],
+    journalRetentions: [{ backendUrl: origin, retention: '1h' }],
   })
   const stable = await storage(page)
   const versionsBefore = apiRequests.filter(request => request.path === '/version').length
@@ -185,6 +195,9 @@ try {
   assert.deepEqual(JSON.parse(after['miboard.groups']), { Main: false, Keep: false })
   assert.equal(after['miboard.locale'], 'ru')
   assert.equal(after['miboard.theme'], 'dark')
+  assert.deepEqual(JSON.parse(after['miboard.connection-columns.v1']), ['type', 'source'])
+  assert.equal(JSON.parse(after['miboard.provider-alerts:' + encodeURIComponent(origin)]).enabled, false)
+  assert.equal(after['miboard.journal-retention.v1.' + encodeURIComponent(origin)], '1h')
   assert.equal(await page.locator('html').getAttribute('lang'), 'en', 'Reactive preferences wait for explicit reload')
   await section.getByRole('button', { name: 'Reload dashboard', exact: true }).waitFor()
   await pause(150)
@@ -223,8 +236,51 @@ try {
   await file(page, Buffer.alloc(2 * 1024 * 1024 + 1, 32).toString(), 'too-large.json')
   await section.getByRole('alert').filter({ hasText: 'The file exceeds the 2 MiB limit' }).waitFor()
   assert.deepEqual(await storage(page), after)
+  await page.reload()
+  await page.getByRole('heading', { name: 'Настройки', exact: true }).waitFor()
+  await chooseSettingsCategory(page, 'data')
+  await poll(async () => await page.locator('#journal-retention').inputValue() === '1h', 'imported journal retention after reload')
+  await chooseSettingsCategory(page, 'proxies')
+  assert.equal(await page.getByTestId('provider-alert-toggle').getByRole('switch').getAttribute('aria-checked'), 'false')
+  await page.evaluate(() => { location.hash = '/connections' })
+  await page.getByTestId('connection-columns-toggle').click()
+  assert.equal(await page.getByTestId('connection-columns').getByRole('checkbox', { checked: true }).count(), 2)
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('miboard.connection-columns.v1'))), ['type', 'source'])
+  console.log('PASS: imported columns, alert opt-in and retention are active after the explicit reload')
   await context.close()
   console.log('PASS: invalid and oversized files never apply partial imports')
+
+  const legacy = await open()
+  await legacy.page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('miboard-connection-journal-v1', 1)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('backends', 'readwrite')
+      transaction.objectStore('backends').put({ retention: 'off', entries: [{ private: 'NEVER-EXPORT-HISTORY' }] }, 'https://inactive-core.invalid')
+      transaction.oncomplete = resolve
+      transaction.onerror = () => reject(transaction.error)
+    })
+    db.close()
+  })
+  await file(legacy.page, documentFile({ journalRetentions: [{ backendUrl: 'https://inactive-core.invalid', retention: '24h' }] }))
+  await legacy.page.getByTestId('transfer-preview').getByText('Values to replace: 1', { exact: true }).waitFor()
+  const migrated = await download(legacy.page)
+  assert.deepEqual(migrated.journalRetentions.find(item => item.backendUrl === 'https://inactive-core.invalid'), { backendUrl: 'https://inactive-core.invalid', retention: 'off' })
+  assert.ok(!JSON.stringify(migrated).includes('NEVER-EXPORT-HISTORY'))
+  const migratedStorage = await storage(legacy.page)
+  await download(legacy.page)
+  assert.deepEqual(await storage(legacy.page), migratedStorage, 'Legacy migration is idempotent')
+  await legacy.page.evaluate(() => { indexedDB.open = () => { throw new DOMException('Blocked fixture', 'SecurityError') } })
+  const fallback = await download(legacy.page)
+  assert.deepEqual(fallback.journalRetentions, migrated.journalRetentions, 'Canonical preferences still export when IndexedDB is denied')
+  await legacy.page.getByText('The file is ready, but retention settings from the unavailable connection journal may be missing.', { exact: true }).waitFor()
+  await file(legacy.page, documentFile({ journalRetentions: [{ backendUrl: 'https://inactive-core.invalid', retention: '1h' }] }))
+  await legacy.page.getByTestId('transfer-preview').getByText('Current retention settings could not be read from the connection journal. The replacement count may be incomplete.', { exact: true }).waitFor()
+  await legacy.context.close()
+  console.log('PASS: legacy retention migrates without history; denied IndexedDB still exports accessible settings with a warning')
 
   for (const [locale, theme] of [['ru', 'dark'], ['en', 'light']]) {
     const state = await open(locale, theme)

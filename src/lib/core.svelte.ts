@@ -26,11 +26,17 @@ const WINDOW = 90 // секунд истории трафика
 class Core {
   status = $state<'boot' | 'setup' | 'connecting' | 'ok' | 'lost'>('boot')
   #connectionError = $state.raw<unknown>(null)
+  get errorKey() {
+    const error = this.#connectionError
+    if (!(error instanceof ApiError)) return null
+    if (error.status === 401) return 'error.invalidSecret' as const
+    if (error.status === 0 && (!error.translationKey || error.translationKey === 'error.offline')) return 'error.connection' as const
+    return error.translationKey ?? null
+  }
   get error(): string {
     const error = this.#connectionError
     if (!error) return ''
-    if (error instanceof ApiError && error.status === 401) return t('error.invalidSecret')
-    if (error instanceof ApiError && error.status === 0) return t('error.connection', { url: this.backend.url })
+    if (this.errorKey) return t(this.errorKey, { url: this.backend.url })
     return errorMessage(error)
   }
   version = $state('')

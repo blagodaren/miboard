@@ -1,6 +1,7 @@
 import type { Connection } from './api'
+import { readJournalRetention, saveJournalRetention, validJournalRetention, type JournalRetention } from './journal-preferences.ts'
+export { validJournalRetention, type JournalRetention } from './journal-preferences.ts'
 
-export type JournalRetention = 'off' | '1h' | '24h' | '7d'
 export type JournalEntry = {
   connection: Connection
   firstSeenAt: number
@@ -14,8 +15,8 @@ export type JournalStore = { read: (backend: string) => Promise<unknown>; write:
 export const JOURNAL_LIMIT = 5000
 export const JOURNAL_ACTIVE_LIMIT = 10000
 export const JOURNAL_DB_NAME = 'miboard-connection-journal-v1'
+export const JOURNAL_WRITE_INTERVAL = 5000
 const periods = { off: 0, '1h': 3600000, '24h': 86400000, '7d': 604800000 }
-export const validJournalRetention = (value: unknown): value is JournalRetention => typeof value === 'string' && Object.hasOwn(periods, value)
 const text = (value: unknown, max = 4096) => typeof value === 'string' ? value.slice(0, max) : ''
 const counter = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 const identity = (connection: Connection) => JSON.stringify([connection.id, connection.start])
@@ -118,13 +119,19 @@ export class JournalTracker {
 
 export function indexedJournalStore(): JournalStore {
   let opened: Promise<IDBDatabase> | undefined
+  let available: IDBDatabase | undefined
   const database = () => opened ??= new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB unavailable')); return }
     const request = indexedDB.open(JOURNAL_DB_NAME, 1)
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('backends')) request.result.createObjectStore('backends') }
     request.onerror = () => reject(request.error)
     request.onblocked = () => reject(new Error('IndexedDB blocked'))
-    request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result) }
+    request.onsuccess = () => {
+      const db = request.result
+      available = db
+      db.onversionchange = () => { db.close(); available = undefined; opened = undefined }
+      resolve(db)
+    }
   })
   return {
     async read(backend) {
@@ -135,15 +142,18 @@ export function indexedJournalStore(): JournalStore {
         request.onerror = () => reject(request.error)
       })
     },
-    async write(backend, record) {
-      const db = await database()
-      await new Promise<void>((resolve, reject) => {
+    write(backend, record) {
+      const write = (db: IDBDatabase) => new Promise<void>((resolve, reject) => {
         const transaction = db.transaction('backends', 'readwrite')
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => reject(transaction.error)
         transaction.onabort = () => reject(transaction.error ?? new Error('Journal transaction aborted'))
         transaction.objectStore('backends').put(record, backend)
+        transaction.commit?.()
       })
+      // Start a transaction before a pagehide handler returns; awaiting the
+      // already-open database first can lose the write during navigation.
+      return available ? write(available) : database().then(write)
     },
   }
 }
@@ -159,8 +169,10 @@ export class ConnectionJournal {
   #generation = 0
   #revision = 0
   #clearRevision = 0
+  #dirty = false
   #timer: ReturnType<typeof setTimeout> | undefined
   #writes = Promise.resolve()
+  #pendingWrites = 0
   #listeners = new Set<() => void>()
   #memory = new Map<string, JournalRecord>()
   #writeFailed = false
@@ -174,9 +186,10 @@ export class ConnectionJournal {
   async activateBackend(url: string): Promise<void> {
     void this.flush()
     const generation = ++this.#generation
+    this.#dirty = false
     this.backendUrl = url
     this.entries = []
-    this.retention = '24h'
+    this.retention = url ? readJournalRetention(url) ?? '24h' : '24h'
     this.loading = !!url
     this.storageState = this.#writeFailed ? 'memory' : 'loading'
     this.#tracker = new JournalTracker()
@@ -195,7 +208,14 @@ export class ConnectionJournal {
       this.#writeFailed = true
     }
     if (generation !== this.#generation) return
-    if (revision === this.#revision && validJournalRetention(record?.retention)) this.retention = record.retention
+    if (revision === this.#revision) {
+      const preference = readJournalRetention(url)
+      if (preference) this.retention = preference
+      else if (validJournalRetention(record?.retention)) {
+        this.retention = record.retention
+        saveJournalRetention(url, record.retention)
+      }
+    }
     const saved = clearRevision === this.#clearRevision && Array.isArray(record?.entries) ? record.entries : []
     this.entries = retainJournal([...saved, ...this.entries], this.retention, this.#clock())
     this.loading = false
@@ -225,6 +245,7 @@ export class ConnectionJournal {
     if (!validJournalRetention(retention) || !this.backendUrl) return
     this.#revision++
     this.retention = retention
+    saveJournalRetention(this.backendUrl, retention)
     this.entries = retainJournal(this.entries, retention, this.#clock())
     if (retention === 'off') this.#tracker.pause(true)
     this.#changed()
@@ -239,15 +260,17 @@ export class ConnectionJournal {
   }
 
   #schedule() {
-    if (this.loading || !this.backendUrl) return
-    clearTimeout(this.#timer)
-    this.#timer = setTimeout(() => { void this.flush() }, 300)
+    this.#dirty = true
+    if (this.loading || !this.backendUrl || this.#timer !== undefined) return
+    // A fixed window batches busy streams without postponing writes forever.
+    this.#timer = setTimeout(() => { void this.flush() }, JOURNAL_WRITE_INTERVAL)
   }
 
   async flush(): Promise<void> {
     clearTimeout(this.#timer)
     this.#timer = undefined
-    if (!this.loading && this.backendUrl) {
+    if (this.#dirty && !this.loading && this.backendUrl) {
+      this.#dirty = false
       const backend = this.backendUrl
       const generation = this.#generation
       const record: JournalRecord = { retention: this.retention, entries: [...this.entries] }
@@ -255,13 +278,16 @@ export class ConnectionJournal {
       this.#memory.set(backend, record)
       while (this.#memory.size > 4) this.#memory.delete(this.#memory.keys().next().value!)
       if (!this.#writeFailed) {
-        this.#writes = this.#writes.then(async () => {
-          try { await this.#store.write(backend, record) }
+        const first = this.#pendingWrites++ === 0
+        const write = async () => {
+          try { if (!this.#writeFailed) await this.#store.write(backend, record) }
           catch {
             this.#writeFailed = true
             if (generation === this.#generation) { this.storageState = 'memory'; this.#changed() }
           }
-        })
+          finally { this.#pendingWrites-- }
+        }
+        this.#writes = first ? write() : this.#writes.then(write)
       }
     }
     await this.#writes

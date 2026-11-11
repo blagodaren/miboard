@@ -4,6 +4,8 @@
   import { core } from '../lib/core.svelte'
   import { t, i18n, type MessageKey } from '../lib/i18n.svelte'
   import { SettingsTransferError } from '../lib/settings-transfer'
+  import { prepareJournalPreferences, validJournalRetention } from '../lib/journal-preferences'
+  import { validConnectionColumns } from '../lib/connection-columns'
   import { SETTINGS_SYNC_KEY, applySyncPull, createSyncDocument, parseSyncDocument, previewSync, syncFingerprint, syncPreviewChanged, SettingsSyncError, type SyncChange, type SyncPreview } from '../lib/settings-sync'
   import Button from './Button.svelte'
 
@@ -40,6 +42,9 @@
     if (change.key === 'proxyGroupHeight') return t('settings.groupHeight')
     if (change.key === 'proxyTestSelection') return t('proxyTest.title')
     if (change.key === 'liveUpdateMode') return t('liveUpdates.mode')
+    if (change.key === 'connectionColumns') return t('connectionDetails.columns')
+    if (change.key === 'providerAlertsEnabled') return t('providerAlerts.title')
+    if (change.key === 'journalRetention') return t('journal.retention')
     if (change.key.startsWith('latency.')) return t('sync.latency', { field: t(latencyLabels[change.key.slice(8)]) })
     if (change.key.startsWith('groups.')) return t('sync.group', { name: change.key.slice(7) })
     return change.key
@@ -57,6 +62,8 @@
     if (change.key === 'proxyCardSize' && (value === 'large' || value === 'compact')) return t(`settings.proxyCards.${value}`)
     if (change.key === 'proxyGroupHeight' && (value === 'large' || value === 'compact' || value === 'full')) return t(`settings.groupHeight.${value}`)
     if (change.key === 'liveUpdateMode' && (value === 'realtime' || value === 'eco')) return t(`liveUpdates.${value}`)
+    if (change.key === 'journalRetention' && validJournalRetention(value)) return t(`journal.${value}`)
+    if (change.key === 'connectionColumns' && validConnectionColumns(value)) return value.map(column => t(column === 'destination' ? 'journal.destination' : `connectionDetails.${column}`)).join(', ') || '—'
     if (change.key === 'proxyTestSelection' && typeof value === 'object' && value !== null) {
       const selection = value as { mode: string; groups: string[] }
       return selection.mode === 'all' ? t('proxyTest.all') : `${t('proxyTest.selected')}: ${selection.groups.join(', ') || '—'}`
@@ -80,6 +87,8 @@
     const signal = aborter.signal
     busy = 'read'; error = null; notice = null; preview = null; loaded = false
     try {
+      if (!await prepareJournalPreferences(backend.url)) throw new SettingsSyncError('journalUnavailable')
+      if (!current() || signal.aborted) return
       const remote = await read(signal)
       if (remote === undefined) return
       preview = previewSync(direction, remote, backend.url)

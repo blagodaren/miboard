@@ -4,12 +4,12 @@
 
 ## Downloads
 
-- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip) — the main archive. All fonts are included; loading them requires no external connection.
-- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist-cdn-fonts.zip) — an alternative archive without font files. Fonts are loaded from `unpkg.com`.
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip) — the main archive. All fonts are included; loading them requires no external connection.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip) — an alternative archive without font files. Fonts are loaded from `unpkg.com`.
 
 Each archive has a checksum:
-[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist.zip.sha256)
-and [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.5/dist-cdn-fonts.zip.sha256).
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip.sha256)
+and [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip.sha256).
 
 The CDN build needs access to `unpkg.com` to load fonts. If the CDN is unavailable,
 the dashboard uses system fonts; colored flags may be unavailable on Windows.
@@ -44,7 +44,7 @@ To reproduce the README screenshots, first run `npm run build`, then
 `node scripts/readme-screenshots.mjs`. The script uses synthetic data in an isolated
 fixture and writes the images to `docs/images/`.
 
-## Release 0.1.5
+## Release 0.1.6
 
 1. Run `npm run test:ui`. The checks use a local mock and do not connect
    to the user's controller.
@@ -54,7 +54,7 @@ fixture and writes the images to `docs/images/`.
 3. Run `npm run test:fonts` for both completed builds.
 4. Push the verified source to `main` in `blagodaren/miboard`.
    Builds, archives, UI test screenshots, `node_modules/` and `.env*` are excluded from Git.
-5. Create and push the `v0.1.5` tag. The workflow checks the tag against `package.json`,
+5. Create and push the `v0.1.6` tag. The workflow checks the tag against `package.json`,
    repeats validation and creates a GitHub release with both ZIPs and checksums.
    Versions without a suffix become `latest`; versions with a suffix remain prereleases.
 

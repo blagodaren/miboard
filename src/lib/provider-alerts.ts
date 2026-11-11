@@ -1,6 +1,9 @@
 import type { ProxyProvider } from './api'
 
 export const PROVIDER_ALERT_INTERVAL = 10 * 60 * 1000
+export const PROVIDER_ALERTS_PREFIX = 'miboard.provider-alerts:'
+export const PROVIDER_ALERT_PREFERENCES_CHANGED = 'miboard:provider-alert-preferences-changed'
+export const providerAlertsKey = (url: string) => PROVIDER_ALERTS_PREFIX + encodeURIComponent(url)
 export const PROVIDER_EXPIRY_WARNING = 3 * 24 * 60 * 60 * 1000
 export type ProviderAlertKind = 'lowQuota' | 'exhausted' | 'expiring' | 'expired'
 export type ProviderAlert = { provider: string; kind: ProviderAlertKind; remaining?: number; total?: number; expiresAt?: number }

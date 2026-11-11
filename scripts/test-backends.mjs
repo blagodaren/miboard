@@ -466,6 +466,153 @@ test('ошибка авторизации Core сохраняет рабочий
   assert.equal(s.sockets.length, 0)
 })
 
+test('HTTPS to HTTP fetch failures explain mixed content without blocking requests that the browser allows', async () => {
+  const backend = { url: 'http://192.168.1.1:9090', secret: '' }
+  const failed = session({}, 'https://dashboard.test/', async () => { throw new TypeError('Failed to fetch') })
+  await assert.rejects(failed.api.request('/version', {}, backend), error => {
+    assert(error instanceof failed.api.ApiError)
+    assert.equal(error.status, 0)
+    assert.equal(error.translationKey, 'error.mixedContent')
+    return true
+  })
+  assert.equal(failed.requests.length, 1)
+  assert.equal(failed.timers.size, 0)
+
+  const allowed = session()
+  assert.equal((await allowed.api.request('/version', {}, backend)).version, 'test')
+  assert.equal(allowed.requests.length, 1)
+})
+
+test('ordinary network and loopback failures are not mislabeled as mixed content', async () => {
+  for (const [page, backendUrl] of [
+    ['http://dashboard.test/', 'http://192.168.1.1:9090'],
+    ['https://dashboard.test/', 'https://router.test:9090'],
+    ['https://dashboard.test/', 'http://localhost:9090'],
+    ['https://dashboard.test/', 'http://core.localhost:9090'],
+    ['https://dashboard.test/', 'http://127.0.0.1:9090'],
+    ['https://dashboard.test/', 'http://127.2.3.4:9090'],
+    ['https://dashboard.test/', 'http://[::1]:9090'],
+  ]) {
+    const s = session({}, page, async () => { throw new TypeError('Failed to fetch') })
+    await assert.rejects(s.api.request('/version', {}, { url: backendUrl, secret: '' }), { status: 0, translationKey: 'error.offline' })
+  }
+})
+
+test('malformed successful JSON has a useful localized error and never exposes the raw response', async () => {
+  const response = '<html>Login required: sensitive backend details</html>'
+  const s = session({}, 'https://dashboard.test/', async () => new Response(response))
+  const backend = { url: 'https://router.test', secret: 'private' }
+  await assert.rejects(s.api.request('/version', {}, backend), error => {
+    assert(error instanceof s.api.ApiError)
+    assert.equal(error.status, 200)
+    assert.equal(error.translationKey, 'error.invalidJson')
+    assert.equal(s.api.errorMessage(error), 'error.invalidJson')
+    assert(!error.message.includes(response))
+    return true
+  })
+  assert.equal(s.timers.size, 0)
+})
+
+test('HTTP status errors and empty mutation responses retain their existing behavior', async () => {
+  const backend = { url: 'https://router.test', secret: '' }
+  for (const [response, status, message] of [
+    [new Response('{"message":"Unauthorized"}', { status: 401 }), 401, 'Unauthorized'],
+    [new Response('{"error":"Denied"}', { status: 403 }), 403, 'Denied'],
+    [new Response('<html>Gateway failed</html>', { status: 502, statusText: 'Bad Gateway' }), 502, 'Bad Gateway'],
+  ]) {
+    const s = session({}, 'https://dashboard.test/', async () => response)
+    await assert.rejects(s.api.request('/configs', {}, backend), error => {
+      assert(error instanceof s.api.ApiError)
+      assert.equal(error.status, status)
+      assert.equal(error.message, message)
+      assert.equal(error.translationKey, undefined)
+      return true
+    })
+  }
+  for (const status of [200, 204]) {
+    const s = session({}, 'https://dashboard.test/', async () => new Response(null, { status }))
+    assert.equal(await s.api.request('/configs', { method: 'PATCH', body: { mode: 'rule' } }, backend), undefined)
+  }
+})
+
+test('caller cancellation uses AbortError, including already-aborted signals, and clears the deadline', async () => {
+  const backend = { url: 'https://router.test', secret: '' }
+  const pending = (_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+  })
+  const s = session({}, 'https://dashboard.test/', pending)
+  const controller = new AbortController()
+  const result = s.api.request('/version', { signal: controller.signal }, backend)
+  controller.abort('page closed')
+  s.advance(10000)
+  await assert.rejects(result, error => error.name === 'AbortError' && !(error instanceof s.api.ApiError))
+  assert.equal(s.timers.size, 0)
+
+  const preAborted = session()
+  await assert.rejects(preAborted.api.request('/version', { signal: controller.signal }, backend), { name: 'AbortError' })
+  assert.equal(preAborted.requests.length, 0)
+  assert.equal(preAborted.timers.size, 0)
+})
+
+test('a real deadline remains a timeout if the caller cancels immediately afterward', async () => {
+  const s = session({}, 'https://dashboard.test/', (_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+  }))
+  const controller = new AbortController()
+  const result = s.api.request('/version', { timeout: 50, signal: controller.signal }, { url: 'http://192.168.1.1:9090', secret: '' })
+  s.advance(50)
+  controller.abort()
+  await assert.rejects(result, { status: 0, translationKey: 'error.timeout' })
+  assert.equal(s.timers.size, 0)
+})
+
+test('deadline and caller cancellation remain active while reading successful or error response bodies', async () => {
+  for (const status of [200, 500]) {
+    for (const cancellation of ['deadline', 'caller']) {
+      let reading = false
+      const s = session({}, 'https://dashboard.test/', (_url, init) => {
+        const response = new Response(new ReadableStream({
+          start(controller) { init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true }) },
+        }), { status })
+        const method = status === 200 ? 'text' : 'json'
+        const read = response[method].bind(response)
+        response[method] = () => { reading = true; return read() }
+        return response
+      })
+      const controller = new AbortController()
+      const result = s.api.request('/version', { timeout: 100, signal: controller.signal }, { url: 'https://router.test', secret: '' })
+      for (let i = 0; i < 4; i++) await Promise.resolve()
+      assert.equal(reading, true, `reading status ${status} before ${cancellation}`)
+      if (cancellation === 'deadline') s.advance(100)
+      else controller.abort()
+      await assert.rejects(result, cancellation === 'deadline' ? { status: 0, translationKey: 'error.timeout' } : { name: 'AbortError' })
+      assert.equal(s.timers.size, 0)
+    }
+  }
+})
+
+test('Core preserves specific connection explanations instead of replacing them with generic CORS advice', async () => {
+  const backend = { url: 'http://192.168.1.1:9090', secret: '' }
+  for (const [response, expected] of [
+    [async () => { throw new TypeError('Failed to fetch') }, 'error.mixedContent'],
+    [async () => new Response('<html>Not the API</html>'), 'error.invalidJson'],
+  ]) {
+    const s = session({}, 'https://dashboard.test/', response)
+    assert.equal(await s.core().connect(backend), false)
+    assert.equal(s.core().errorKey, expected)
+    assert.equal(s.core().error, expected)
+    assert.equal(s.api.savedBackends().length, 0)
+  }
+  const timed = session({}, 'https://dashboard.test/', (_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+  }))
+  const result = timed.core().connect(backend)
+  timed.advance(10000)
+  assert.equal(await result, false)
+  assert.equal(timed.core().errorKey, 'error.timeout')
+  assert.equal(timed.core().error, 'error.timeout')
+})
+
 test('остановленный stream не меняет состояние; never-opened close не сообщает ложный disconnect', () => {
   const s = session()
   s.api.useBackend({ url: 'http://router.test:9090', secret: 'token' })

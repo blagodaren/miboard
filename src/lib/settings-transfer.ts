@@ -5,6 +5,9 @@ import type { ProxySort } from './proxy-sort'
 import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight } from './appearance'
 import { LIVE_UPDATE_MODE_KEY, readLiveUpdateMode, validLiveUpdateMode, type LiveUpdateMode } from './live-updates'
 import { PROXY_TEST_SELECTION_PREFIX, proxyTestSelectionKey, validProxyTestSelection, type ProxyTestSelection } from './proxy-test-selection'
+import { CONNECTION_COLUMNS_KEY, readConnectionColumns, validConnectionColumns, type ConnectionColumn } from './connection-columns'
+import { PROVIDER_ALERTS_PREFIX, PROVIDER_ALERT_PREFERENCES_CHANGED, providerAlertsKey, readProviderAlertState } from './provider-alerts'
+import { JOURNAL_RETENTION_PREFIX, journalRetentionKey, validJournalRetention, type JournalRetention } from './journal-preferences'
 
 export const MAX_SETTINGS_FILE_BYTES = 2 * 1024 * 1024
 const PROFILE_KEYS = ['miboard.backends', 'miboard.secrets', 'miboard.backend']
@@ -14,7 +17,7 @@ const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor'])
 type Server = { url: string; name?: string; secret?: string }
 type Aliases = { backendUrl: string; names: Record<string, string> }
 type Sort = ProxySort & { backendUrl: string; group: string }
-type Preferences = { theme?: 'system' | 'light' | 'dark'; locale?: 'en' | 'ru'; latency?: DelaySettings; groups?: Record<string, boolean>; proxyCardSize?: ProxyCardSize; proxyGroupHeight?: ProxyGroupHeight; liveUpdateMode?: LiveUpdateMode }
+type Preferences = { theme?: 'system' | 'light' | 'dark'; locale?: 'en' | 'ru'; latency?: DelaySettings; groups?: Record<string, boolean>; proxyCardSize?: ProxyCardSize; proxyGroupHeight?: ProxyGroupHeight; liveUpdateMode?: LiveUpdateMode; connectionColumns?: ConnectionColumn[] }
 export type SettingsDocument = {
   format: 'miboard-settings'
   version: 1
@@ -23,6 +26,8 @@ export type SettingsDocument = {
   deviceAliases: Aliases[]
   proxySort: Sort[]
   proxyTestSelections?: Array<ProxyTestSelection & { backendUrl: string }>
+  providerAlerts?: Array<{ backendUrl: string; enabled: boolean }>
+  journalRetentions?: Array<{ backendUrl: string; retention: JournalRetention }>
   preferences: Preferences
 }
 export type SettingsImportPreview = {
@@ -93,9 +98,11 @@ function readLocal(): SettingsDocument {
     const aliases: Aliases[] = []
     const sorts: Sort[] = []
     const testSelections: NonNullable<SettingsDocument['proxyTestSelections']> = []
+    const providerAlerts: NonNullable<SettingsDocument['providerAlerts']> = []
+    const journalRetentions: NonNullable<SettingsDocument['journalRetentions']> = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) ?? ''
-      const value = key.startsWith(ALIAS_PREFIX) || key.startsWith(SORT_PREFIX) || key.startsWith(PROXY_TEST_SELECTION_PREFIX) ? json(key) : null
+      const value = key.startsWith(ALIAS_PREFIX) || key.startsWith(SORT_PREFIX) || key.startsWith(PROXY_TEST_SELECTION_PREFIX) || key.startsWith(PROVIDER_ALERTS_PREFIX) ? json(key) : null
       if (key.startsWith(ALIAS_PREFIX)) {
         try {
           const url = backendUrl(decodeURIComponent(key.slice(ALIAS_PREFIX.length)))
@@ -113,6 +120,17 @@ function readLocal(): SettingsDocument {
           const url = backendUrl(decodeURIComponent(key.slice(PROXY_TEST_SELECTION_PREFIX.length)))
           if (url) testSelections.push({ backendUrl: url, mode: value.mode, groups: [...value.groups] })
         } catch { /* Ignore malformed per-server preference keys. */ }
+      } else if (key.startsWith(PROVIDER_ALERTS_PREFIX) && record(value) && typeof value.enabled === 'boolean') {
+        try {
+          const url = backendUrl(decodeURIComponent(key.slice(PROVIDER_ALERTS_PREFIX.length)))
+          if (url) providerAlerts.push({ backendUrl: url, enabled: value.enabled })
+        } catch { /* Ignore malformed per-server preference keys. */ }
+      } else if (key.startsWith(JOURNAL_RETENTION_PREFIX)) {
+        const retention = localStorage.getItem(key)
+        try {
+          const url = backendUrl(decodeURIComponent(key.slice(JOURNAL_RETENTION_PREFIX.length)))
+          if (url && validJournalRetention(retention)) journalRetentions.push({ backendUrl: url, retention })
+        } catch { /* Ignore malformed per-server preference keys. */ }
       }
     }
     const theme = localStorage.getItem('miboard.theme')
@@ -122,6 +140,8 @@ function readLocal(): SettingsDocument {
     return {
       format: 'miboard-settings', version: 1, servers: localServers(), deviceAliases: aliases, proxySort: sorts,
       ...(testSelections.length ? { proxyTestSelections: testSelections } : {}),
+      ...(providerAlerts.length ? { providerAlerts } : {}),
+      ...(journalRetentions.length ? { journalRetentions } : {}),
       preferences: {
         theme: theme === 'light' || theme === 'dark' ? theme : 'system', locale: locale === 'ru' ? 'ru' : 'en',
         latency: validDelaySettings(latency) ? Object.fromEntries(Object.keys(DEFAULT_DELAY_SETTINGS).map((key) => [key, latency[key as keyof DelaySettings]])) as DelaySettings : { ...DEFAULT_DELAY_SETTINGS },
@@ -129,6 +149,7 @@ function readLocal(): SettingsDocument {
         proxyCardSize: readProxyCardSize(),
         proxyGroupHeight: readProxyGroupHeight(),
         liveUpdateMode: readLiveUpdateMode(),
+        connectionColumns: readConnectionColumns(),
       },
     }
   } catch { throw new SettingsTransferError('storage') }
@@ -137,13 +158,15 @@ function readLocal(): SettingsDocument {
 function validate(value: unknown): { document: SettingsDocument | null; issues: string[] } {
   const issues: string[] = []
   if (!record(value) || !safeTree(value)) return { document: null, issues: ['file'] }
-  if (!ownKeys(value, ['format', 'version', 'exportedAt', 'servers', 'deviceAliases', 'proxySort', 'proxyTestSelections', 'preferences']) || value.format !== 'miboard-settings' || value.version !== 1
+  if (!ownKeys(value, ['format', 'version', 'exportedAt', 'servers', 'deviceAliases', 'proxySort', 'proxyTestSelections', 'providerAlerts', 'journalRetentions', 'preferences']) || value.format !== 'miboard-settings' || value.version !== 1
     || (value.exportedAt !== undefined && (!text(value.exportedAt, 64) || !Number.isFinite(Date.parse(value.exportedAt))))) issues.push('format/version')
   const servers: Server[] = []
   const deviceAliases: Aliases[] = []
   const proxySort: Sort[] = []
   const preferences: Preferences = {}
   const proxyTestSelections: NonNullable<SettingsDocument['proxyTestSelections']> = []
+  const providerAlerts: NonNullable<SettingsDocument['providerAlerts']> = []
+  const journalRetentions: NonNullable<SettingsDocument['journalRetentions']> = []
   const seen = new Set<string>()
   if (!Array.isArray(value.servers) || value.servers.length > 1000) issues.push('servers')
   else value.servers.forEach((entry, i) => {
@@ -179,7 +202,25 @@ function validate(value: unknown): { document: SettingsDocument | null; issues: 
       else { seen.add(url); proxyTestSelections.push({ backendUrl: url, mode: selection.mode, groups: [...selection.groups] }) }
     })
   }
-  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode'])) issues.push('preferences')
+  seen.clear()
+  if (value.providerAlerts !== undefined) {
+    if (!Array.isArray(value.providerAlerts) || value.providerAlerts.length > 1000) issues.push('providerAlerts')
+    else value.providerAlerts.forEach((entry, i) => {
+      const url = record(entry) ? backendUrl(entry.backendUrl) : null
+      if (!record(entry) || !ownKeys(entry, ['backendUrl', 'enabled']) || !url || seen.has(url) || typeof entry.enabled !== 'boolean') issues.push(`providerAlerts[${i}]`)
+      else { seen.add(url); providerAlerts.push({ backendUrl: url, enabled: entry.enabled }) }
+    })
+  }
+  seen.clear()
+  if (value.journalRetentions !== undefined) {
+    if (!Array.isArray(value.journalRetentions) || value.journalRetentions.length > 1000) issues.push('journalRetentions')
+    else value.journalRetentions.forEach((entry, i) => {
+      const url = record(entry) ? backendUrl(entry.backendUrl) : null
+      if (!record(entry) || !ownKeys(entry, ['backendUrl', 'retention']) || !url || seen.has(url) || !validJournalRetention(entry.retention)) issues.push(`journalRetentions[${i}]`)
+      else { seen.add(url); journalRetentions.push({ backendUrl: url, retention: entry.retention }) }
+    })
+  }
+  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode', 'connectionColumns'])) issues.push('preferences')
   else {
     if (p.theme !== undefined) { if (p.theme === 'system' || p.theme === 'light' || p.theme === 'dark') preferences.theme = p.theme; else issues.push('preferences.theme') }
     if (p.locale !== undefined) { if (p.locale === 'en' || p.locale === 'ru') preferences.locale = p.locale; else issues.push('preferences.locale') }
@@ -188,8 +229,13 @@ function validate(value: unknown): { document: SettingsDocument | null; issues: 
     if (p.proxyCardSize !== undefined) { if (validProxyCardSize(p.proxyCardSize)) preferences.proxyCardSize = p.proxyCardSize; else issues.push('preferences.proxyCardSize') }
     if (p.proxyGroupHeight !== undefined) { if (validProxyGroupHeight(p.proxyGroupHeight)) preferences.proxyGroupHeight = p.proxyGroupHeight; else issues.push('preferences.proxyGroupHeight') }
     if (p.liveUpdateMode !== undefined) { if (validLiveUpdateMode(p.liveUpdateMode)) preferences.liveUpdateMode = p.liveUpdateMode; else issues.push('preferences.liveUpdateMode') }
+    if (p.connectionColumns !== undefined) { if (validConnectionColumns(p.connectionColumns)) preferences.connectionColumns = [...p.connectionColumns]; else issues.push('preferences.connectionColumns') }
   }
-  return { document: issues.length ? null : { format: 'miboard-settings', version: 1, servers, deviceAliases, proxySort, preferences, ...(value.proxyTestSelections !== undefined ? { proxyTestSelections } : {}) }, issues }
+  return { document: issues.length ? null : { format: 'miboard-settings', version: 1, servers, deviceAliases, proxySort, preferences,
+    ...(value.proxyTestSelections !== undefined ? { proxyTestSelections } : {}),
+    ...(value.providerAlerts !== undefined ? { providerAlerts } : {}),
+    ...(value.journalRetentions !== undefined ? { journalRetentions } : {}),
+  }, issues }
 }
 function preview(document: SettingsDocument | null, issues: string[]): SettingsImportPreview {
   const counts = { servers: 0, aliases: 0, sorts: 0, preferences: 0, secrets: 0 }
@@ -222,10 +268,18 @@ function preview(document: SettingsDocument | null, issues: string[]): SettingsI
     const existing = current.proxyTestSelections?.find(item => item.backendUrl === selection.backendUrl)
     if (existing && JSON.stringify(existing) !== JSON.stringify(selection)) conflicts++
   }
+  for (const item of document.providerAlerts ?? []) {
+    const existing = current.providerAlerts?.find(entry => entry.backendUrl === item.backendUrl)
+    if ((existing?.enabled ?? true) !== item.enabled) conflicts++
+  }
+  for (const item of document.journalRetentions ?? []) {
+    const existing = current.journalRetentions?.find(entry => entry.backendUrl === item.backendUrl)
+    if ((existing?.retention ?? '24h') !== item.retention) conflicts++
+  }
   counts.servers = document.servers.length
   counts.aliases = document.deviceAliases.reduce((sum, item) => sum + Object.keys(item.names).length, 0)
   counts.sorts = document.proxySort.length
-  counts.preferences = Object.keys(document.preferences).filter((key) => key !== 'groups').length + Object.keys(document.preferences.groups ?? {}).length + (document.proxyTestSelections?.length ?? 0)
+  counts.preferences = Object.keys(document.preferences).filter((key) => key !== 'groups').length + Object.keys(document.preferences.groups ?? {}).length + (document.proxyTestSelections?.length ?? 0) + (document.providerAlerts?.length ?? 0) + (document.journalRetentions?.length ?? 0)
   counts.secrets = document.servers.filter((server) => server.secret !== undefined).length
   return { document, counts, conflicts, existingServers, invalid: 0, issues: [] }
 }
@@ -247,7 +301,7 @@ export function previewSettingsImport(input: string): SettingsImportPreview {
   return preview(checked.document, checked.issues)
 }
 
-/** One outer transaction also covers migration and the nested profile writers. No network or runtime stores. */
+/** One outer transaction also covers migration and the nested profile writers. No network or controller changes. */
 export function applySettingsImport(input: SettingsImportPreview): void {
   const checked = validate(input.document)
   if (!checked.document) throw new SettingsTransferError('invalid')
@@ -256,7 +310,9 @@ export function applySettingsImport(input: SettingsImportPreview): void {
   document.deviceAliases.forEach((item) => keys.add(aliasKey(item.backendUrl)))
   document.proxySort.forEach((item) => keys.add(sortKey(item)))
   document.proxyTestSelections?.forEach((item) => keys.add(proxyTestSelectionKey(item.backendUrl)))
-  const preferenceKeys: Record<string, string> = { latency: 'miboard.latency.v1', proxyCardSize: PROXY_CARD_SIZE_KEY, proxyGroupHeight: PROXY_GROUP_HEIGHT_KEY, liveUpdateMode: LIVE_UPDATE_MODE_KEY }
+  document.providerAlerts?.forEach((item) => keys.add(providerAlertsKey(item.backendUrl)))
+  document.journalRetentions?.forEach((item) => keys.add(journalRetentionKey(item.backendUrl)))
+  const preferenceKeys: Record<string, string> = { latency: 'miboard.latency.v1', proxyCardSize: PROXY_CARD_SIZE_KEY, proxyGroupHeight: PROXY_GROUP_HEIGHT_KEY, liveUpdateMode: LIVE_UPDATE_MODE_KEY, connectionColumns: CONNECTION_COLUMNS_KEY }
   Object.keys(document.preferences).forEach((key) => keys.add(preferenceKeys[key] ?? `miboard.${key}`))
   const original = new Map<string, string | null>()
   try { for (const key of keys) original.set(key, localStorage.getItem(key)) } catch { throw new SettingsTransferError('storage') }
@@ -278,12 +334,16 @@ export function applySettingsImport(input: SettingsImportPreview): void {
     }
     for (const item of document.proxySort) localStorage.setItem(sortKey(item), JSON.stringify({ key: item.key, direction: item.direction }))
     for (const item of document.proxyTestSelections ?? []) localStorage.setItem(proxyTestSelectionKey(item.backendUrl), JSON.stringify({ mode: item.mode, groups: item.groups }))
+    // Only the opt-in preference is portable; keep this browser's warning deduplication.
+    for (const item of document.providerAlerts ?? []) localStorage.setItem(providerAlertsKey(item.backendUrl), JSON.stringify({ ...readProviderAlertState(json(providerAlertsKey(item.backendUrl))), enabled: item.enabled }))
+    for (const item of document.journalRetentions ?? []) localStorage.setItem(journalRetentionKey(item.backendUrl), item.retention)
     const p = document.preferences
     if (p.groups !== undefined) localStorage.setItem('miboard.groups', JSON.stringify({ ...current.preferences.groups, ...p.groups }))
     if (p.latency !== undefined) localStorage.setItem('miboard.latency.v1', JSON.stringify(p.latency))
     if (p.proxyCardSize !== undefined) localStorage.setItem(PROXY_CARD_SIZE_KEY, p.proxyCardSize)
     if (p.proxyGroupHeight !== undefined) localStorage.setItem(PROXY_GROUP_HEIGHT_KEY, p.proxyGroupHeight)
     if (p.liveUpdateMode !== undefined) localStorage.setItem(LIVE_UPDATE_MODE_KEY, p.liveUpdateMode)
+    if (p.connectionColumns !== undefined) localStorage.setItem(CONNECTION_COLUMNS_KEY, JSON.stringify(p.connectionColumns))
     if (p.locale !== undefined) localStorage.setItem('miboard.locale', p.locale)
     if (p.theme === 'system') localStorage.removeItem('miboard.theme')
     else if (p.theme !== undefined) localStorage.setItem('miboard.theme', p.theme)
@@ -296,5 +356,10 @@ export function applySettingsImport(input: SettingsImportPreview): void {
       if (value !== null) { try { localStorage.setItem(key, value) } catch { restored = false } }
     }
     throw new SettingsTransferError(restored ? 'storage' : 'rollback')
+  }
+  // Long-lived alert inspection must not write a cached opt-in over the import,
+  // even if its initial storage read failed. Notify only after the full commit.
+  if (document.providerAlerts?.length && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PROVIDER_ALERT_PREFERENCES_CHANGED, { detail: document.providerAlerts.map(item => item.backendUrl) }))
   }
 }

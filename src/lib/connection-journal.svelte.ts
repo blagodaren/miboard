@@ -9,6 +9,10 @@ class ReactiveConnectionJournal {
     this.#journal.subscribe(() => { this.#revision++ })
     // Retention still expires while the controller is offline.
     setInterval(() => this.#journal.prune(), 60000)
+    // Backgrounding is usually observable before a mobile browser suspends or
+    // closes the document. pagehide also covers navigation and the back cache.
+    document.addEventListener('visibilitychange', () => { if (document.hidden) void this.#journal.flush() })
+    window.addEventListener('pagehide', () => { void this.#journal.flush() })
   }
   get entries() { this.#revision; return this.#journal.entries }
   get backendUrl() { this.#revision; return this.#journal.backendUrl }

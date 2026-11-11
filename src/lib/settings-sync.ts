@@ -1,5 +1,6 @@
 import { applySettingsImport, exportSettings, previewSettingsImport, type SettingsDocument, type SettingsImportPreview } from './settings-transfer'
 import { validProxyTestSelection, type ProxyTestSelection } from './proxy-test-selection'
+import type { JournalRetention } from './journal-preferences'
 
 export const SETTINGS_SYNC_KEY = 'miboard.settings.v1'
 export const MAX_SYNC_BYTES = 1024 * 1024
@@ -8,6 +9,8 @@ export type SyncData = {
   proxySort: Array<Omit<SettingsDocument['proxySort'][number], 'backendUrl'>>
   preferences: SettingsDocument['preferences']
   proxyTestSelection?: ProxyTestSelection
+  providerAlertsEnabled?: boolean
+  journalRetention?: JournalRetention
 }
 export type SyncDocument = { format: 'miboard-sync'; version: 1; revision: string; updatedAt: string; data: SyncData }
 export type SyncChange = { section: 'devices' | 'sorts' | 'preferences'; key: string; before: unknown; after: unknown; kind: 'add' | 'change' | 'remove' }
@@ -19,7 +22,7 @@ export type SyncPreview = {
   importPreview: SettingsImportPreview | null
 }
 export class SettingsSyncError extends Error {
-  constructor(public code: 'invalid' | 'size' | 'missing' | 'changed' | 'verify') {
+  constructor(public code: 'invalid' | 'size' | 'missing' | 'changed' | 'verify' | 'journalUnavailable') {
     super(code)
     this.name = 'SettingsSyncError'
   }
@@ -42,12 +45,14 @@ function importDocument(data: SyncData, backendUrl: string): SettingsDocument {
     proxySort: data.proxySort.map(sort => ({ ...sort, backendUrl })),
     preferences: data.preferences,
     ...(data.proxyTestSelection !== undefined ? { proxyTestSelections: [{ ...data.proxyTestSelection, backendUrl }] } : {}),
+    ...(data.providerAlertsEnabled !== undefined ? { providerAlerts: [{ backendUrl, enabled: data.providerAlertsEnabled }] } : {}),
+    ...(data.journalRetention !== undefined ? { journalRetentions: [{ backendUrl, retention: data.journalRetention }] } : {}),
   }
 }
 
 /** The existing transfer validator remains the single allowlist for names, sorts and preferences. */
 function checkedData(value: unknown, backendUrl: string): { data: SyncData; preview: SettingsImportPreview } {
-  if (!record(value) || !keys(value, ['deviceNames', 'proxySort', 'preferences', 'proxyTestSelection']) || !record(value.deviceNames)
+  if (!record(value) || !keys(value, ['deviceNames', 'proxySort', 'preferences', 'proxyTestSelection', 'providerAlertsEnabled', 'journalRetention']) || !record(value.deviceNames)
     || !Array.isArray(value.proxySort) || !record(value.preferences)
     || value.proxySort.some(sort => !record(sort) || !keys(sort, ['group', 'key', 'direction']))
     || (value.proxyTestSelection !== undefined && (!record(value.proxyTestSelection) || !keys(value.proxyTestSelection, ['mode', 'groups']) || !validProxyTestSelection(value.proxyTestSelection)))) throw new SettingsSyncError('invalid')
@@ -60,6 +65,8 @@ function checkedData(value: unknown, backendUrl: string): { data: SyncData; prev
       proxySort: document.proxySort.map(({ group, key, direction }) => ({ group, key, direction })),
       preferences: document.preferences,
       ...(document.proxyTestSelections?.[0] ? { proxyTestSelection: { mode: document.proxyTestSelections[0].mode, groups: document.proxyTestSelections[0].groups } } : {}),
+      ...(document.providerAlerts?.[0] ? { providerAlertsEnabled: document.providerAlerts[0].enabled } : {}),
+      ...(document.journalRetentions?.[0] ? { journalRetention: document.journalRetentions[0].retention } : {}),
     },
     preview,
   }
@@ -74,6 +81,8 @@ export function localSyncData(backendUrl: string): SyncData {
     proxySort: local.proxySort.filter(item => item.backendUrl === backendUrl).map(({ group, key, direction }) => ({ group, key, direction })),
     preferences: local.preferences,
     ...(testSelection ? { proxyTestSelection: { mode: testSelection.mode, groups: testSelection.groups } } : {}),
+    providerAlertsEnabled: local.providerAlerts?.find(item => item.backendUrl === backendUrl)?.enabled ?? true,
+    journalRetention: local.journalRetentions?.find(item => item.backendUrl === backendUrl)?.retention ?? '24h',
   }, backendUrl).data
 }
 
@@ -106,6 +115,8 @@ function flatten(data: SyncData): Map<string, { section: SyncChange['section']; 
     } else values.set('preferences:' + name, { section: 'preferences', key: name, value })
   }
   if (data.proxyTestSelection !== undefined) values.set('preferences:proxyTestSelection', { section: 'preferences', key: 'proxyTestSelection', value: data.proxyTestSelection })
+  if (data.providerAlertsEnabled !== undefined) values.set('preferences:providerAlertsEnabled', { section: 'preferences', key: 'providerAlertsEnabled', value: data.providerAlertsEnabled })
+  if (data.journalRetention !== undefined) values.set('preferences:journalRetention', { section: 'preferences', key: 'journalRetention', value: data.journalRetention })
   return values
 }
 
@@ -118,6 +129,8 @@ function mergedData(local: SyncData, remote: SyncData): SyncData {
       ...(remote.preferences.groups !== undefined ? { groups: { ...local.preferences.groups, ...remote.preferences.groups } } : {}),
     },
     ...(remote.proxyTestSelection ?? local.proxyTestSelection ? { proxyTestSelection: remote.proxyTestSelection ?? local.proxyTestSelection } : {}),
+    ...(remote.providerAlertsEnabled !== undefined || local.providerAlertsEnabled !== undefined ? { providerAlertsEnabled: remote.providerAlertsEnabled ?? local.providerAlertsEnabled } : {}),
+    ...(remote.journalRetention !== undefined || local.journalRetention !== undefined ? { journalRetention: remote.journalRetention ?? local.journalRetention } : {}),
   }
 }
 

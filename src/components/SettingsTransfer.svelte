@@ -4,6 +4,7 @@
   import { t, type MessageKey } from '../lib/i18n.svelte'
   import { notifications } from '../lib/notifications.svelte'
   import { applySettingsImport, exportSettings, MAX_SETTINGS_FILE_BYTES, previewSettingsImport, SettingsTransferError, type SettingsImportPreview } from '../lib/settings-transfer'
+  import { prepareJournalPreferences } from '../lib/journal-preferences'
   import Button from './Button.svelte'
 
   let includeSecrets = $state(false)
@@ -13,6 +14,8 @@
   let error = $state<MessageKey | null>(null)
   let saved = $state(false)
   let reading = $state(false)
+  let exporting = $state(false)
+  let journalWarning = $state(false)
   let selection = 0
   let active = true
   const backend = { ...core.backend }
@@ -38,20 +41,25 @@
     notifications.show({ id: exporting ? 'settings-transfer:export' : 'settings-transfer:import', tone: 'error', scope: backend.url,
       title: () => t('transfer.title'), message: () => t(key) })
   }
-  function download() {
-    if (!current()) return
+  async function download() {
+    if (!current() || exporting) return
+    const exportSecrets = includeSecrets
+    exporting = true
     error = null
     try {
-      const contents = exportSettings({ includeSecrets })
+      const journalReady = await prepareJournalPreferences()
+      if (!current()) return
+      const contents = exportSettings({ includeSecrets: exportSecrets })
       const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }))
       const link = document.createElement('a')
       link.href = url
       link.download = `miboard-settings-${new Date().toISOString().slice(0, 10)}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 0)
-      notifications.show({ id: 'settings-transfer:export', tone: 'success', scope: backend.url,
-        title: () => t('transfer.title'), message: () => t('transfer.exported') })
-    } catch (cause) { notifyError(cause, true) }
+      notifications.show({ id: 'settings-transfer:export', tone: journalReady ? 'success' : 'warning', scope: backend.url,
+        title: () => t('transfer.title'), message: () => t(journalReady ? 'transfer.exported' : 'transfer.journalUnavailable') })
+    } catch (cause) { if (current()) notifyError(cause, true) }
+    finally { if (active) exporting = false }
   }
   async function choose(event: Event) {
     const input = event.currentTarget as HTMLInputElement
@@ -61,12 +69,17 @@
     preview = null
     error = null
     saved = false
+    journalWarning = false
     fileName = file.name
     reading = true
     try {
       if (file.size > MAX_SETTINGS_FILE_BYTES) throw new SettingsTransferError('size')
       const contents = await file.text()
-      if (id === selection && current()) preview = previewSettingsImport(contents)
+      const journalReady = await prepareJournalPreferences()
+      if (id === selection && current()) {
+        preview = previewSettingsImport(contents)
+        journalWarning = !journalReady
+      }
     } catch (cause) {
       if (id === selection && current()) {
         if (cause instanceof SettingsTransferError && (cause.code === 'invalid' || cause.code === 'size')) error = errorKey(cause)
@@ -98,7 +111,7 @@
     </label>
     {#if includeSecrets}<p id="{inputId}-secrets-hint" class="mt-1 text-xs text-warning">{t('transfer.secretsHint')}</p>{/if}
     <div class="mt-4 flex flex-wrap gap-3">
-      <Button size="sm" onclick={download}>{t('transfer.export')}</Button>
+      <Button size="sm" disabled={exporting} onclick={download}>{t('transfer.export')}</Button>
       <Button size="sm" disabled={reading} onclick={() => fileInput.click()}>{t('transfer.import')}</Button>
       <input bind:this={fileInput} type="file" accept="application/json,.json" class="sr-only" tabindex="-1" aria-label={t('transfer.import')} aria-describedby="{inputId}-file-hint" onchange={choose} />
     </div>
@@ -106,6 +119,7 @@
 
     {#if preview}
       <div class="mt-5 border-t border-line pt-4" data-testid="transfer-preview">
+        {#if journalWarning}<p class="mb-3 text-xs leading-5 text-warning" role="status">{t('transfer.journalPreviewUnavailable')}</p>{/if}
         <h3 class="text-sm font-medium">{t('transfer.preview')}</h3>
         <p class="mt-1 break-all text-xs text-fg-3">{fileName}</p>
         {#if preview.invalid}

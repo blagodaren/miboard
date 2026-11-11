@@ -1,5 +1,33 @@
 # Журнал изменений
 
+## [0.1.6] — 2026-11-11
+
+### Русский
+
+- Журнал соединений сохраняет изменения пакетами раз в 5 секунд и при скрытии
+  или закрытии страницы. Запись без изменений больше не повторяется.
+- Ошибка отрисовки страницы показывает экран восстановления; навигация остаётся
+  доступной. Необработанные ошибки асинхронных действий выводятся уведомлением.
+- Страницы загружаются отдельными модулями. Карта и графики не входят в начальный
+  JavaScript экрана подключения; PWA сохраняет модули в фоне для работы офлайн.
+- Экспорт и синхронизация включают столбцы соединений, настройки оповещений
+  подписок и срок хранения журнала для каждого ядра.
+- Ошибки подключения различают смешанный HTTP/HTTPS-контент, некорректный JSON,
+  таймаут и отмену запроса.
+
+### English
+
+- Connection journal changes are batched every 5 seconds and flushed when the
+  page is hidden or closed. Unchanged snapshots are no longer written again.
+- Page render failures show recovery controls while navigation stays available.
+  Unhandled asynchronous action errors show a notification.
+- Pages load as separate modules. Maps and charts stay out of the setup screen's
+  initial JavaScript; the PWA caches modules in the background for offline use.
+- Export and sync include connection columns, subscription alert preferences
+  and per-core journal retention settings.
+- Connection errors distinguish mixed HTTP/HTTPS content, invalid JSON,
+  request timeouts and cancellation.
+
 ## [0.1.5] — 2026-11-10
 
 ### Русский
