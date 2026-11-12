@@ -31,7 +31,7 @@
       onOpenAutoFocus={() => { returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null }}
       onCloseAutoFocus={event => { if (returnFocus?.isConnected) { event.preventDefault(); returnFocus.focus({ preventScroll: true }) } }}>
       <header class="diagnostics-header">
-        <div class="min-w-0"><Dialog.Title class="text-base font-medium">{t('nodeDiagnostics.title')}</Dialog.Title><Dialog.Description class="mt-1 break-words text-[13px] text-fg-2">{node?.name ?? '—'}{node?.type ? ` · ${node.type}` : ''}</Dialog.Description></div>
+        <div class="min-w-0"><Dialog.Title class="text-base font-medium">{t('nodeDiagnostics.title')}</Dialog.Title><Dialog.Description class="diagnostics-description mt-1 text-[13px] text-fg-2" title={node?.name ?? '—'}>{node?.name ?? '—'}{node?.type ? ` · ${node.type}` : ''}</Dialog.Description></div>
         <Dialog.Close class={buttonClass({ variant: 'ghost', size: 'sm', class: 'shrink-0' })} aria-label={t('nodeDiagnostics.close')} data-testid="node-diagnostics-close"><IconClose size={18} strokeWidth={1.5} /></Dialog.Close>
       </header>
       <div class="diagnostics-scroll">
@@ -85,6 +85,7 @@
 <style>
   :global(.node-diagnostics-dialog) { position: fixed; top: 50%; left: 50%; z-index: 50; display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); max-height: min(90dvh, 1000px); transform: translate(-50%, -50%); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); color: var(--text); box-shadow: var(--shadow-float); }
   .diagnostics-header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+  :global(.diagnostics-description) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
   .diagnostics-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 24px 28px; }
   .diagnostics-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
   h3 { font-size: 14px; line-height: 20px; font-weight: 500; }

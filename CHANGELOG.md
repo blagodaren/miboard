@@ -1,5 +1,59 @@
 # Журнал изменений
 
+## [0.1.7] — 2026-11-13
+
+### Русский
+
+- **Управление ядрами.** Изменение уровня логов, IPv6, sniffing, параллельных TCP-подключений
+  и портов; обновление ядра, UI и геобаз через поддерживаемые API. Раздел «Ядра» показывает
+  сохранённые контроллеры и выполняет выбранные массовые действия с результатом по каждому
+  профилю. Изменение текущих настроек не сохраняет YAML; доступность команд зависит от ядра.
+- **Прокси и диагностика.** Именованные сцены выбора нод с предпросмотром, экспортом
+  и обменом через `/storage`, прямые ссылки на группы и матрица проверки URL через ноды.
+  Результат проверки — задержка HEAD-запроса ядра, а не подтверждение открытия страницы
+  в браузере; рядом доступны DNS-диагностика и наблюдавшиеся маршруты.
+- **История и подписки.** До 30 дней почасовых приращений трафика в IndexedDB по ядрам,
+  устройствам и доменам; именованные суточные снимки для обмена через `/storage`.
+  Пропуски наблюдения видны, снимки разных браузеров не суммируются. Прогноз квоты
+  использует свежие обновления метаданных подписки и учитывает сброс расхода и срок окончания.
+- **Действия и уведомления.** Закрытие соединений по точному фильтру с подтверждением
+  списка, прогрессом и отменой оставшихся запросов; экспорт соединений в CSV и логов
+  в CSV/TXT; горячие клавиши. Системные уведомления сообщают о недоступности ядра,
+  падении ноды и состоянии подписок после разрешения браузера. Наблюдение и накопление
+  истории работают, пока панель исполняется; установка PWA не включает постоянный мониторинг.
+- **Надёжность и адаптивность.** Словари языков загружаются отдельно, уменьшены затраты
+  на сохранение журнала и обновление логов, длинные таблицы соединений и правил
+  виртуализированы. Добавлена Content Security Policy. Исправлены перенос кнопок
+  подтверждения, длинные заголовки диалогов, раскрываемые строки аналитики и прокрутка
+  таблиц на узких экранах; форма настройки
+  задержки адаптируется к доступной ширине контейнера.
+
+### English
+
+- **Core management.** Edit log level, IPv6, sniffing, concurrent TCP connections and ports;
+  update the core, UI and geodata through supported APIs. The Cores page shows saved
+  controllers and runs selected batch actions with per-profile results. Runtime changes
+  do not save the YAML configuration; available commands depend on the core.
+- **Proxies and diagnostics.** Named node-selection scenes with previews, export and
+  sharing through `/storage`, direct links to groups and a URL-by-node check matrix.
+  Checks report the latency of a core HEAD request, not whether a page opens in a browser;
+  DNS diagnostics and observed routes are available alongside them.
+- **History and subscriptions.** Up to 30 days of hourly observed traffic deltas in IndexedDB
+  by core, device and domain, with named daily snapshots shared through `/storage`.
+  Observation gaps remain visible, and snapshots from different browsers are not added
+  together. Quota forecasts use fresh subscription metadata updates and account for
+  usage resets and expiration dates.
+- **Actions and notifications.** Close connections by an exact filter with a confirmed ID
+  snapshot, progress and cancellation of remaining requests; export connections to CSV
+  and logs to CSV/TXT; use keyboard shortcuts. Browser permission enables system alerts
+  for unavailable cores, failed nodes and subscription status. Monitoring and history
+  collection require the panel to keep running; installing the PWA does not enable
+  continuous background monitoring.
+- **Reliability and responsive layout.** Language dictionaries load separately, journal
+  writes and log rendering do less work, and long connection and rule tables are virtualized.
+  Added a Content Security Policy. Fixed confirmation button wrapping, long dialog headings,
+  expanded analytics rows and narrow-screen table scrolling; latency settings adapt to their container width.
+
 ## [0.1.6] — 2026-11-11
 
 ### Русский

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import { Tabs } from 'bits-ui'
   import { api, errorMessage, type Rule, type RuleProvider } from '../lib/api'
   import { count } from '../lib/format'
@@ -14,8 +14,9 @@
   import { runRuleProviderBatch, remainingRuleProviderNames } from '../lib/rule-provider-batch'
   import { core } from '../lib/core.svelte'
   import { IconChevron } from '../lib/icons'
+  import { measuredRuleRange, pinnedRuleIndices, ruleOffsets } from '../lib/rules-virtualization'
 
-  const LIMIT = 500
+  const VIRTUAL_THRESHOLD = 120
   type RuleTab = 'rules' | 'providers'
   const tabFromHash = (): RuleTab => new URLSearchParams(location.hash.split('?')[1] ?? '').get('tab') === 'providers' ? 'providers' : 'rules'
   let tab = $state<RuleTab>(tabFromHash())
@@ -33,6 +34,16 @@
   let viewportWidth = $state(0)
   const columns = $derived(viewportWidth >= 768 ? 4 : viewportWidth >= 640 ? 3 : 2)
   let expanded = $state<number | null>(null)
+  let focused = $state<number | null>(null)
+  let tableContainer = $state<HTMLDivElement | undefined>(undefined)
+  let tableScrollTop = $state(0)
+  let tableViewport = $state(600)
+  let tableHeaderHeight = $state(34)
+  let measuredHeights = $state.raw<Record<number, number>>({})
+  let detailHeight = $state(240)
+  const pendingHeights = new Map<number, number>()
+  let pendingDetail: number | null = null
+  let measurementFrame: number | null = null
   let providers = $state.raw<Record<string, RuleProvider> | null>(null)
   let providersLoading = $state(false)
   let providersError = $state.raw<Error | null>(null)
@@ -198,8 +209,12 @@
     }
   }
 
-  function toggle(index: number) {
+  async function toggle(index: number) {
+    const anchor = scrollAnchor()
     expanded = expanded === index ? null : index
+    detailHeight = 240
+    await tick()
+    restoreAnchor(anchor)
   }
 
   function setTab(next: RuleTab) {
@@ -291,10 +306,66 @@
       if (location.hash.split('?')[0].replace(/^#\/?/, '') === 'rules') setTab(tabFromHash())
     }
     window.addEventListener('hashchange', syncTab)
-    return () => { disposed = true; controller.abort(); window.removeEventListener('hashchange', syncTab) }
+    return () => { disposed = true; controller.abort(); if (measurementFrame !== null) cancelAnimationFrame(measurementFrame); window.removeEventListener('hashchange', syncTab) }
   })
 
   const filtered = $derived(orderedRules(rules, sort, query))
+  const virtualized = $derived(filtered.length > VIRTUAL_THRESHOLD)
+  const offsets = $derived(ruleOffsets(filtered.map(rule => {
+    const stats = ruleStats(rule)
+    const estimate = 61 + (!isRuleSet(rule) && rule.size && rule.size > 0 ? 16 : 0) + (stats?.hits !== null && stats?.hits !== undefined ? 16 : 0) + (stats?.disabled ? 16 : 0) + (viewportWidth < 640 ? 16 : 0)
+    return (measuredHeights[rule.i] ?? estimate) + (expanded === rule.i ? detailHeight : 0)
+  })))
+  const windowRows = $derived(measuredRuleRange(offsets, Math.max(0, tableScrollTop - tableHeaderHeight), Math.max(1, tableViewport - tableHeaderHeight)))
+  const renderedIndices = $derived(virtualized ? pinnedRuleIndices(windowRows.start, windowRows.end, filtered.length, [filtered.findIndex(rule => rule.i === expanded), filtered.findIndex(rule => rule.i === focused)]) : filtered.map((_, index) => index))
+  const bottomGap = $derived(virtualized && renderedIndices.length ? offsets[filtered.length] - offsets[renderedIndices[renderedIndices.length - 1] + 1] : 0)
+  function scrollAnchor() {
+    const index = measuredRuleRange(offsets, Math.max(0, tableScrollTop - tableHeaderHeight), 1, 0).start
+    return { id: filtered[index]?.i, offset: offsets[index] ?? 0 }
+  }
+  function restoreAnchor(anchor: { id: number | undefined; offset: number }) {
+    if (!virtualized || !tableContainer || tableScrollTop <= tableHeaderHeight || anchor.id === undefined) return
+    const index = filtered.findIndex(rule => rule.i === anchor.id)
+    if (index < 0) return
+    const delta = offsets[index] - anchor.offset
+    if (Math.abs(delta) > .25) { tableContainer.scrollTop += delta; tableScrollTop = tableContainer.scrollTop }
+  }
+  function queueMeasurement(key: number, height: number, detail: boolean) {
+    if (height <= 0 || disposed) return
+    if (detail) { if (expanded !== key || Math.abs(detailHeight - height) < .25) return; pendingDetail = height }
+    else { if (Math.abs((measuredHeights[key] ?? 0) - height) < .25) return; pendingHeights.set(key, height) }
+    if (measurementFrame !== null) return
+    measurementFrame = requestAnimationFrame(() => {
+      measurementFrame = null
+      if (disposed) return
+      const anchor = scrollAnchor()
+      if (pendingHeights.size) { measuredHeights = { ...measuredHeights, ...Object.fromEntries(pendingHeights) }; pendingHeights.clear() }
+      if (pendingDetail !== null) { detailHeight = pendingDetail; pendingDetail = null }
+      restoreAnchor(anchor)
+    })
+  }
+  function measureRow(node: HTMLTableRowElement, value: { key: number; detail?: boolean }) {
+    let data = value
+    const measure = () => queueMeasurement(data.key, node.getBoundingClientRect().height, data.detail ?? false)
+    const observer = new ResizeObserver(measure); observer.observe(node); measure()
+    return { update(next: typeof value) { data = next; measure() }, destroy() { observer.disconnect() } }
+  }
+  function trackFocus(event: FocusEvent) {
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-virtual-rule]') : null
+    focused = target ? Number(target.dataset.virtualRule) : null
+  }
+  function clearFocus() {
+    queueMicrotask(() => {
+      if (disposed) return
+      const target = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-virtual-rule]') : null
+      focused = target && tableContainer?.contains(target) ? Number(target.dataset.virtualRule) : null
+    })
+  }
+  $effect(() => {
+    query; sort
+    untrack(() => { tableScrollTop = 0; if (tableContainer) tableContainer.scrollTop = 0; focused = null })
+  })
+  $effect(() => { viewportWidth; untrack(() => { measuredHeights = {}; pendingHeights.clear() }) })
 </script>
 
 <svelte:window bind:innerWidth={viewportWidth} />
@@ -336,10 +407,11 @@
 {#if loading && !rules.length}
   <p class="text-fg-3">{t('rules.loading')}</p>
 {:else if rules.length || !error}
-  <div class="overflow-x-auto rounded-2xl border border-line bg-card">
-    <table class="w-full table-fixed text-[13px]">
+  {#if virtualized}<p class="mb-3 text-xs text-fg-3">{t('panelTools.virtual', { count: filtered.length })}</p>{/if}
+  <div class="rules-table overflow-x-auto rounded-2xl border border-line bg-card" class:virtual-table={virtualized} data-testid="rules-table" bind:this={tableContainer} bind:clientHeight={tableViewport} onscroll={event => tableScrollTop = event.currentTarget.scrollTop} onfocusin={trackFocus} onfocusout={clearFocus} role="region" aria-label={t('rules.title')}>
+    <table class="w-full table-fixed text-[13px]" aria-rowcount={filtered.length + 1}>
       <caption class="sr-only">{t('rules.title')}</caption>
-      <thead>
+      <thead bind:clientHeight={tableHeaderHeight}>
         <tr class="text-left text-xs text-fg-3">
           <th class="hidden w-16 px-4 py-2 text-right font-normal md:table-cell">{t('rules.number')}</th>
           <th class="hidden w-[22%] px-3 py-2 font-normal sm:table-cell">{t('rules.type')}</th>
@@ -348,10 +420,13 @@
         </tr>
       </thead>
       <tbody>
-        {#each filtered.slice(0, LIMIT) as r (r.i)}
+        {#each renderedIndices as rowIndex, renderedPosition (filtered[rowIndex].i)}
+          {@const r = filtered[rowIndex]}
+          {@const gap = virtualized ? offsets[rowIndex] - offsets[renderedPosition > 0 ? renderedIndices[renderedPosition - 1] + 1 : 0] : 0}
           {@const stats = ruleStats(r)}
           {@const serverIndex = ruleIndex(r)}
-          <tr class="border-t border-line {expanded === r.i ? 'bg-selected' : 'hover:bg-hover'}" data-testid="rule-row" data-rule-index={serverIndex ?? undefined} data-rule-disabled={stats?.disabled ?? undefined}>
+          {#if gap > 0}<tr class="rules-spacer" aria-hidden="true"><td colspan={columns} style:height={`${gap}px`}></td></tr>{/if}
+          <tr use:measureRow={{ key: r.i }} class="border-t border-line {expanded === r.i ? 'bg-selected' : 'hover:bg-hover'}" aria-rowindex={rowIndex + 2} data-virtual-rule={r.i} data-testid="rule-row" data-rule-index={serverIndex ?? undefined} data-rule-disabled={stats?.disabled ?? undefined}>
             <td class="num hidden px-4 py-2 text-right font-mono text-xs text-fg-3 md:table-cell">{count(r.i)}</td>
             <td class="hidden truncate px-3 py-2 font-mono text-xs text-fg-2 sm:table-cell" title={r.type}>{r.type}</td>
             <td class="px-3 py-2" title={r.payload}>
@@ -366,7 +441,7 @@
             </td>
             <td class="truncate px-4 py-2 text-fg-2" title={r.proxy}>{r.proxy}</td>
           </tr>
-            <tr id="rules-details-{r.i}" hidden={expanded !== r.i}>
+            <tr id="rules-details-{r.i}" use:measureRow={{ key: r.i, detail: true }} hidden={expanded !== r.i} data-virtual-rule={r.i}>
               <td colspan={columns} class="p-0">
                 {#if expanded === r.i}
                   <section class="border-t border-line bg-raised px-4 py-4 sm:px-5" aria-label={t('rules.stats.details', { number: r.i })}>
@@ -399,11 +474,9 @@
         {:else}
           <tr class="border-t border-line"><td colspan={columns} class="px-4 py-8 text-center text-fg-3">{t('rules.noResults')}</td></tr>
         {/each}
+        {#if bottomGap > 0}<tr class="rules-spacer" aria-hidden="true"><td colspan={columns} style:height={`${bottomGap}px`}></td></tr>{/if}
       </tbody>
     </table>
-    {#if filtered.length > LIMIT}
-      <p class="border-t border-line px-4 py-3 font-mono text-xs text-fg-3">{t('rules.limit', { limit: count(LIMIT) })}</p>
-    {/if}
   </div>
 {/if}
   </Tabs.Content>
@@ -414,3 +487,9 @@
       resumeCount={remainingProviderNames.length} onresume={() => void updateAllProviders('resume')} />
   </Tabs.Content>
 </Tabs.Root>
+
+<style>
+  .virtual-table { max-height: min(70dvh, 640px); overflow-y: auto; overflow-anchor: none; }
+  .virtual-table thead { position: sticky; top: 0; z-index: 1; background: var(--card); }
+  .rules-spacer > td { padding: 0; border: 0; }
+</style>

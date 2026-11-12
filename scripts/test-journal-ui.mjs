@@ -80,15 +80,17 @@ try {
   }, 'mock startup')
   browser = await launch()
 
-  async function session(locale = 'en', width = 1440, memory = false, initial = [a, b]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: locale === 'ru' ? 'dark' : 'light', reducedMotion: 'reduce' })
-    await stubAppUpdates(context)
-    await context.addInitScript(({ locale, origin, memory }) => {
-      localStorage.setItem('miboard.locale', locale)
-      localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.10': 'Work laptop' }))
-      localStorage.setItem('miboard.backends', JSON.stringify([{ id: 'unrelated-fixture', url: 'http://unrelated-fixture.invalid:9090', secret: 'fixture-only', name: 'Keep this profile' }]))
-      if (memory) Object.defineProperty(window, 'indexedDB', { configurable: true, get() { throw new DOMException('Blocked in fixture', 'SecurityError') } })
-    }, { locale, origin, memory })
+  async function session(locale = 'en', width = 1440, memory = false, initial = [a, b], sharedContext) {
+    const context = sharedContext ?? await browser.newContext({ viewport: { width, height: 1000 }, colorScheme: locale === 'ru' ? 'dark' : 'light', reducedMotion: 'reduce' })
+    if (!sharedContext) {
+      await stubAppUpdates(context)
+      await context.addInitScript(({ locale, origin, memory }) => {
+        localStorage.setItem('miboard.locale', locale)
+        localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.10': 'Work laptop' }))
+        localStorage.setItem('miboard.backends', JSON.stringify([{ id: 'unrelated-fixture', url: 'http://unrelated-fixture.invalid:9090', secret: 'fixture-only', name: 'Keep this profile' }]))
+        if (memory) Object.defineProperty(window, 'indexedDB', { configurable: true, get() { throw new DOMException('Blocked in fixture', 'SecurityError') } })
+      }, { locale, origin, memory })
+    }
     const page = await context.newPage()
     page.setDefaultTimeout(10000)
     page.on('pageerror', error => errors.push(error.message))
@@ -195,6 +197,93 @@ try {
   await poll(async () => (await record(lifecycle.page, origin))?.entries?.length === 2, 'backgrounding flushes pending closures', 3000)
   await lifecycle.context.close()
   console.log('PASS: pending journal batches survive immediate reload and flush when the document becomes hidden')
+
+  const inFlight = await session()
+  await inFlight.context.addInitScript(() => {
+    const complete = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'oncomplete')
+    Object.defineProperty(IDBTransaction.prototype, 'oncomplete', {
+      ...complete,
+      set(callback) {
+        complete.set.call(this, typeof callback !== 'function' ? callback : function(event) {
+          if (window.__holdJournalCompletionFixture && this.objectStoreNames.contains('backends')) {
+            window.__holdJournalCompletionFixture = false
+            window.__journalCompletionHeldFixture = true
+            return // Keep the app's first write promise in flight until reload.
+          }
+          callback.call(this, event)
+        })
+      },
+    })
+  })
+  await inFlight.page.reload()
+  await inFlight.page.getByTestId('active-connection-row').first().waitFor()
+  inFlight.send([b])
+  await inFlight.page.getByRole('radio', { name: 'Completed', exact: true }).click()
+  await poll(async () => await archived(inFlight.page).count() === 1, 'first batch before delaying completion')
+  await inFlight.page.evaluate(() => {
+    window.__holdJournalCompletionFixture = true
+    window.dispatchEvent(new Event('pagehide'))
+  })
+  await poll(() => inFlight.page.evaluate(() => window.__journalCompletionHeldFixture === true), 'first write completion held in flight')
+  inFlight.send([])
+  await poll(async () => await archived(inFlight.page).count() === 2, 'new closure while the first write is in flight')
+  await inFlight.page.reload()
+  await inFlight.page.getByRole('radio', { name: 'Completed', exact: true }).click()
+  await poll(async () => await archived(inFlight.page).count() === 2, 'pagehide stages the final batch despite an in-flight write')
+  await inFlight.context.close()
+  console.log('PASS: reload preserves a final batch even when the previous IndexedDB write promise is still in flight')
+
+  const foreground = await session()
+  const raceTime = Date.now()
+  await foreground.context.addInitScript(() => {
+    const interval = window.setInterval.bind(window)
+    window.__journalMaintenanceFixture = []
+    window.setInterval = (callback, timeout, ...args) => {
+      if (timeout === 60000 && typeof callback === 'function') window.__journalMaintenanceFixture.push(() => callback(...args))
+      return interval(callback, timeout, ...args)
+    }
+  })
+  await foreground.page.evaluate(({ origin, raceTime, expired }) => new Promise((resolve, reject) => {
+    localStorage.setItem('miboard.journal-retention.v1.' + encodeURIComponent(origin), '1h')
+    localStorage.setItem('miboard.live-update-mode', 'eco')
+    const request = indexedDB.open('miboard-connection-journal-v1', 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction('backends', 'readwrite')
+      transaction.oncomplete = () => { db.close(); resolve() }
+      transaction.onerror = () => reject(transaction.error)
+      transaction.objectStore('backends').put({ retention: '1h', entries: [{ connection: expired, firstSeenAt: raceTime - 3571000, lastSeenAt: raceTime - 3570500, closedAt: raceTime - 3570000 }] }, origin)
+    }
+  }), { origin, raceTime, expired: connection('expires', 'expires.journal.example', '192.168.1.30', 'edge') })
+  await foreground.page.reload()
+  await foreground.page.getByTestId('active-connection-row').first().waitFor()
+  const hidden = await session('en', 1440, false, [a, b], foreground.context)
+  await hidden.page.getByRole('radio', { name: 'Completed', exact: true }).click()
+  await poll(async () => await archived(hidden.page).count() === 1, 'stale tab loaded the earlier journal')
+  await hidden.page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  foreground.send([b])
+  await foreground.page.getByRole('radio', { name: 'Completed', exact: true }).click()
+  await poll(async () => await archived(foreground.page).filter({ hasText: 'a.journal.example' }).count() === 1, 'foreground closed connection')
+  await foreground.page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
+  await poll(async () => (await record(foreground.page, origin))?.entries?.some(row => row.connection.id === a.id), 'foreground closure persisted')
+  await hidden.page.evaluate(raceTime => {
+    // Execute the registered minute maintenance at its next deadline without
+    // making the suite wait a minute or advancing unrelated app timers.
+    Date.now = () => raceTime + 65000
+    for (const maintain of window.__journalMaintenanceFixture) maintain()
+    window.dispatchEvent(new Event('pagehide'))
+  }, raceTime)
+  await poll(async () => {
+    const saved = await record(hidden.page, origin)
+    return saved?.entries?.length === 1 && saved.entries[0].connection.id === a.id
+  }, 'hidden eco tab pruning preserves the foreground closure')
+  assert.match(await archived(hidden.page).innerText(), /a\.journal\.example/)
+  await foreground.context.close()
+  console.log('PASS: two real tabs share IndexedDB; hidden eco-mode minute cleanup preserves a newer foreground journal')
 
   const many = Array.from({ length: 105 }, (_, i) => connection(`paged-${i}`, `paged-${String(i).padStart(3, '0')}.journal.example`, '192.168.1.30', 'edge-paged'))
   const paging = await session('en', 1440, false, many)

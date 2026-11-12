@@ -37,7 +37,7 @@
 
 <div class="border-t border-line" data-testid="provider-node-list" aria-label={t('providers.nodesFor', { name })}>
   <div class="flex flex-wrap items-end gap-3 p-4 sm:px-5">
-    <div class="min-w-0 flex-1 basis-52" data-testid="provider-nodes-search"><SearchInput bind:value={query} placeholder={t('providers.searchNodes')} /></div>
+    <div class="min-w-0 flex-1 basis-52 sm:basis-64" data-testid="provider-nodes-search"><SearchInput bind:value={query} placeholder={t('providers.searchNodes')} /></div>
     <label class="flex min-w-0 flex-col gap-1 text-xs text-fg-3">
       <span>{t('providers.protocol')}</span>
       <select class={selectClass} bind:value={protocol} data-testid="provider-nodes-protocol">
@@ -59,7 +59,7 @@
   <div class="overflow-x-auto border-t border-line">
     <table class="w-full min-w-[640px] text-left text-xs">
       <thead class="bg-raised text-fg-3"><tr>
-        <th class="px-4 py-3 font-normal">{t('providers.nodeName')}</th>
+        <th class="min-w-48 px-4 py-3 font-normal">{t('providers.nodeName')}</th>
         <th class="px-3 py-3 font-normal">{t('providers.protocol')}</th>
         <th class="px-3 py-3 font-normal">{t('providers.nodeStatus')}</th>
         <th class="px-3 py-3 text-right font-normal">{t('providers.nodeDelay')}</th>
@@ -68,7 +68,7 @@
       <tbody>
         {#each rows as node, index (index)}
           <tr class="border-t border-line" data-testid="provider-node-row">
-            <td class="max-w-72 break-words px-4 py-3 font-mono [overflow-wrap:anywhere]"><button type="button" class="inline-flex min-h-11 items-center gap-2 rounded-control text-left text-fg hover:bg-hover sm:min-h-8" data-testid="provider-node-diagnostics" data-node={node.name} aria-label={t('nodeDiagnostics.open', { name: node.name })} onclick={() => inspect(node.name)}><span class="min-w-0 break-words">{node.name}</span><IconInfo class="size-3 shrink-0 text-fg-3" strokeWidth={1.5} aria-hidden="true" /></button></td>
+            <td class="min-w-48 max-w-72 break-words px-4 py-3 font-mono [overflow-wrap:anywhere]"><button type="button" class="inline-flex min-h-11 max-w-full items-center gap-2 rounded-control text-left text-fg hover:bg-hover sm:min-h-8" data-testid="provider-node-diagnostics" data-node={node.name} aria-label={t('nodeDiagnostics.open', { name: node.name })} onclick={() => inspect(node.name)}><span class="min-w-0 break-words">{node.name}</span><IconInfo class="size-3 shrink-0 text-fg-3" strokeWidth={1.5} aria-hidden="true" /></button></td>
             <td class="px-3 py-3 text-fg-2">{node.type || t('providers.unknownType')}</td>
             <td class="px-3 py-3 whitespace-nowrap {node.status === 'alive' ? 'text-good' : 'text-fg-2'}">{t(node.status === 'alive' ? 'providers.alive' : node.status === 'dead' ? 'providers.dead' : 'providers.unknown')}</td>
             <td class="num px-3 py-3 text-right font-mono whitespace-nowrap">{node.status === 'alive' && node.delay !== null ? t('proxies.delay', { delay: count(node.delay) }) : '—'}</td>

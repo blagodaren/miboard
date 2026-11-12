@@ -23,6 +23,7 @@
   import Brand from './Brand.svelte'
   import SidebarStats from './SidebarStats.svelte'
   import LiveUpdateNotice from './LiveUpdateNotice.svelte'
+  import IconHistory from '@lucide/svelte/icons/history'
 
   let { children }: { children: Snippet } = $props()
 
@@ -35,6 +36,8 @@
     { route: 'geography', icon: IconGeography },
     { route: 'rules', icon: IconRules },
     { route: 'logs', icon: IconLogs },
+    { route: 'history', icon: IconHistory },
+    { route: 'fleet', icon: IconServer },
     { route: 'settings', icon: IconSettings },
   ]
   const modes: { value: Mode; label: string }[] = $derived([

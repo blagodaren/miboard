@@ -4,12 +4,12 @@
 
 ## Скачать
 
-- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
-- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip) — основной архив. Все шрифты включены; внешний доступ к шрифтам не требуется.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist-cdn-fonts.zip) — дополнительный архив без файлов шрифтов. Они загружаются с `unpkg.com`.
 
 Для каждого архива есть контрольная сумма:
-[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip.sha256)
-и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip.sha256).
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip.sha256)
+и [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist-cdn-fonts.zip.sha256).
 
 CDN-варианту для загрузки шрифтов нужен доступ к `unpkg.com`. При недоступности
 CDN панель использует системные шрифты; цветные флаги на Windows могут быть
@@ -44,7 +44,7 @@ CDN панель использует системные шрифты; цвет�
 `node scripts/readme-screenshots.mjs`. Скрипт использует синтетические данные
 в изолированном fixture и сохраняет изображения в `docs/images/`.
 
-## Релиз 0.1.6
+## Релиз 0.1.7
 
 1. Запустить `npm run test:ui`. Проверки используют локальный mock, без подключения
    к пользовательскому контроллеру.
@@ -54,7 +54,7 @@ CDN панель использует системные шрифты; цвет�
 3. Запустить `npm run test:fonts` для обеих готовых сборок.
 4. Отправить проверенные исходники в `main` репозитория `blagodaren/miboard`.
    Сборки, архивы, снимки UI-проверок, `node_modules/` и `.env*` исключены из Git.
-5. Создать и отправить тег `v0.1.6`. Workflow сверит тег с `package.json`,
+5. Создать и отправить тег `v0.1.7`. Workflow сверит тег с `package.json`,
    повторит проверки и создаст GitHub release с обоими ZIP и контрольными суммами.
    Версии без суффикса становятся `latest`; версии с суффиксом остаются предварительными.
 
@@ -85,25 +85,16 @@ Svelte 5, Vite, Tailwind v4, bits-ui (база shadcn-svelte), lucide, uPlot, Ge
 
 По умолчанию интерфейс на английском, независимо от языка браузера. Русский можно выбрать на экране подключения или в **Settings → Appearance → Language**. Выбор хранится в `localStorage` под ключом `miboard.locale`. Переключение обновляет страницы, сообщения, заголовок вкладки, числа, время и единицы трафика без перезагрузки. При недоступном хранилище переключение работает до закрытия страницы.
 
-`src/lib/i18n.svelte.ts` содержит реестр языков и функцию `t()`. Словари в `src/lib/locales/` разделены по разделам приложения; `en.ts` и `ru.ts` собирают их вместе. Английский словарь задаёт типизированные ключи. Реактивность использует стандартные [$state и $derived Svelte 5](https://svelte.dev/docs/svelte/$derived), дополнительных зависимостей нет.
+`src/lib/i18n.svelte.ts` содержит реестр языков и функцию `t()`. Словари в `src/lib/locales/en/` и `src/lib/locales/ru/` разделены по разделам приложения; `en.ts` и `ru.ts` собирают каждый язык отдельно. Для первого отображения приложения импортируется только выбранный словарь. Затем сервис-воркер фоном кеширует все словари для работы без сети: оптимизация уменьшает стартовую цепочку исполнения, но не полную офлайн-загрузку. Английский словарь задаёт типизированные ключи. Реактивность использует стандартные [$state и $derived Svelte 5](https://svelte.dev/docs/svelte/$derived), дополнительных зависимостей нет.
 
 Для нового языка:
 
-1. Создать `src/lib/locales/fr.ts`. Полный перевод необязателен — отсутствующие сообщения берутся из English:
+1. Создать разделы в `src/lib/locales/fr/` и агрегатор `src/lib/locales/fr.ts` по образцу русских файлов. Все английские ключи обязательны; пока нет перевода, можно оставить английский текст. Исполняемые импорты должны оставаться внутри одного языка, чтобы сборщик создавал независимые чанки. Импорты `import type` из английских разделов проверяют ключи без загрузки другого словаря.
+
+2. Добавить динамический загрузчик в `src/lib/i18n.svelte.ts`:
 
    ```ts
-   import type { Messages } from '../i18n.svelte'
-
-   export default {
-     'nav.overview': 'Vue d’ensemble',
-     'common.language': 'Langue',
-   } satisfies Partial<Messages>
-   ```
-
-2. Импортировать словарь в `src/lib/i18n.svelte.ts` и добавить запись в `locales`:
-
-   ```ts
-   fr: { label: 'Français', intlLocale: 'fr-FR', dir: 'ltr', messages: fr },
+   fr: { label: 'Français', intlLocale: 'fr-FR', dir: 'ltr', load: () => import('./locales/fr') },
    ```
 
    Язык автоматически появится в обоих переключателях. Для письма справа налево доступно `dir: 'rtl'`.

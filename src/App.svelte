@@ -5,7 +5,6 @@
   import Shell from './components/Shell.svelte'
   import RoutePage from './components/RoutePage.svelte'
   import NotificationViewport from './components/NotificationViewport.svelte'
-  import ProviderAlerts from './components/ProviderAlerts.svelte'
   import { pwa } from './lib/pwa.svelte'
 
   onMount(() => core.boot())
@@ -40,5 +39,7 @@
 
 <NotificationViewport />
 {#if core.status === 'ok' || core.status === 'lost'}
-  {#key JSON.stringify([core.backend.url, core.backend.secret])}<ProviderAlerts backend={core.backend} />{/key}
+  {#key JSON.stringify([core.backend.url, core.backend.secret])}
+    {#await import('./components/ClientTools.svelte') then module}<module.default backend={core.backend} />{/await}
+  {/key}
 {/if}

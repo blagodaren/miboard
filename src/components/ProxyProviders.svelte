@@ -10,6 +10,7 @@
   import Button from './Button.svelte'
   import SearchInput from './SearchInput.svelte'
   import ProviderNodes from './ProviderNodes.svelte'
+  import SubscriptionForecast from './SubscriptionForecast.svelte'
 
   let { backend, providers, loadError, disabled = false, loading = false, onreload, onbusy, oninspect }: {
     backend: Backend
@@ -217,6 +218,7 @@
             <progress class="quota-progress mt-4" max="1" value={quota.ratio} aria-label={t('providers.quotaUsage', { used: bytes(subscription.used!), total: bytes(subscription.total!) })}></progress>
           {/if}
           {#if quota.exhausted}<p class="mt-2 text-xs text-warning">{t('providers.exhausted')}</p>{/if}
+          <SubscriptionForecast backendUrl={backend.url} name={row.name} provider={row.provider} />
         {:else}
           <p class="mt-4 text-xs text-fg-3">{t('providers.subscriptionUnknown')}</p>
         {/if}

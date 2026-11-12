@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { Tabs } from 'bits-ui'
   import { api, request as apiRequest, errorMessage, type Proxy, type ProxyProvider } from '../lib/api'
   import { core } from '../lib/core.svelte'
@@ -13,6 +13,7 @@
   import { delaySettings } from '../lib/latency.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import { runProxyGroupBatch } from '../lib/proxy-batch'
+  import { PROXY_GROUPS_KEY, readProxyGroups } from '../lib/proxy-groups'
   import { visibleProxyProviders } from '../lib/provider-tools'
   import { IconCheck, IconClose, IconChevron, IconZap, IconCopy } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
@@ -27,6 +28,9 @@
   import ProxyStability from '../components/ProxyStability.svelte'
   import ProxyProviders from '../components/ProxyProviders.svelte'
   import NodeDiagnostics from '../components/NodeDiagnostics.svelte'
+  import ProxyScenes from '../components/ProxyScenes.svelte'
+  import SiteChecks from '../components/SiteChecks.svelte'
+  import IconLink from '@lucide/svelte/icons/link'
   import Segmented from '../components/Segmented.svelte'
   import IconInfo from '@lucide/svelte/icons/info'
 
@@ -67,7 +71,9 @@
   let providerError = $state<string | null>(null)
   let stabilityBusy = $state(false)
   let providersBusy = $state(false)
-  const toolsBusy = $derived(stabilityBusy || providersBusy)
+  let scenesBusy = $state(false)
+  let sitesBusy = $state(false)
+  const toolsBusy = $derived(stabilityBusy || providersBusy || scenesBusy || sitesBusy)
   type MeasurementScope = { group?: string; provider?: string }
   type Measurement = { delay: number; history: string; request: number; name: string; settings: DelaySettings; scope: MeasurementScope }
   let measurements = $state<Record<string, Measurement>>({})
@@ -104,7 +110,7 @@
   let batch = $state<{ kind: 'groups' | 'nodes'; running: boolean; done: number; total: number; failed: number } | null>(null)
   const groupsTesting = $derived(Object.keys(testing).length > 0)
   const nodesTesting = $derived(Object.keys(nodeTesting).length > 0)
-  let open = $state<Record<string, boolean>>(loadOpen())
+  let open = $state.raw<Record<string, boolean>>(readProxyGroups())
   let sorting = $state<Record<string, ProxySort>>({})
   let selecting = $state<Record<string, boolean>>({})
   const nodesSelecting = $derived(Object.keys(selecting).length > 0)
@@ -190,19 +196,37 @@
     }
   }
 
-  function loadOpen(): Record<string, boolean> {
-    try {
-      return JSON.parse(localStorage.getItem('miboard.groups') ?? '{}')
-    } catch {
-      return {}
-    }
-  }
   function toggle(name: string, isOpen: boolean) {
-    open[name] = !isOpen
+    open = { ...open, [name]: !isOpen }
     try {
-      localStorage.setItem('miboard.groups', JSON.stringify(open))
+      localStorage.setItem(PROXY_GROUPS_KEY, JSON.stringify(open))
     } catch {
       /* ок */
+    }
+  }
+
+  const groupElementId = (name: string) => `proxy-group-${encodeURIComponent(name)}`
+  let linkedGroup = ''
+  async function revealLinkedGroup() {
+    const name = new URLSearchParams(location.hash.split('?')[1] ?? '').get('group')
+    if (!name || name === linkedGroup || !proxies[name]?.all || proxies[name].hidden) return
+    linkedGroup = name
+    query = ''; tab = 'groups'; open = { ...open, [name]: true }
+    await tick()
+    if (currentBackend()) document.getElementById(groupElementId(name))?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }
+  async function copyGroupLink(name: string) {
+    const url = new URL(location.href)
+    // Setup links may contain controller credentials. They must never enter copied group URLs.
+    url.search = ''
+    url.hash = `/proxies?${new URLSearchParams({ group: name })}`
+    try {
+      await navigator.clipboard.writeText(url.href)
+      if (currentBackend()) notifications.show({ title: () => t('scenes.linkCopied'), scope: backend.url })
+    } catch {
+      history.replaceState(null, '', url.href)
+      linkedGroup = ''; void revealLinkedGroup()
+      if (currentBackend()) notifications.show({ tone: 'warning', title: () => t('scenes.linkFailed'), scope: backend.url })
     }
   }
 
@@ -237,6 +261,7 @@
     const providersLoaded = await providers
     pendingLoads--
     if (active) metadataLoading = pendingLoads > 0
+    if (currentBackend()) void revealLinkedGroup()
     return providersLoaded
   }
 
@@ -266,7 +291,7 @@
       if (document.visibilityState === 'visible' && currentBackend() && !toolsBusy) void load()
     }
     document.addEventListener('visibilitychange', refreshVisible)
-    const syncTab = () => { if (location.hash.split('?')[0].replace(/^#\/?/, '') === 'proxies') setTab(tabFromHash()) }
+    const syncTab = () => { if (location.hash.split('?')[0].replace(/^#\/?/, '') === 'proxies') { setTab(tabFromHash()); linkedGroup = ''; void revealLinkedGroup() } }
     window.addEventListener('hashchange', syncTab)
     return () => {
       active = false
@@ -577,6 +602,12 @@
 
 <PageHeader title={t('proxies.title')} meta={tab === 'groups' ? t('proxies.groups', { count: groups.length }) : t('providers.count', { count: providerCount })} />
 
+<ProxyScenes {backend} disabled={stabilityBusy || providersBusy || sitesBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
+  onrunning={value => scenesBusy = value} oncomplete={() => { if (currentBackend()) void load() }} />
+<SiteChecks {backend} targets={stabilityTargets} initialUrl={delaySettings.value.url}
+  disabled={stabilityBusy || providersBusy || scenesBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
+  onrunning={value => sitesBusy = value} oncomplete={() => { if (currentBackend()) void load() }} />
+
 <Tabs.Root value={tab} onValueChange={changeTab} loop>
   <Tabs.List aria-label={t('providers.navLabel')} class="mb-5 flex gap-1 border-b border-line">
     <Tabs.Trigger value="groups" class="flex min-h-11 items-center gap-2 border-b-2 border-transparent px-4 text-[13px] text-fg-2 transition-colors hover:text-fg data-[state=active]:border-accent-ink data-[state=active]:font-medium data-[state=active]:text-fg">
@@ -652,11 +683,11 @@
   <div class="proxy-groups grid items-start gap-3" data-testid="proxy-groups-grid">
     {#each groups as g, i (g.name)}
       {@const nodes = visible(g)}
-      {@const isOpen = q ? nodes.length > 0 : (open[g.name] ?? i < 2)}
+      {@const isOpen = q ? nodes.length > 0 : (Object.hasOwn(open, g.name) ? open[g.name] : i < 2)}
       {@const selectable = SELECTABLE.has(g.type)}
       {@const order = sortingFor(g.name)}
       {#if !q || nodes.length}
-        <section class="proxy-group min-w-0 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-card shadow-[var(--shadow-panel)]">
+        <section id={groupElementId(g.name)} class="proxy-group min-w-0 scroll-mt-20 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-card shadow-[var(--shadow-panel)]">
           <div class="flex items-center gap-3 py-2 pl-2 pr-3">
             <button
               class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-hover"
@@ -674,6 +705,7 @@
               </span>
               <span class="proxy-group-count num shrink-0 font-mono text-xs text-fg-3">{count(g.all?.length ?? 0)}</span>
             </button>
+            <Button size="sm" variant="ghost" onclick={() => copyGroupLink(g.name)} aria-label={t('scenes.copyLink', { name: g.name })} title={t('scenes.copyLink', { name: g.name })}><IconLink size={16} strokeWidth={1.5} /></Button>
             <Button size="sm" variant="ghost" onclick={() => test(g)} disabled={toolsBusy || selectionBusy || !!progressFor(g.name) || nodesTesting || metadataLoading || !!batch?.running} aria-label={t('proxies.testGroup', { name: g.name })}>
               <IconZap strokeWidth={1.5} />
               <span class="hidden sm:inline" role="status">{progressFor(g.name) ? `${progressFor(g.name).ipv6 ? 'IPv6 · ' : ''}${t('latency.testProgress', { done: progressFor(g.name).done, total: progressFor(g.name).total })}` : t('proxies.latency')}</span>

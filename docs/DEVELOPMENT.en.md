@@ -4,12 +4,12 @@
 
 ## Downloads
 
-- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip) — the main archive. All fonts are included; loading them requires no external connection.
-- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip) — an alternative archive without font files. Fonts are loaded from `unpkg.com`.
+- [dist.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip) — the main archive. All fonts are included; loading them requires no external connection.
+- [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist-cdn-fonts.zip) — an alternative archive without font files. Fonts are loaded from `unpkg.com`.
 
 Each archive has a checksum:
-[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip.sha256)
-and [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist-cdn-fonts.zip.sha256).
+[dist.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip.sha256)
+and [dist-cdn-fonts.zip.sha256](https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist-cdn-fonts.zip.sha256).
 
 The CDN build needs access to `unpkg.com` to load fonts. If the CDN is unavailable,
 the dashboard uses system fonts; colored flags may be unavailable on Windows.
@@ -44,7 +44,7 @@ To reproduce the README screenshots, first run `npm run build`, then
 `node scripts/readme-screenshots.mjs`. The script uses synthetic data in an isolated
 fixture and writes the images to `docs/images/`.
 
-## Release 0.1.6
+## Release 0.1.7
 
 1. Run `npm run test:ui`. The checks use a local mock and do not connect
    to the user's controller.
@@ -54,7 +54,7 @@ fixture and writes the images to `docs/images/`.
 3. Run `npm run test:fonts` for both completed builds.
 4. Push the verified source to `main` in `blagodaren/miboard`.
    Builds, archives, UI test screenshots, `node_modules/` and `.env*` are excluded from Git.
-5. Create and push the `v0.1.6` tag. The workflow checks the tag against `package.json`,
+5. Create and push the `v0.1.7` tag. The workflow checks the tag against `package.json`,
    repeats validation and creates a GitHub release with both ZIPs and checksums.
    Versions without a suffix become `latest`; versions with a suffix remain prereleases.
 
@@ -92,29 +92,28 @@ messages, the browser tab title, numbers, times and traffic units without reload
 If storage is unavailable, the language selection works until the page is closed.
 
 `src/lib/i18n.svelte.ts` contains the language registry and the `t()` function.
-Dictionaries in `src/lib/locales/` are split by application section; `en.ts` and
-`ru.ts` assemble them. The English dictionary defines the typed message keys.
+Dictionaries in `src/lib/locales/en/` and `src/lib/locales/ru/` are split by
+application section; `en.ts` and `ru.ts` assemble each language separately.
+Only the selected dictionary is imported for the app's first render. The service
+worker later caches all dictionaries in the background for offline use; this
+optimization reduces the startup execution path, not that full offline download.
+The English dictionary defines the typed message keys.
 Reactivity uses standard [Svelte 5 `$state` and `$derived`](https://svelte.dev/docs/svelte/$derived),
 with no additional dependencies.
 
 To add a language:
 
-1. Create `src/lib/locales/fr.ts`. A complete translation is optional — missing
-   messages fall back to English:
+1. Create dictionary sections in `src/lib/locales/fr/` and an aggregate
+   `src/lib/locales/fr.ts`, following the Russian files. Every English key is
+   required; untranslated messages can retain their English text. Keep runtime
+   imports within one language so the bundler can produce independent chunks.
+   Type-only imports from the English sections preserve key validation without
+   downloading another dictionary.
+
+2. Add a dynamic loader in `src/lib/i18n.svelte.ts`:
 
    ```ts
-   import type { Messages } from '../i18n.svelte'
-
-   export default {
-     'nav.overview': 'Vue d’ensemble',
-     'common.language': 'Langue',
-   } satisfies Partial<Messages>
-   ```
-
-2. Import the dictionary in `src/lib/i18n.svelte.ts` and add an entry to `locales`:
-
-   ```ts
-   fr: { label: 'Français', intlLocale: 'fr-FR', dir: 'ltr', messages: fr },
+   fr: { label: 'Français', intlLocale: 'fr-FR', dir: 'ltr', load: () => import('./locales/fr') },
    ```
 
    The language appears in both selectors automatically. For right-to-left text,

@@ -9,6 +9,36 @@ export type NormalizedLog = {
   format: 'structured' | 'legacy'
 }
 
+/** O(1) ingestion; copy the newest rows only when the UI is ready to render. */
+export class LogBuffer<T> {
+  #rows: T[] = []
+  #next = 0
+  readonly capacity: number
+
+  constructor(capacity: number) {
+    if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError('Invalid log capacity')
+    this.capacity = capacity
+  }
+
+  push(row: T) {
+    this.#rows[this.#next] = row
+    this.#next = (this.#next + 1) % this.capacity
+  }
+
+  snapshot(): T[] {
+    const rows: T[] = []
+    for (let offset = 1; offset <= this.#rows.length; offset++) {
+      rows.push(this.#rows[(this.#next - offset + this.#rows.length) % this.#rows.length]!)
+    }
+    return rows
+  }
+
+  clear() {
+    this.#rows = []
+    this.#next = 0
+  }
+}
+
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 function displayValue(value: unknown): string | null {

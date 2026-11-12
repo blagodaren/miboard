@@ -79,6 +79,10 @@ function session(seed = {}, address = 'https://dashboard.test/', fetchResponse) 
       if (id === './connection-journal.svelte') return { connectionJournal: {
         activateBackend: async () => {}, observe() {}, pause() {},
       } }
+      // Hourly accounting and IndexedDB leases have their own unit/browser tests.
+      if (id === './long-history.svelte') return { longHistory: {
+        activateBackend: async () => {}, observe() {}, pause() {},
+      } }
       return require(id)
     },
   })

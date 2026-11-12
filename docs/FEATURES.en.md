@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.6/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -229,3 +229,116 @@ Expanded proxy groups show `emptyFallback` as the exit used when the core's filt
 Subscription warnings are on by default and configurable per server. They warn below 10% allowance or within three days of expiry, with separate exhausted/expired states. Metadata refreshes every ten minutes while visible without launching health checks. Duplicate warnings are suppressed across reloads and multiple providers are grouped. A closed dashboard does not monitor subscriptions.
 
 Tests: `npm run test:api-tools` and `npm run test:api-tools:ui`. Browser scenarios use isolated mocks, never the user's controller.
+
+## Runtime settings, upgrades and multiple cores
+
+**Settings → Connection and core → Runtime settings** edits the core log level, IPv6,
+sniffing, concurrent TCP connections and HTTP, SOCKS, mixed, redirect and TProxy ports.
+Only fields reported by the core are available. Inputs are validated before sending,
+port changes require confirmation, and `/configs` is reread to verify the result.
+These are process settings: PATCH does not save YAML, and restarting or loading a profile
+can replace them. Port 0 disables that listener.
+
+**Application and maintenance → Core upgrades** updates the executable, UI or geodata
+through `POST /upgrade`, `/upgrade/ui` and `/upgrade/geo`. Sources come from core
+configuration; availability depends on the core build and filesystem permissions.
+Updating UI can install a different dashboard if `external-ui-url` points to one.
+Updating the core's geodata does not replace MIBoard's separate local Geography database.
+A lost response is not treated as confirmed success: availability and version are checked
+again, and reloading the UI remains an explicit action. An installed PWA may retain the old
+shell in its service worker; check for an application update in the same settings section.
+
+**Cores** (`#/fleet`) checks saved profiles on demand for version, configuration access,
+connections and traffic counters without switching the active connection. Selected profiles
+support changing mode, closing connections and reloading configuration. Confirmation identifies
+the profiles; results and errors remain separate for each core. Cancellation stops remaining
+commands, while an already sent request may have completed. This uses multiple external
+controllers without adding an application server.
+
+## Scenes, group links and URL checks
+
+**Proxies → Node scenes** stores up to 20 named scenes per controller in browser localStorage.
+A scene preserves exact group choices, including a nested group rather than its selected leaf.
+Selector, Fallback and URLTest groups support restoration; when the core reports `fixed`,
+automatic groups preserve their pin or automatic-selection state. Preview identifies missing
+nodes, unsupported groups, unchanged choices and possible selection loops. Commands run
+sequentially in a safe order; partial success is not rolled back. Scenes can be deleted
+with confirmation or exported as JSON.
+
+Scenes can be explicitly pushed to the core and pulled in another browser through
+`/storage/miboard.scenes.v1`. Push replaces the shared copy; pull replaces local scenes,
+after a preview. State is rechecked before writing and read back afterwards. The document
+limit is 128 KiB; the API has no atomic concurrent-write lock. Mihomo limits the whole
+`/storage` store to 1 MiB and evicts older keys when full, including other panels' data.
+The per-document limit does not reserve space. Cores without `/storage`
+can still use local scenes.
+
+The link button in a group header copies `#/proxies?group=<name>`, expanding that group
+and scrolling to it. The copied URL excludes connection parameters and secrets; it uses
+the recipient browser's connection. The dashboard's own address remains in the link.
+
+**Check URLs through nodes** builds a matrix of up to five URLs and twenty nodes, including
+provider-only nodes. At most three requests run concurrently, the timeout is configurable
+from 100 to 30000 ms, and remaining checks can be cancelled. The core sends HEAD requests.
+An RTT result does not prove that a website loads in a browser: the endpoint does not return
+HTTP status, redirect chains or page content. **Inspect this domain** opens the existing DNS
+diagnostics and observed routing. DNS uses the core resolver rather than the selected node;
+latency checks do not simulate routing-rule evaluation.
+
+## Hourly history and shared daily snapshots
+
+**History** (`#/history`) retains up to 30 days of hourly traffic increments in IndexedDB,
+separately by core, device and destination domain/IP. This is separate from the closed-connection
+journal. The first snapshot, counter resets and recovery after a gap establish a new baseline;
+missing traffic is not reconstructed. Allocation across an hour boundary is estimated from
+the observation interval. A missing hour does not mean zero traffic.
+
+Storage is bounded to 24 entries per hourly dimension, including **Other**, and 10000 connections
+per processed snapshot. Smaller destinations are aggregated, so this is not a complete billing
+record. One tab records for each core within a browser to avoid duplication. If IndexedDB is
+unavailable, the UI reports tab-memory-only storage. The browser may remove site data;
+requesting persistent storage is not a substitute for a backup.
+
+A **named daily snapshot** can be saved on the core and read in another browser using its
+collector code. Days use UTC and snapshots are limited to 128 KiB. Replacing a snapshot requires
+reading it first, checking conflicts and verifying the saved result. Different browsers'
+snapshots are displayed separately and **never added together**, because they may observe
+the same traffic. Sharing requires core support for `/storage`.
+
+## System notifications and subscription forecasts
+
+**Settings → Application and maintenance → System notifications** requests browser permission
+and provides a test notification. HTTPS or localhost and a supported browser are required.
+Events cover an unavailable core, a failed node, subscription allowance and expiry.
+A node alert requires two new failed checks after a successful check; a previously connected
+core must remain unavailable for 15 seconds. Detection works only while the dashboard is
+executing and receiving data. Browsers may suspend background tabs; installing the PWA does
+not provide continuous monitoring.
+Core notifications identify their source host and path. Clicking one opens **Cores**,
+so an alert cannot open an unrelated node's details after the active connection changes.
+
+Provider cards show **Quota forecast**, estimating remaining days from changes in
+`subscriptionInfo` and the provider's `updatedAt` timestamp. At least two provider updates
+15 minutes apart are required. Rereading cached core metadata does not create a fresh sample.
+Data older than three days prompts a provider update; no depletion date is invented when
+there is no observed usage. Renewal, quota changes or a usage reset restart the calculation.
+The visible panel reads metadata every ten minutes; disabling subscription warnings does not
+disable this sampling.
+The forecast accounts for subscription expiry and does not treat panel-observed traffic
+as the subscription's complete usage.
+
+## Filtered closing, exports and keyboard shortcuts
+
+**Connections** supports exact filtering by device IP, destination domain/IP or node/group
+and closing the matching connections. Confirmation captures the IDs at that moment; connections
+created later are excluded. Progress and partial failures are reported, and remaining commands
+can be stopped. Client applications may immediately reconnect.
+
+Connection CSV and log CSV/TXT exports include the entire filtered selection captured by the
+panel, including rows outside the visible viewport or page. Export does not retrieve missing
+history from the core. Files may contain observed addresses and messages. Large active-connection
+tables use virtualization: all matches remain accessible by scrolling while only part of the
+table is rendered at a time.
+
+Outside input fields and dialogs, `/` focuses search, `Alt+1…9` switches sections, and `?`
+opens shortcut help. Keyboard shortcuts do not execute core commands.

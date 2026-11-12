@@ -1,5 +1,5 @@
 import { mount } from 'svelte'
 import './app.css'
-import Root from './Root.svelte'
+import Bootstrap from './Bootstrap.svelte'
 
-export default mount(Root, { target: document.getElementById('app')! })
+export default mount(Bootstrap, { target: document.getElementById('app')! })

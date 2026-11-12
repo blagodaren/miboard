@@ -51,6 +51,57 @@ async function route(page, value) {
 async function noOverflow(page, label) {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), label)
 }
+async function analysisGeometry(opener) {
+  return opener.evaluate(button => {
+    const row = button.closest('tr'), table = row.closest('table')
+    const rect = element => { const box = element.getBoundingClientRect(); return { left: box.left, right: box.right, width: box.width } }
+    const visible = cells => [...cells].filter(cell => cell.getBoundingClientRect().width > 0)
+    const headers = visible(table.tHead.rows[0].cells).map(cell => {
+      const content = cell.querySelector('button') ?? (cell.querySelector('.sr-only') ? null : cell)
+      const range = document.createRange()
+      if (content) range.selectNodeContents(content)
+      return { ...rect(cell), label: cell.textContent.trim(), text: content ? rect(range) : null }
+    })
+    const details = document.getElementById(button.getAttribute('aria-controls'))
+    return { headers, cells: visible(row.cells).map(rect), table: rect(table), details: details && !details.hidden ? rect(details.cells[0]) : null }
+  })
+}
+async function checkAnalysisExpansionGeometry(page) {
+  const viewport = page.viewportSize()
+  const opener = page.locator('tbody').getByRole('button', { name: 'site-0.example', exact: true })
+  await opener.waitFor()
+  const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  try {
+    for (const [width, columns] of [[320, 4], [1024, 5], [1440, 7]]) {
+      await page.setViewportSize({ width, height: 600 })
+      await settle()
+      // On desktop sizes the details remain open across the breakpoint change.
+      let collapsed, expanded
+      if (await opener.getAttribute('aria-expanded') === 'true') {
+        expanded = await analysisGeometry(opener)
+        await opener.click(); collapsed = await analysisGeometry(opener)
+        await opener.click()
+      } else {
+        collapsed = await analysisGeometry(opener)
+        await opener.click(); expanded = await analysisGeometry(opener)
+      }
+      assert.equal(expanded.headers.length, columns, `${width}px: visible headers`)
+      assert.equal(expanded.cells.length, columns, `${width}px: visible data columns`)
+      assert.ok(expanded.cells[0].width >= collapsed.cells[0].width - 1, `${width}px: expanding details must not squeeze the domain column (${collapsed.cells[0].width} -> ${expanded.cells[0].width})`)
+      expanded.headers.forEach((header, index) => {
+        const cell = expanded.cells[index]
+        assert.ok(Math.abs(header.left - cell.left) <= 1 && Math.abs(header.width - cell.width) <= 1, `${width}px: header/data alignment for ${header.label}`)
+        if (header.text) assert.ok(header.text.left >= header.left - 1 && header.text.right <= header.right + 1, `${width}px: header text must not spill into adjacent columns: ${header.label}`)
+      })
+      assert.ok(expanded.details && Math.abs(expanded.details.width - expanded.table.width) <= 1, `${width}px: expanded details cover the table width`)
+      await noOverflow(page, `${width}px: expanded analysis fits the viewport`)
+    }
+    console.log('PASS: expanded Analysis preserves domain width and aligned headers at 320px, then resizes open details to 1024/1440px')
+  } finally {
+    if (await opener.getAttribute('aria-expanded') === 'true') await opener.click()
+    await page.setViewportSize(viewport)
+  }
+}
 
 try {
   const port = await freePort()
@@ -90,6 +141,7 @@ try {
       await page.getByRole('searchbox').fill('no-matching-domain')
       assert.equal(await page.getByTestId('analysis-export-domains').isDisabled(), true)
       await page.getByRole('searchbox').fill('')
+      if (locale === 'ru' && theme === 'light') await checkAnalysisExpansionGeometry(page)
       await page.getByRole('button', { name: locale === 'en' ? /^Proxies\s/ : /^Прокси\s/ }).click()
       await page.locator('tbody').getByRole('button', { name: 'exit-a', exact: true }).click()
       assert.equal((await exportLines(page, 'analysis-detail-export-domains')).length, 36)

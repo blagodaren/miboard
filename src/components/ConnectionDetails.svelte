@@ -113,7 +113,7 @@
       <header class="dialog-header">
         <div class="dialog-heading">
           <Dialog.Title class="dialog-title"><IconConnections size={16} strokeWidth={1.5} aria-hidden="true" />{t('connectionDetails.title')}</Dialog.Title>
-          <Dialog.Description class="dialog-description">{title}</Dialog.Description>
+          <Dialog.Description class="dialog-description" {title}>{title}</Dialog.Description>
         </div>
         <Dialog.Close class={buttonClass({ variant: 'ghost', size: 'sm', class: 'close-details' })} aria-label={t('connectionDetails.close')} data-testid="connection-details-close"><IconClose size={18} strokeWidth={1.5} aria-hidden="true" /></Dialog.Close>
       </header>
@@ -197,7 +197,7 @@
   .dialog-heading { min-width: 0; }
   :global(.dialog-title) { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 500; line-height: 24px; }
   :global(.dialog-title svg) { color: var(--text-3); flex: none; }
-  :global(.dialog-description) { margin-top: 4px; color: var(--text-2); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+  :global(.dialog-description) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; margin-top: 4px; overflow: hidden; color: var(--text-2); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
   :global(.close-details) { width: 36px; flex: none; padding: 0; }
   .dialog-toolbar { display: flex; flex: none; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 0 24px 16px; border-bottom: 1px solid var(--line); }
   .dialog-scroll { min-height: 0; padding: 20px 24px 28px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }

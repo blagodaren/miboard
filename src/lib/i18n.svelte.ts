@@ -1,5 +1,4 @@
-import en from './locales/en'
-import ru from './locales/ru'
+import type en from './locales/en'
 import type { Message, TranslationParams } from './i18n-types'
 
 export type MessageKey = keyof typeof en
@@ -9,13 +8,14 @@ type LocaleDefinition = {
   label: string
   intlLocale: string
   dir: 'ltr' | 'rtl'
-  messages: Partial<Messages>
+  load: () => Promise<{ default: Messages }>
 }
 
-// Add each language here; omitted messages fall back to English.
+// Dictionaries must be complete, so opening a non-English locale never needs
+// to fetch the English dictionary as well. Type-only imports erase at build time.
 export const locales = {
-  en: { label: 'English', intlLocale: 'en-US', dir: 'ltr', messages: en },
-  ru: { label: 'Русский', intlLocale: 'ru-RU', dir: 'ltr', messages: ru },
+  en: { label: 'English', intlLocale: 'en-US', dir: 'ltr', load: () => import('./locales/en') },
+  ru: { label: 'Русский', intlLocale: 'ru-RU', dir: 'ltr', load: () => import('./locales/ru') },
 } satisfies Record<string, LocaleDefinition>
 
 export type Locale = keyof typeof locales
@@ -32,6 +32,10 @@ function isLocale(value: unknown): value is Locale {
 
 class I18n {
   #locale = $state<Locale>(DEFAULT_LOCALE)
+  #messages = $state.raw<Messages | null>(null)
+  #pending = $state<Locale | null>(null)
+  #request = 0
+  #loaded = new Map<Locale, Promise<Messages>>()
 
   constructor() {
     try {
@@ -51,13 +55,55 @@ class I18n {
     return locales[this.#locale].intlLocale
   }
 
-  set(value: string) {
-    this.#locale = isLocale(value) ? value : DEFAULT_LOCALE
-    this.#updateDocument()
+  get selectedLocale(): Locale {
+    return this.#pending ?? this.#locale
+  }
+
+  get loading(): boolean {
+    return this.#pending !== null
+  }
+
+  get messages(): Messages {
+    if (!this.#messages) throw new Error('Translations are not initialized')
+    return this.#messages
+  }
+
+  initialize() {
+    return this.set(this.#locale)
+  }
+
+  async set(value: string): Promise<boolean> {
+    const locale = isLocale(value) ? value : DEFAULT_LOCALE
+    const request = ++this.#request
+    if (locale === this.#locale && this.#messages) {
+      this.#pending = null
+      return true
+    }
+    this.#pending = locale
     try {
-      localStorage.setItem(LOCALE_STORAGE_KEY, this.#locale)
-    } catch {
-      // The language still changes when persistence is unavailable.
+      let loaded = this.#loaded.get(locale)
+      if (!loaded) {
+        loaded = locales[locale].load().then(module => module.default)
+        this.#loaded.set(locale, loaded)
+        void loaded.catch(() => { if (this.#loaded.get(locale) === loaded) this.#loaded.delete(locale) })
+      }
+      const messages = await loaded
+      // A slower request must not undo a later language selection.
+      if (request !== this.#request) return false
+      this.#messages = messages
+      this.#locale = locale
+      this.#updateDocument()
+      try {
+        localStorage.setItem(LOCALE_STORAGE_KEY, locale)
+      } catch {
+        // The language still changes when persistence is unavailable.
+      }
+      return true
+    } catch (error) {
+      if (request !== this.#request) return false
+      throw error
+    } finally {
+      if (request === this.#request) this.#pending = null
     }
   }
 
@@ -73,14 +119,12 @@ const pluralRules = new Map<string, Intl.PluralRules>()
 const numberFormats = new Map<string, Intl.NumberFormat>()
 
 export function t(key: MessageKey, params: TranslationParams = {}): string {
-  const messages: Partial<Messages> = locales[i18n.locale].messages
-  const translated = messages[key]
-  const message: Message = translated ?? en[key]
+  const message: Message = i18n.messages[key]
   let template: string
   if (typeof message === 'string') {
     template = message
   } else {
-    const locale = translated === undefined ? locales[DEFAULT_LOCALE].intlLocale : i18n.intlLocale
+    const locale = i18n.intlLocale
     let rules = pluralRules.get(locale)
     if (!rules) pluralRules.set(locale, (rules = new Intl.PluralRules(locale)))
     const category = rules.select(typeof params.count === 'number' ? params.count : 0)

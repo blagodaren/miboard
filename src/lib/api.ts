@@ -768,10 +768,10 @@ export const api = {
     request<{ providers: Record<string, RuleProvider> }>('/providers/rules', { signal }, b),
   updateRuleProvider: (name: string, b?: Backend, signal?: AbortSignal) =>
     request<void>(`/providers/rules/${encodeURIComponent(name)}`, { method: 'PUT', timeout: 30000, signal }, b),
-  closeConnection: (id: string) => request(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  closeConnection: (id: string, b?: Backend, signal?: AbortSignal) => request(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE', signal }, b),
   closeSmartConnection: (id: string, b?: Backend) =>
     request(`/connections/smart/${encodeURIComponent(id)}`, { method: 'DELETE' }, b),
-  closeAll: () => request('/connections', { method: 'DELETE' }),
+  closeAll: (b?: Backend, signal?: AbortSignal) => request('/connections', { method: 'DELETE', signal }, b),
   flushFakeIp: () => request('/cache/fakeip/flush', { method: 'POST' }),
   flushDns: () => request('/cache/dns/flush', { method: 'POST' }),
   flushSmart: (config?: string, b?: Backend) =>

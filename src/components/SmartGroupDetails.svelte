@@ -118,8 +118,8 @@
         <p class="mt-3 break-words text-[13px] text-bad" role="alert">{errorMessage(error)}</p>
       {:else if weights.length}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard focus lets users scroll the bounded weights table.) -->
-        <div class="mt-3 max-h-64 overflow-y-auto rounded-lg border border-line bg-card" tabindex="0" role="region" aria-label={`${t('prizrak.weights')}: ${group.name}`}>
-          <table class="w-full table-fixed text-[13px]">
+        <div class="mt-3 max-h-64 overflow-auto rounded-lg border border-line bg-card" tabindex="0" role="region" aria-label={`${t('prizrak.weights')}: ${group.name}`}>
+          <table class="w-full min-w-[420px] table-fixed text-[13px]">
             <thead class="sticky top-0 bg-[var(--table-head)] text-xs text-fg-2">
               <tr>
                 <th scope="col" class="px-3 py-2 text-left font-normal">{t('prizrak.node')}</th>

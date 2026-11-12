@@ -1,6 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { matchesLog, normalizeLog, subscribeLogs, type LogStream, type NormalizedLog } from '../src/lib/logs.ts'
+import { LogBuffer, matchesLog, normalizeLog, subscribeLogs, type LogStream, type NormalizedLog } from '../src/lib/logs.ts'
+
+test('log bursts retain only the newest rows in order and leave displayed snapshots stable', () => {
+  const buffer = new LogBuffer<number>(1000)
+  assert.deepEqual(buffer.snapshot(), [])
+  buffer.push(0); buffer.push(1)
+  const displayed = buffer.snapshot()
+  assert.deepEqual(displayed, [1, 0])
+  for (let index = 2; index < 10005; index++) buffer.push(index)
+  assert.deepEqual(buffer.snapshot(), Array.from({ length: 1000 }, (_, index) => 10004 - index))
+  assert.deepEqual(displayed, [1, 0])
+  buffer.clear()
+  assert.deepEqual(buffer.snapshot(), [])
+  buffer.push(42)
+  assert.deepEqual(buffer.snapshot(), [42])
+})
 
 test('structured logs preserve the core clock and normalize warn with typed fields', () => {
   const log = normalizeLog({ time: '23:01:02', level: 'warn', message: 'Connection failed', fields: [{ key: 'host', value: 'example.org' }, { key: 'attempt', value: 0 }, { key: 'connected', value: false }] }, 1234)

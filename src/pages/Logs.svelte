@@ -3,12 +3,13 @@
   import { core } from '../lib/core.svelte'
   import { t, i18n } from '../lib/i18n.svelte'
   import { count } from '../lib/format'
-  import { matchesLog, subscribeLogs, type LogLevel, type NormalizedLog } from '../lib/logs'
+  import { LogBuffer, matchesLog, subscribeLogs, type LogLevel, type NormalizedLog } from '../lib/logs'
   import { IconChevron, IconPause, IconPlay } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
   import Button from '../components/Button.svelte'
   import SearchInput from '../components/SearchInput.svelte'
   import Segmented from '../components/Segmented.svelte'
+  import { csvDocument, downloadText } from '../lib/table-tools'
 
   type Row = NormalizedLog & { id: number }
   const CAP = 1000
@@ -20,17 +21,46 @@
   let online = $state(false)
   let format = $state<NormalizedLog['format'] | null>(null)
   let seq = 0
+  const buffer = new LogBuffer<Row>(CAP)
+  let flushTimer: ReturnType<typeof setTimeout> | undefined
+
+  function flushLines() {
+    if (flushTimer !== undefined) clearTimeout(flushTimer)
+    flushTimer = undefined
+    lines = buffer.snapshot()
+  }
+
+  function clearLines() {
+    if (flushTimer !== undefined) clearTimeout(flushTimer)
+    flushTimer = undefined
+    buffer.clear()
+    lines = []
+    field = ''
+  }
+
+  function togglePaused() {
+    if (!paused) flushLines()
+    paused = !paused
+  }
 
   $effect(() => {
     // A controller switch must dispose its subscription and discard its rows.
     const controller = core.backend.url + core.backend.secret
     const lvl = level
     if (!controller) return
-    lines = []; field = ''; format = null; online = false
-    return subscribeLogs(stream, lvl, line => {
+    clearLines(); format = null; online = false
+    const stop = subscribeLogs(stream, lvl, line => {
       format = line.format
-      if (!paused) lines = [{ ...line, id: seq++ }, ...lines].slice(0, CAP)
+      if (paused) return
+      buffer.push({ ...line, id: seq++ })
+      if (flushTimer === undefined) flushTimer = setTimeout(flushLines, 100)
     }, state => { online = state })
+    return () => {
+      stop()
+      if (flushTimer !== undefined) clearTimeout(flushTimer)
+      flushTimer = undefined
+      buffer.clear()
+    }
   })
 
   const shown = $derived(lines.filter(line => matchesLog(line, query, field)))
@@ -50,10 +80,12 @@
     <div class="w-full min-w-0 sm:w-auto" title={t('logDetails.levelHint')}>
       <Segmented full label={t('logs.level')} value={level} options={levels} onchange={v => level = v} />
     </div>
-    <Button size="sm" onclick={() => paused = !paused} aria-pressed={paused}>
+    <Button size="sm" onclick={togglePaused} aria-pressed={paused}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('logs.resume')}{:else}<IconPause strokeWidth={1.5} />{t('logs.pause')}{/if}
     </Button>
-    <Button size="sm" variant="ghost" onclick={() => { lines = []; field = '' }}>{t('logs.clear')}</Button>
+    <Button size="sm" variant="ghost" onclick={clearLines}>{t('logs.clear')}</Button>
+    <Button size="sm" disabled={!shown.length} title={t('panelTools.exportHint')} onclick={() => downloadText('miboard-logs.txt', shown.map(line => `${new Date(line.receivedAt).toISOString()} [${line.level}] ${line.message}${line.fields.length ? ' ' + JSON.stringify(line.fields) : ''}`).join('\n'))}>{t('panelTools.logText')}</Button>
+    <Button size="sm" disabled={!shown.length} title={t('panelTools.exportHint')} onclick={() => downloadText('miboard-logs.csv', csvDocument(['received_at', 'core_time', 'level', 'message', 'fields'], shown.map(line => [new Date(line.receivedAt).toISOString(), line.coreTime, line.level, line.message, JSON.stringify(line.fields)])), 'text/csv;charset=utf-8')}>{t('panelTools.csv')}</Button>
   {/snippet}
 </PageHeader>
 

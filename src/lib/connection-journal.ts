@@ -10,8 +10,15 @@ export type JournalEntry = {
   closedAt: number
   afterGap?: boolean
 }
-export type JournalRecord = { retention: JournalRetention; entries: JournalEntry[] }
-export type JournalStore = { read: (backend: string) => Promise<unknown>; write: (backend: string, record: JournalRecord) => Promise<void> }
+type JournalReset = { id: string; at: number }
+export type JournalRecord = { retention: JournalRetention; entries: JournalEntry[]; reset?: JournalReset; expiredBefore?: number; retentionChangedAt?: number }
+export type JournalWriteOptions = { now: number; processedAt?: number; clear?: JournalReset; retention?: JournalRetention }
+export type JournalStore = {
+  /** Writes synchronously stage durable operations and serialize them in storage. */
+  stagesImmediately?: boolean
+  read: (backend: string) => Promise<unknown>
+  write: (backend: string, record: JournalRecord, options: JournalWriteOptions) => Promise<JournalRecord | void>
+}
 export const JOURNAL_LIMIT = 5000
 export const JOURNAL_ACTIVE_LIMIT = 10000
 export const JOURNAL_DB_NAME = 'miboard-connection-journal-v1'
@@ -80,6 +87,35 @@ export function retainJournal(values: readonly unknown[], retention: JournalRete
   return [...entries.values()].sort((a, b) => b.closedAt - a.closedAt || b.lastSeenAt - a.lastSeenAt).slice(0, JOURNAL_LIMIT)
 }
 
+function journalReset(value: unknown): JournalReset | undefined {
+  if (!value || typeof value !== 'object') return
+  const reset = value as JournalReset
+  if (typeof reset.id === 'string' && reset.id.length <= 128 && Number.isFinite(reset.at) && reset.at > 0) return { id: reset.id, at: reset.at }
+}
+
+/** Run inside the store's atomic read/write operation, never after a separate read. */
+export function mergeJournalRecord(saved: unknown, incoming: JournalRecord, options: JournalWriteOptions): JournalRecord {
+  const previous = saved && typeof saved === 'object' ? saved as Partial<JournalRecord> : undefined
+  const now = options.processedAt ?? options.now
+  const savedReset = journalReset(previous?.reset)
+  const retentionChangedAt = counter(previous?.retentionChangedAt)
+  const retention = options.retention && options.now >= retentionChangedAt
+    ? options.retention : validJournalRetention(previous?.retention) ? previous.retention : incoming.retention
+  const clear = options.clear ?? (retention === 'off' && (previous?.retention !== 'off' || !savedReset) ? { id: `off-${options.now}`, at: options.now } : undefined)
+  const reset = clear && (!savedReset || clear.at >= savedReset.at) ? clear : savedReset ?? journalReset(incoming.reset)
+  const expiredBefore = Math.max(counter(previous?.expiredBefore), retention === 'off' ? 0 : now - periods[retention])
+  // A stale tab may contribute genuinely newer closures, but cannot resurrect
+  // snapshots removed by Clear or by turning recording off in another tab.
+  const additions = reset && incoming.reset?.id !== reset.id
+    ? incoming.entries.filter(entry => entry.closedAt > reset.at)
+    : incoming.entries
+  const existing = Array.isArray(previous?.entries)
+    ? clear ? previous.entries.filter(entry => entry && typeof entry === 'object' && entry.closedAt > clear.at) : previous.entries
+    : []
+  const entries = retainJournal([...existing, ...additions], retention, now).filter(entry => entry.closedAt >= expiredBefore)
+  return { retention, entries, expiredBefore, retentionChangedAt: options.retention ? Math.max(retentionChangedAt, options.now) : retentionChangedAt, ...(reset ? { reset } : {}) }
+}
+
 export class JournalTracker {
   #previous = new Map<string, { connection: Connection; firstSeenAt: number; lastSeenAt: number }>()
   #complete = true
@@ -118,6 +154,8 @@ export class JournalTracker {
 }
 
 export function indexedJournalStore(): JournalStore {
+  const writerId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  let sequence = 0
   let opened: Promise<IDBDatabase> | undefined
   let available: IDBDatabase | undefined
   const database = () => opened ??= new Promise<IDBDatabase>((resolve, reject) => {
@@ -133,26 +171,66 @@ export function indexedJournalStore(): JournalStore {
       resolve(db)
     }
   })
+  // Array keys are disjoint from the existing string backend keys, so old
+  // journals need no schema upgrade (or blocked upgrade in another open tab).
+  // Every staged snapshot is bounded by JOURNAL_LIMIT. Each write queues its
+  // drain immediately behind staging, and every read drains abandoned writes.
+  const drain = (db: IDBDatabase, backend: string) => new Promise<JournalRecord | undefined>((resolve, reject) => {
+    const transaction = db.transaction('backends', 'readwrite')
+    const store = transaction.objectStore('backends')
+    let saved: unknown
+    let merged: JournalRecord | undefined
+    const pending: Array<{ record: JournalRecord; options: JournalWriteOptions }> = []
+    transaction.oncomplete = () => resolve(merged ?? saved as JournalRecord | undefined)
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error ?? new Error('Journal transaction aborted'))
+    const request = store.get(backend)
+    request.onsuccess = () => { saved = request.result }
+    const cursor = store.openCursor(IDBKeyRange.bound([backend], [backend, []]))
+    cursor.onsuccess = () => {
+      const row = cursor.result
+      if (row) {
+        const operation = row.value
+        if (operation?.record && Array.isArray(operation.record.entries) && validJournalRetention(operation.record.retention)
+          && Number.isFinite(operation.options?.now) && operation.options.now > 0) pending.push(operation)
+        row.delete()
+        row.continue()
+        return
+      }
+      // A suspended page can leave a queued operation behind. Its timestamp
+      // preserves clear/retention ordering when a later page finishes it.
+      pending.sort((a, b) => a.options.now - b.options.now)
+      for (const operation of pending) {
+        merged = mergeJournalRecord(merged ?? saved, operation.record, {
+          ...operation.options,
+          processedAt: Date.now(),
+          retention: readJournalRetention(backend) ?? operation.options.retention,
+        })
+      }
+      if (merged) store.put(merged, backend)
+      transaction.commit?.()
+    }
+  })
   return {
-    async read(backend) {
-      const db = await database()
-      return new Promise((resolve, reject) => {
-        const request = db.transaction('backends', 'readonly').objectStore('backends').get(backend)
-        request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
-      })
-    },
-    write(backend, record) {
-      const write = (db: IDBDatabase) => new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction('backends', 'readwrite')
-        transaction.oncomplete = () => resolve()
-        transaction.onerror = () => reject(transaction.error)
-        transaction.onabort = () => reject(transaction.error ?? new Error('Journal transaction aborted'))
-        transaction.objectStore('backends').put(record, backend)
-        transaction.commit?.()
-      })
-      // Start a transaction before a pagehide handler returns; awaiting the
-      // already-open database first can lose the write during navigation.
+    stagesImmediately: true,
+    async read(backend) { return drain(await database(), backend) },
+    write(backend, record, options) {
+      const write = (db: IDBDatabase) => {
+        const queued = new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction('backends', 'readwrite')
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () => reject(transaction.error)
+          transaction.onabort = () => reject(transaction.error ?? new Error('Journal queue transaction aborted'))
+          transaction.objectStore('backends').put({ record, options }, [backend, writerId, ++sequence])
+          transaction.commit?.()
+        })
+        // Queue the drain now, even if navigation prevents the staging
+        // callback from running. IDB orders it after the staging transaction.
+        return Promise.all([queued, drain(db, backend)]).then(([, saved]) => saved)
+      }
+      // Queue the complete operation before pagehide returns. Its put can
+      // commit after navigation even if JS callbacks can no longer run. The
+      // next page's read completes the merge without losing the pending batch.
       return available ? write(available) : database().then(write)
     },
   }
@@ -169,6 +247,9 @@ export class ConnectionJournal {
   #generation = 0
   #revision = 0
   #clearRevision = 0
+  #reset: JournalReset | undefined
+  #pendingClear: JournalReset | undefined
+  #pendingRetention: JournalRetention | undefined
   #dirty = false
   #timer: ReturnType<typeof setTimeout> | undefined
   #writes = Promise.resolve()
@@ -187,6 +268,9 @@ export class ConnectionJournal {
     void this.flush()
     const generation = ++this.#generation
     this.#dirty = false
+    this.#reset = undefined
+    this.#pendingClear = undefined
+    this.#pendingRetention = undefined
     this.backendUrl = url
     this.entries = []
     this.retention = url ? readJournalRetention(url) ?? '24h' : '24h'
@@ -200,7 +284,7 @@ export class ConnectionJournal {
     let record: JournalRecord | undefined
     try {
       await this.#writes
-      const value = this.#memory.get(url) ?? await this.#store.read(url)
+      const value = this.#writeFailed ? this.#memory.get(url) : await this.#store.read(url)
       if (value && typeof value === 'object') record = value as JournalRecord
     } catch {
       if (generation !== this.#generation) return
@@ -217,6 +301,7 @@ export class ConnectionJournal {
       }
     }
     const saved = clearRevision === this.#clearRevision && Array.isArray(record?.entries) ? record.entries : []
+    if (clearRevision === this.#clearRevision) this.#reset = journalReset(record?.reset)
     this.entries = retainJournal([...saved, ...this.entries], this.retention, this.#clock())
     this.loading = false
     // A read may fail even before the first attempted write; the write reports durability.
@@ -245,18 +330,25 @@ export class ConnectionJournal {
     if (!validJournalRetention(retention) || !this.backendUrl) return
     this.#revision++
     this.retention = retention
+    this.#pendingRetention = retention
     saveJournalRetention(this.backendUrl, retention)
     this.entries = retainJournal(this.entries, retention, this.#clock())
-    if (retention === 'off') this.#tracker.pause(true)
+    if (retention === 'off') { this.#tracker.pause(true); this.#markClear() }
     this.#changed()
     this.#schedule()
   }
   clear() {
     if (!this.backendUrl) return
-    this.#clearRevision++
+    this.#markClear()
     this.entries = []
     this.#changed()
     this.#schedule()
+  }
+
+  #markClear() {
+    this.#clearRevision++
+    this.#reset = { id: `${this.#clock()}-${Math.random().toString(36).slice(2)}`, at: this.#clock() }
+    this.#pendingClear = this.#reset
   }
 
   #schedule() {
@@ -273,21 +365,44 @@ export class ConnectionJournal {
       this.#dirty = false
       const backend = this.backendUrl
       const generation = this.#generation
-      const record: JournalRecord = { retention: this.retention, entries: [...this.entries] }
+      const clearRevision = this.#clearRevision
+      const revision = this.#revision
+      const record: JournalRecord = { retention: this.retention, entries: [...this.entries], ...(this.#reset ? { reset: this.#reset } : {}) }
+      const options: JournalWriteOptions = { now: this.#clock(), clear: this.#pendingClear, retention: this.#pendingRetention }
+      this.#pendingClear = undefined
+      this.#pendingRetention = undefined
       this.#memory.delete(backend)
       this.#memory.set(backend, record)
       while (this.#memory.size > 4) this.#memory.delete(this.#memory.keys().next().value!)
       if (!this.#writeFailed) {
         const first = this.#pendingWrites++ === 0
         const write = async () => {
-          try { if (!this.#writeFailed) await this.#store.write(backend, record) }
+          try {
+            if (!this.#writeFailed) {
+              const saved = await this.#store.write(backend, record, options)
+              if (saved) {
+                if (this.#memory.get(backend) === record) this.#memory.set(backend, saved)
+                if (generation === this.#generation && clearRevision === this.#clearRevision) {
+                  const current = { retention: this.retention, entries: [...this.entries], reset: this.#reset }
+                  const merged = mergeJournalRecord(saved, current, { now: this.#clock(), ...(revision !== this.#revision ? { retention: this.retention } : {}) })
+                  this.entries = merged.entries
+                  this.#reset = merged.reset
+                  this.retention = merged.retention
+                  if (this.retention === 'off') this.#tracker.pause(true)
+                  this.#changed()
+                }
+              }
+            }
+          }
           catch {
             this.#writeFailed = true
             if (generation === this.#generation) { this.storageState = 'memory'; this.#changed() }
           }
           finally { this.#pendingWrites-- }
         }
-        this.#writes = first ? write() : this.#writes.then(write)
+        this.#writes = first ? write() : this.#store.stagesImmediately
+          ? Promise.all([this.#writes, write()]).then(() => {})
+          : this.#writes.then(write)
       }
     }
     await this.#writes

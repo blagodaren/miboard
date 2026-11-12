@@ -322,6 +322,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ...flags, Status: 0, Answer: [{ name: name + '.', type: type === 'AAAA' ? 28 : 1, TTL: 120, data }] })
   }
   if (m('GET', /^\/configs$/)) return json(res, 200, configs)
+  if (m('GET', /^\/connections$/)) return json(res, 200, { connections: conns, downloadTotal: downTotal, uploadTotal: upTotal, memory: 42 * 1024 * 1024 })
   if (m('PATCH', /^\/configs$/)) {
     const b = await readBody(req)
     if (b.tun) Object.assign(configs.tun, b.tun)
@@ -414,6 +415,8 @@ const server = http.createServer(async (req, res) => {
   if (m('POST', /^\/cache\/(fakeip|dns)\/flush$/)) return json(res, 204)
   if (m('POST', /^\/cache\/smart\/flush(?:\/.+)?$/)) return json(res, PRIZRAK ? 204 : 404, PRIZRAK ? undefined : { message: 'Not Found' })
   if (m('POST', /^\/upgrade\/lgbm$/)) return PRIZRAK ? json(res, 200, { status: 'ok' }) : json(res, 404, { message: 'Not Found' })
+  // Development fixture only: no executable, UI files or geodata are changed.
+  if (m('POST', /^\/upgrade(?:\/(ui|geo))?$/)) return json(res, p.endsWith('/geo') ? 204 : 200, p.endsWith('/geo') ? undefined : { status: 'ok' })
   if (m('POST', /^\/restart$/)) return json(res, 200, { status: 'ok' })
   json(res, 404, { message: 'Not Found' })
 })

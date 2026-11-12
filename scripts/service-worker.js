@@ -53,6 +53,23 @@ self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') event.waitUntil(self.skipWaiting())
 })
 
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const requested = event.notification.data?.route
+  const route = ['#/fleet', '#/proxies', '#/proxies?tab=providers', '#/settings?category=core', '#/settings?category=maintenance'].includes(requested) ? requested : '#/overview'
+  event.waitUntil((async () => {
+    const target = new URL(BASE.href)
+    target.hash = route
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const existing = windows.find(client => {
+      const url = new URL(client.url)
+      return url.origin === BASE.origin && url.pathname.startsWith(BASE.pathname)
+    })
+    if (existing) { await existing.navigate(target.href); await existing.focus() }
+    else await self.clients.openWindow(target.href)
+  })())
+})
+
 self.addEventListener('fetch', event => {
   const request = event.request
   if (request.method !== 'GET' || request.headers.has('authorization') || request.headers.has('range')) return

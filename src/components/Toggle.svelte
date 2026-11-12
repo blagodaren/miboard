@@ -6,9 +6,8 @@
 </script>
 
 <Switch.Root
-  {checked}
+  bind:checked={() => checked, onchange}
   {disabled}
-  onCheckedChange={onchange}
   aria-label={label}
   class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-field-border bg-hover p-0.5
     before:absolute before:left-1/2 before:top-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']

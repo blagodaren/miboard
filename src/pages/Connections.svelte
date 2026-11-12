@@ -18,9 +18,11 @@
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
   import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey } from '../lib/connection-columns'
+  import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
+  import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
   type SortKey = 'rate' | 'total' | 'start' | 'host'
-  const LIMIT = 300
+  const VIRTUAL_THRESHOLD = 150
   const JOURNAL_PAGE_SIZE = 100
   let page = $state(1)
   type DisplayRow = ConnRow & { journal?: JournalEntry }
@@ -49,13 +51,23 @@
   let sort = $state<SortKey>('rate')
   let sortDirection = $state<'asc' | 'desc'>('desc')
   let confirmAll = $state(false)
+  let confirmFiltered = $state(false)
+  let scope = $state<ConnectionFilter>('all')
+  let filterValue = $state('')
+  let pendingIds = $state<string[]>([])
+  let batchBusy = $state(false), batchDone = $state(0), batchTotal = $state(0)
+  let batchResult = $state<{ succeeded: string[]; failed: string[]; pending: string[] } | null>(null)
+  let batchController: AbortController | null = null
+  let tableContainer = $state<HTMLDivElement | null>(null)
+  let scrollTop = $state(0), viewportHeight = $state(600)
+  let focusedRow = $state<string | null>(null)
   let now = $state(Date.now())
   const backend = { ...core.backend }
   let active = true
   let smartGroups = $state<string[]>([])
   let switching = $state<Record<string, boolean>>({})
 
-  onDestroy(() => { active = false })
+  onDestroy(() => { active = false; batchController?.abort() })
 
   $effect(() => {
     try {
@@ -141,7 +153,7 @@
   }
 
   const rows = $derived.by(() => {
-    const src = sourceRows
+    const src = sourceRows.filter(c => matchesConnectionScope(c, scope, filterValue))
     const q = query.trim().toLowerCase()
     const list = q
       ? src.filter((c) => connectionSearchText(c, deviceName(c)).includes(q))
@@ -157,14 +169,46 @@
   })
   const pages = $derived(Math.max(1, Math.ceil(rows.length / JOURNAL_PAGE_SIZE)))
   const currentPage = $derived(Math.min(pages, Math.max(1, page)))
-  const displayedRows = $derived(view === 'closed' ? rows.slice((currentPage - 1) * JOURNAL_PAGE_SIZE, currentPage * JOURNAL_PAGE_SIZE) : rows.slice(0, LIMIT))
-  $effect(() => { query; view; sort; sortDirection; page = 1 })
+  const virtualized = $derived(view === 'active' && rows.length > VIRTUAL_THRESHOLD)
+  const windowRows = $derived(virtualRange(rows.length, Math.max(0, scrollTop - 44), viewportHeight, 64))
+  // Keep the last detail trigger mounted through the dialog's close/focus-restoration phase.
+  const renderedIndices = $derived(virtualized ? pinnedRuleIndices(windowRows.start, windowRows.end, rows.length, [rows.findIndex(row => rowKey(row) === focusedRow), rows.findIndex(row => rowKey(row) === selected)]) : [])
+  const displayedRows = $derived(view === 'closed' ? rows.slice((currentPage - 1) * JOURNAL_PAGE_SIZE, currentPage * JOURNAL_PAGE_SIZE) : virtualized ? renderedIndices.map(index => rows[index]) : rows)
+  const bottomGap = $derived(virtualized && renderedIndices.length ? Math.max(0, rows.length - renderedIndices[renderedIndices.length - 1] - 1) * 64 : 0)
+  function trackTableFocus(event: FocusEvent) {
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-connection-key]') : null
+    focusedRow = row?.dataset.connectionKey ?? null
+  }
+  function clearTableFocus() {
+    queueMicrotask(() => {
+      if (!active) return
+      const row = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>('[data-connection-key]') : null
+      focusedRow = row && tableContainer?.contains(row) ? row.dataset.connectionKey ?? null : null
+    })
+  }
+  $effect(() => { query; view; sort; sortDirection; scope; filterValue; page = 1; scrollTop = 0; if (tableContainer) tableContainer.scrollTop = 0 })
+
+  function previewFiltered() {
+    if (batchBusy || view !== 'active' || !currentBackend()) return
+    const live = new Set(core.conns.map(row => row.id))
+    pendingIds = rows.filter(row => live.has(row.id)).map(row => row.id)
+    if (pendingIds.length) confirmFiltered = true
+  }
+  async function closeFiltered() {
+    if (batchBusy || !currentBackend() || view !== 'active' || !pendingIds.length) return
+    const controller = new AbortController()
+    batchController = controller; batchBusy = true; batchDone = 0; batchTotal = pendingIds.length; batchResult = null
+    try {
+      const result = await closeConnectionBatch(pendingIds, (id, signal) => api.closeConnection(id, backend, signal), controller.signal, done => { if (active) batchDone = done })
+      if (currentBackend()) batchResult = result
+    } finally { if (active) batchBusy = false; if (batchController === controller) batchController = null }
+  }
 
   async function close(id: string) {
     if (view !== 'active' || !currentBackend() || !core.conns.some(row => row.id === id)) return
     const name = host(core.conns.find(row => row.id === id)!)
     try {
-      await api.closeConnection(id)
+      await api.closeConnection(id, backend)
       if (currentBackend()) notifications.show({ id: `connection-close-${id}`, tone: 'success', scope: backend.url, message: () => t('connections.closeDone', { host: name }) })
     } catch (error) {
       if (!currentBackend()) return
@@ -175,7 +219,7 @@
   async function closeAll() {
     if (view !== 'active' || !currentBackend()) return
     try {
-      await api.closeAll()
+      await api.closeAll(backend)
       if (currentBackend()) notifications.show({ id: 'connections-close-all', tone: 'success', scope: backend.url, message: () => t('connections.closeAllDone') })
     } catch (error) {
       if (currentBackend()) notifications.show({ id: 'connections-close-all', tone: 'error', scope: backend.url, message: () => t('connections.closeAllError', { message: errorMessage(error) }) })
@@ -197,14 +241,27 @@
 <PageHeader title={t('connections.title')} meta={t('connections.meta', { shown: count(rows.length), total: count(viewTotal) }) + (paused ? t('connections.paused') : '')}>
   {#snippet actions()}
     <SearchInput bind:value={query} placeholder={t('connectionDetails.search')} />
+    <Button size="sm" disabled={!rows.length} title={t('panelTools.exportHint')} onclick={() => downloadText('miboard-connections.csv', connectionsCsv(rows), 'text/csv;charset=utf-8')}>{t('panelTools.csv')}</Button>
     {#if view === 'active'}
     <Button size="sm" onclick={togglePause} aria-pressed={paused}>
       {#if paused}<IconPlay strokeWidth={1.5} />{t('connections.resume')}{:else}<IconPause strokeWidth={1.5} />{t('connections.pause')}{/if}
     </Button>
-    <Button size="sm" variant="ghost" onclick={() => (confirmAll = true)} disabled={!core.conns.length}>{t('connections.closeAll')}</Button>
+    <Button size="sm" onclick={previewFiltered} disabled={!rows.length || batchBusy || !core.connectionsOnline}>{t('panelTools.closeFiltered')}</Button>
+    <Button size="sm" variant="ghost" onclick={() => (confirmAll = true)} disabled={!core.conns.length || batchBusy}>{t('connections.closeAll')}</Button>
     {/if}
   {/snippet}
 </PageHeader>
+
+<div class="mb-4 flex flex-wrap items-center gap-3">
+  <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('panelTools.scope')}
+    <select bind:value={scope} class="min-h-11 rounded-control border border-field-border bg-field px-3 text-fg">
+      {#each ['all', 'device', 'domain', 'node'] as kind}<option value={kind}>{t(`panelTools.${kind}` as 'panelTools.all')}</option>{/each}
+    </select>
+  </label>
+  {#if scope !== 'all'}<label class="min-w-0 flex-1 sm:max-w-sm"><span class="sr-only">{t('panelTools.value')}</span><input bind:value={filterValue} placeholder={t('panelTools.value')} class="min-h-11 w-full rounded-control border border-field-border bg-field px-3 text-[13px] text-fg" /></label>{/if}
+  {#if batchBusy}<span class="text-xs text-fg-3" role="status">{t('panelTools.progress', { done: batchDone, total: batchTotal })}</span><Button size="sm" onclick={() => batchController?.abort()}>{t('panelTools.cancel')}</Button>{/if}
+  {#if batchResult}<p class="w-full text-[13px] text-fg-2" role="status">{t('panelTools.batchResult', { success: batchResult.succeeded.length, failed: batchResult.failed.length, pending: batchResult.pending.length })}</p>{/if}
+</div>
 
 <div class="connections-toolbar">
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
@@ -232,8 +289,10 @@
   <p class="mb-3 text-[13px] text-fg-3">{t('prizrak.switchHint')}</p>
 {/if}
 
-<div class="connections-table relative overflow-x-auto rounded-panel border border-line bg-card" data-testid="connections-table">
-  <table class="w-full min-w-[960px] text-[13px]">
+{#if virtualized}<p class="mb-3 text-xs text-fg-3">{t('panelTools.virtual', { count: rows.length })}</p>{/if}
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (A scrollable region needs keyboard focus for arrow/PageDown scrolling.) -->
+<div class="connections-table relative overflow-x-auto rounded-panel border border-line bg-card" class:virtual-table={virtualized} data-testid="connections-table" bind:this={tableContainer} bind:clientHeight={viewportHeight} onscroll={event => scrollTop = event.currentTarget.scrollTop} onfocusin={trackTableFocus} onfocusout={clearTableFocus} tabindex={virtualized ? 0 : undefined} role="region" aria-label={t('connections.title')}>
+  <table class="w-full min-w-[960px] text-[13px]" aria-rowcount={rows.length + 1}>
     <thead>
       <tr>
         <th class="w-12 px-3"><span class="sr-only">{t('connectionDetails.details')}</span></th>
@@ -256,8 +315,11 @@
       </tr>
     </thead>
     <tbody>
-      {#each displayedRows as c (rowKey(c))}
-        <tr class="group border-t border-line transition-colors {detailsOpen && selected === rowKey(c) ? 'bg-selected' : 'hover:bg-hover'}" data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
+      {#each displayedRows as c, rowIndex (rowKey(c))}
+        {@const position = virtualized ? renderedIndices[rowIndex] : view === 'closed' ? (currentPage - 1) * JOURNAL_PAGE_SIZE + rowIndex : rowIndex}
+        {@const gap = virtualized ? Math.max(0, position - (rowIndex > 0 ? renderedIndices[rowIndex - 1] + 1 : 0)) * 64 : 0}
+        {#if gap > 0}<tr aria-hidden="true"><td colspan={columnCount} style:height={gap + 'px'} class="!p-0"></td></tr>{/if}
+        <tr class="group border-t border-line transition-colors {detailsOpen && selected === rowKey(c) ? 'bg-selected' : 'hover:bg-hover'}" aria-rowindex={position + 2} data-connection-key={rowKey(c)} data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
           <td class="px-2"><Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-haspopup="dialog" onclick={() => showDetails(c)}><Info strokeWidth={1.5} class={c.dl + c.ul > 0 ? 'text-traffic-down-ink' : 'text-fg-3'} aria-hidden="true" /></Button></td>
           {#if visible('type')}<td class="px-3 py-2 whitespace-nowrap"><span>{c.metadata.type || '—'}</span><div class="mt-0.5 font-mono text-xs text-fg-3">{c.metadata.network?.toUpperCase() || '—'}</div></td>{/if}
           {#if visible('process')}<td class="max-w-[200px] truncate px-3 py-2" title={c.metadata.processPath || c.metadata.process}>{c.metadata.process || c.metadata.processPath || '—'}</td>{/if}
@@ -332,6 +394,7 @@
           <td colspan={columnCount} class="px-4 py-8 text-center text-fg-3">{query ? t('connections.noResults') : view === 'closed' ? t('journal.empty') : t('connections.noConnections')}</td>
         </tr>
       {/each}
+      {#if bottomGap > 0}<tr aria-hidden="true"><td colspan={columnCount} style:height={bottomGap + 'px'} class="!p-0"></td></tr>{/if}
     </tbody>
   </table>
   {#if view === 'closed' && pages > 1}
@@ -342,12 +405,12 @@
         <Button size="sm" disabled={currentPage === pages} onclick={() => page = currentPage + 1}>{t('journal.next')}</Button>
       </div>
     </div>
-  {:else if view === 'active' && rows.length > LIMIT}
-    <p class="border-t border-line px-4 py-3 font-mono text-xs text-fg-3">{t('connections.limit', { limit: count(LIMIT) })}</p>
   {/if}
 </div>
 
 <ConnectionDetails bind:open={detailsOpen} connection={detailConnection} deviceName={detailConnection ? deviceName(detailConnection) : ''} status={detailStatus} />
+
+<Confirm bind:open={confirmFiltered} title={t('panelTools.confirmFiltered')} description={t('panelTools.confirmFilteredHint', { count: pendingIds.length })} action={t('panelTools.closeFiltered')} onconfirm={closeFiltered} />
 
 <Confirm
   bind:open={confirmAll}
@@ -364,6 +427,9 @@
   .column-options label { display: flex; align-items: center; gap: 9px; min-height: 36px; color: var(--text-2); font-size: 13px; cursor: pointer; }
   .column-options input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
   .connections-table { max-width: 100%; }
+  .virtual-table { max-height: 70dvh; overflow-y: auto; overflow-anchor: none; }
+  .virtual-table thead { position: sticky; top: 0; z-index: 1; background: var(--card); height: 44px; }
+  .virtual-table tr[data-testid="active-connection-row"] { height: 64px; }
   @media (max-width: 639px) {
     .connections-toolbar { flex-wrap: wrap; gap: 8px; }
     .column-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; }

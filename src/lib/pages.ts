@@ -4,6 +4,8 @@ import type { Route } from './core.svelte'
 // Literal imports let Vite split pages and their heavy dependencies into chunks.
 export const pages = {
   overview: () => import('../pages/Overview.svelte'),
+  history: () => import('../pages/History.svelte'),
+  fleet: () => import('../pages/Fleet.svelte'),
   proxies: () => import('../pages/Proxies.svelte'),
   connections: () => import('../pages/Connections.svelte'),
   devices: () => import('../pages/Devices.svelte'),

@@ -75,6 +75,7 @@ class Core {
   #stops: Array<() => void> = []
   #rates = new ConnectionRates()
   #generation = 0
+  #longHistory: typeof import('./long-history.svelte').longHistory | null = null
 
   constructor() {
     const now = Math.floor(Date.now() / 1000)
@@ -114,6 +115,7 @@ class Core {
       saveBackend(b)
       this.backend = b
       void connectionJournal.activateBackend(b.url)
+      void this.#activateHistory(b.url, generation)
       this.version = v.version
       // REST доступен, но связь считается живой только после открытия WebSocket.
       this.status = 'lost'
@@ -135,6 +137,7 @@ class Core {
     this.#stop()
     this.#reset()
     void connectionJournal.activateBackend('')
+    void this.#longHistory?.activateBackend('')
     this.clearError()
     this.status = 'setup'
     if (location.hash !== '#/setup') location.hash = '/setup'
@@ -142,6 +145,15 @@ class Core {
 
   clearError() {
     this.#connectionError = null
+  }
+
+  async #activateHistory(url: string, generation: number) {
+    try {
+      const { longHistory } = await import('./long-history.svelte')
+      if (generation !== this.#generation) return
+      this.#longHistory = longHistory
+      await longHistory.activateBackend(url)
+    } catch { /* Optional local history must not prevent a controller connection. */ }
   }
 
   async refreshConfigs() {
@@ -220,6 +232,7 @@ class Core {
   }
 
   #stale(path: string) {
+    if (path === '/connections') this.#longHistory?.pause()
     if (!this.staleStreams.length) this.observationGapVersion++
     if (!this.staleStreams.includes(path)) this.staleStreams = [...this.staleStreams, path]
   }
@@ -290,6 +303,7 @@ class Core {
           this.downTotal = d.downloadTotal
           this.conns = this.#rates.sample(d.connections ?? [])
           connectionJournal.observe(d.connections ?? [])
+          this.#longHistory?.observe(d.connections ?? [])
           this.#analysisTracker.ingest(d.connections ?? [])
           this.analysis = this.#analysisTracker.snapshot()
           this.connectionsReady = true
@@ -303,6 +317,7 @@ class Core {
             this.connectionsFresh = false
             this.#rates.reset()
             connectionJournal.pause()
+            this.#longHistory?.pause()
           }
           onState(open)
         } },
@@ -311,6 +326,7 @@ class Core {
   }
 
   #stop(resetJournal = true) {
+    this.#longHistory?.pause()
     connectionJournal.pause(resetJournal)
     this.#stops.forEach((s) => s())
     this.#stops = []
@@ -365,7 +381,7 @@ export const core = new Core()
 
 // ——— маршрутизация по hash ———
 
-export const ROUTES = ['overview', 'proxies', 'devices', 'connections', 'analysis', 'geography', 'rules', 'logs', 'settings', 'setup'] as const
+export const ROUTES = ['overview', 'proxies', 'devices', 'connections', 'analysis', 'geography', 'rules', 'logs', 'settings', 'history', 'fleet', 'setup'] as const
 export type Route = (typeof ROUTES)[number]
 
 function parseRoute(): Route {

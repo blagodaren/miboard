@@ -41,7 +41,7 @@ class MemoryCacheStorage {
   async delete(name) { return this.caches.delete(name) }
 }
 
-function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test/ui/', storage = new MemoryCacheStorage(), files, network } = {}) {
+function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test/ui/', storage = new MemoryCacheStorage(), files, network, clients = {} } = {}) {
   const version = { version: '1.2.3', buildId: id }
   files ??= new Map([
     ['index.html', Buffer.from(`<title>MIBoard ${id[0]}</title>`)],
@@ -55,7 +55,7 @@ function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test
   let skipped = 0
   const self = {
     registration: { scope },
-    clients: { async claim() { claimed++ } },
+    clients: { async claim() { claimed++ }, ...clients },
     async skipWaiting() { skipped++ },
     addEventListener(type, listener) { assert(!handlers.has(type), `Duplicate ${type} handler`); handlers.set(type, listener) },
   }
@@ -81,6 +81,13 @@ function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test
       handlers.get('message')({ data, ports, waitUntil(promise) { waits.push(Promise.resolve(promise)) } })
       await Promise.all(waits)
     },
+    async notificationClick(route) {
+      const waits = []
+      let closed = false
+      handlers.get('notificationclick')({ notification: { data: { route }, close() { closed = true } }, waitUntil(promise) { waits.push(Promise.resolve(promise)) } })
+      await Promise.all(waits)
+      assert(closed)
+    },
     async request(input, { navigation = false, ...options } = {}) {
       const request = typeof input === 'string' ? new Request(new URL(input, scope), options) : input
       const eventRequest = navigation ? { url: request.url, method: request.method, headers: request.headers, mode: 'navigate' } : request
@@ -90,6 +97,27 @@ function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test
     },
   }
 }
+
+test('notification click opens a clean scoped fleet URL without reusing connection credentials', async () => {
+  const calls = []
+  const worker = createWorker({ clients: {
+    async matchAll() { return [
+      { url: 'https://other.test/ui/', async navigate() { assert.fail('wrong origin') } },
+      { url: 'https://dashboard.test/another/', async navigate() { assert.fail('wrong scope') } },
+      { url: 'https://dashboard.test/ui/?secret=old#/proxies', async navigate(url) { calls.push(url) }, async focus() { calls.push('focus') } },
+    ] },
+    async openWindow() { assert.fail('existing tab should be focused') },
+  } })
+  await worker.notificationClick('#/fleet')
+  assert.deepEqual(calls, ['https://dashboard.test/ui/#/fleet', 'focus'])
+})
+
+test('notification click rejects external or unrecognized routes and opens the scoped dashboard', async () => {
+  const opened = []
+  const worker = createWorker({ clients: { async matchAll() { return [] }, async openWindow(url) { opened.push(url) } } })
+  for (const route of ['https://evil.test/', '#/setup?secret=secret', undefined]) await worker.notificationClick(route)
+  assert.deepEqual(opened, Array(3).fill('https://dashboard.test/ui/#/overview'))
+})
 
 test('install verifies static bytes and never activates an update without an explicit message', async () => {
   const worker = createWorker()

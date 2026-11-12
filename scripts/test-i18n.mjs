@@ -19,6 +19,8 @@ const routes = {
   geography: ['Geography', 'География'],
   rules: ['Rules', 'Правила'],
   logs: ['Logs', 'Логи'],
+  history: ['History', 'История'],
+  fleet: ['Controllers', 'Ядра'],
   settings: ['Settings', 'Настройки'],
 }
 const errors = []
@@ -105,10 +107,12 @@ function placeholders(message) {
 async function dictionaries() {
   const keys = new Set()
   const directory = new URL('../src/lib/locales/', import.meta.url)
-  const files = (await readdir(directory)).filter((name) => name.endsWith('.ts') && !['en.ts', 'ru.ts'].includes(name)).sort()
+  const files = (await readdir(new URL('en/', directory))).filter((name) => name.endsWith('.ts')).sort()
+  assert.deepEqual((await readdir(new URL('ru/', directory))).sort(), files, 'English and Russian dictionary sections match')
   for (const file of files) {
     const name = file.slice(0, -3)
-    const { en, ru } = await import(new URL(file, directory))
+    const { en } = await import(new URL(`en/${file}`, directory))
+    const { ru } = await import(new URL(`ru/${file}`, directory))
     assert.deepEqual(Object.keys(ru).sort(), Object.keys(en).sort(), `${name}: locale keys differ`)
     for (const [key, source] of Object.entries(en)) {
       assert(!keys.has(key), `Duplicate message key: ${key}`)
@@ -122,6 +126,79 @@ async function dictionaries() {
     }
   }
   console.log(`PASS: ${keys.size} English/Russian messages, interpolation parameters and plural fallbacks`)
+}
+
+async function lazyLocales(base) {
+  const chunks = /\/(en|ru)-[^/]+\.js$/
+  async function session(locale) {
+    const context = await browser.newContext({ serviceWorkers: 'block' })
+    await stubAppUpdates(context)
+    await context.addInitScript(locale => localStorage.setItem('miboard.locale', locale), locale)
+    const page = await context.newPage()
+    page.setDefaultTimeout(10_000)
+    const loaded = new Set()
+    page.on('request', request => {
+      if (request.resourceType() === 'script') {
+        const match = new URL(request.url()).pathname.match(chunks)
+        if (match) loaded.add(match[1])
+      }
+    })
+    return { context, page, loaded }
+  }
+
+  for (const locale of ['en', 'ru']) {
+    const { context, page, loaded } = await session(locale)
+    await page.goto(base)
+    await page.getByRole('heading', { name: locale === 'en' ? 'Connections' : 'Подключения', exact: true }).waitFor()
+    assert.deepEqual([...loaded], [locale], `Cold ${locale} startup only downloads its dictionary`)
+    await context.close()
+  }
+
+  const rapid = await session('en')
+  let releaseImport, startedImport
+  const held = new Promise(resolve => { releaseImport = resolve })
+  const started = new Promise(resolve => { startedImport = resolve })
+  await rapid.page.route('**/ru-*.js', async route => { startedImport(); await held; await route.continue() })
+  await rapid.page.goto(base)
+  const languageSelect = rapid.page.getByRole('combobox', { name: 'Language', exact: true })
+  await languageSelect.selectOption('ru')
+  await started
+  assert.equal(await rapid.page.locator('html').getAttribute('lang'), 'en', 'The old dictionary stays active while loading')
+  assert.equal(await languageSelect.getAttribute('aria-busy'), 'true')
+  assert(await rapid.page.getByRole('heading', { name: 'Connections', exact: true }).isVisible())
+  await languageSelect.selectOption('en')
+  const received = rapid.page.waitForResponse(response => /\/ru-[^/]+\.js$/.test(response.url()))
+  releaseImport()
+  await received
+  await rapid.page.waitForTimeout(100)
+  assert.equal(await rapid.page.locator('html').getAttribute('lang'), 'en', 'A late dictionary does not undo the latest choice')
+  assert.equal(await rapid.page.evaluate(() => localStorage.getItem('miboard.locale')), 'en')
+  await language(rapid.page, 'ru')
+  await rapid.page.getByRole('heading', { name: 'Подключения', exact: true }).waitFor()
+  await rapid.context.close()
+
+  const failed = await session('en')
+  await failed.page.route('**/ru-*.js', route => route.abort('failed'))
+  await failed.page.goto(base)
+  await failed.page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru')
+  await failed.page.getByTestId('locale-load-error').waitFor()
+  assert.equal(await failed.page.getByRole('combobox', { name: 'Language', exact: true }).inputValue(), 'en')
+  assert.equal(await failed.page.locator('html').getAttribute('lang'), 'en')
+  assert.equal(await failed.page.evaluate(() => localStorage.getItem('miboard.locale')), 'en', 'A failed language change does not overwrite the saved choice')
+  assert(await failed.page.getByRole('heading', { name: 'Connections', exact: true }).isVisible())
+  await failed.context.close()
+
+  const startup = await session('ru')
+  await startup.page.route('**/ru-*.js', route => route.abort('failed'))
+  await startup.page.goto(base)
+  await startup.page.getByRole('heading', { name: 'Не удалось загрузить язык', exact: true }).waitFor()
+  assert.equal(await startup.page.locator('#backend-url').count(), 0, 'The app never renders with a missing dictionary')
+  await startup.page.unroute('**/ru-*.js')
+  await startup.page.getByRole('button', { name: 'Перезагрузить панель', exact: true }).click()
+  await startup.page.getByRole('heading', { name: 'Подключения', exact: true }).waitFor()
+  assert.deepEqual([...startup.loaded], ['ru'], 'Locale recovery does not fetch English')
+  await startup.context.close()
+  console.log('PASS: isolated locale chunks, cold Russian start, racing language choices and locale failure recovery')
 }
 
 try {
@@ -146,6 +223,7 @@ try {
     }
   }, 'mock server startup')
   browser = await launchBrowser()
+  await lazyLocales(base)
 
   const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1440, height: 900 } })
   await stubAppUpdates(context)

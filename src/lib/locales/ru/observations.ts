@@ -1,0 +1,33 @@
+import type { Message } from '../../i18n-types'
+import type { en } from '../en/observations'
+
+export const ru: Record<keyof typeof en, Message> = {
+  'observations.range': 'Выбор соединений',
+  'observations.shortHint': 'Полные объёмы соединений, замеченных за выбранный период.',
+  'observations.about': 'Как считается история',
+  'observations.regionHint': 'Наблюдавшиеся соединения · доли среди определённых стран',
+  'observations.oldestConnection': 'Самое раннее наблюдавшееся соединение',
+  'observations.active': 'Активные сейчас',
+  'observations.1h': 'Наблюдавшиеся · 1 час',
+  'observations.24h': 'Наблюдавшиеся · 24 часа',
+  'observations.7d': 'Наблюдавшиеся · 7 дней',
+  'observations.hint': 'Активные и сохранённые соединения, замеченные за этот период. Объёмы — их счётчики за всё время жизни, а не трафик строго за выбранный период. Доступны только наблюдения подключённой панели.',
+  'observations.off': 'Журнал отключён. Доступны только активные соединения. Включите хранение в «Настройки → Журнал соединений».',
+  'observations.loading': 'Загрузка сохранённого журнала…',
+  'observations.retention': 'Глубина истории ограничена сроком хранения журнала и лимитом в 5 000 сохранённых соединений.',
+  'observations.gap': 'Часть соединений последний раз наблюдалась до обрыва потока. Их итоговые счётчики могут быть неполными.',
+  'observations.geo': 'Для сохранённых соединений используется записанный GeoIP или локальный поиск по IP. Текущие DNS-ответы не подставляются вместо прошлых адресов назначения.',
+  'observations.settings': 'Настройки журнала',
+  'analysis.applications': 'Приложения',
+  'analysis.networks': 'Сети / ASN',
+  'analysis.application': 'Приложение',
+  'analysis.network': 'Сеть / ASN',
+  'analysis.unknownApplication': 'Приложение не определено',
+  'analysis.unknownNetwork': 'ASN не определена',
+  'analysis.sourceDevice': 'Устройство-источник',
+  'analysis.processPath': 'Путь процесса',
+  'analysis.searchApplications': 'Приложение, устройство или домен',
+  'analysis.searchNetworks': 'ASN, организация или домен',
+  'analysis.applicationsHint': 'Приложения разделены по устройству и пути либо имени процесса. Если ядро не определило процесс, трафик остаётся без названия приложения. Роутер обычно не видит процессы других устройств.',
+  'analysis.networksHint': 'ASN назначения из данных ядра. Отсутствующая ASN остаётся неизвестной: организация не определяется по названию домена.',
+}

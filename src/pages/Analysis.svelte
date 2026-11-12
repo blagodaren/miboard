@@ -34,6 +34,8 @@
   let ascending = $state(false)
   let page = $state(1)
   let selected = $state('')
+  let viewportWidth = $state(0)
+  const columns = $derived(viewportWidth >= 1280 ? 7 : viewportWidth >= 1024 ? 5 : 4)
   let paused = $state(false)
   let frozen = $state.raw<AnalysisSnapshot | null>(null)
   let confirmReset = $state(false)
@@ -129,6 +131,8 @@
   const percent = (value: number) => new Intl.NumberFormat(i18n.intlLocale, { maximumFractionDigits: 1 }).format(totalTraffic ? value / totalTraffic * 100 : 0)
   const th = 'px-3 py-0 text-xs font-normal text-fg-3'
 </script>
+
+<svelte:window bind:innerWidth={viewportWidth} />
 
 {#snippet sortHead(key: Sort, label: string, extra = '')}
   <th class="{th} {extra}" aria-sort={sort === key ? ascending ? 'ascending' : 'descending' : 'none'}>
@@ -273,9 +277,9 @@
               <button class="flex min-h-11 w-full items-center justify-center rounded-md text-fg-3 transition-colors hover:bg-raised hover:text-fg" aria-label={t(selected === row.name ? 'analysis.hideDetails' : 'analysis.showDetails', { name: rowName(row) })} aria-expanded={selected === row.name} aria-controls="analysis-details-{index}" onclick={() => (selected = selected === row.name ? '' : row.name)}><IconChevron class="size-4 transition-transform {selected === row.name ? 'rotate-180' : ''}" strokeWidth={1.5} /></button>
             </td>
           </tr>
-          <tr hidden={selected !== row.name} id="analysis-details-{index}"><td colspan="7" class="p-0">{#if selected === row.name}<AnalysisDetails {row} {view} onnavigate={navigate} ondiagnose={diagnose} />{/if}</td></tr>
+          <tr hidden={selected !== row.name} id="analysis-details-{index}"><td colspan={columns} class="p-0">{#if selected === row.name}<AnalysisDetails {row} {view} onnavigate={navigate} ondiagnose={diagnose} />{/if}</td></tr>
         {:else}
-          <tr class="border-t border-line"><td colspan="7" class="px-5 py-12 text-center"><p class="text-fg-2">{query || proxyFilter ? t('analysis.noResults') : view === 'domains' ? t('analysis.noDomains') : t('analysis.emptySession')}</p><p class="mx-auto mt-2 max-w-md text-xs text-fg-3">{query || proxyFilter ? t('analysis.changeFilters') : view === 'domains' ? t('analysis.noDomainsHint') : t('analysis.emptySessionHint')}</p></td></tr>
+          <tr class="border-t border-line"><td colspan={columns} class="px-5 py-12 text-center"><p class="text-fg-2">{query || proxyFilter ? t('analysis.noResults') : view === 'domains' ? t('analysis.noDomains') : t('analysis.emptySession')}</p><p class="mx-auto mt-2 max-w-md text-xs text-fg-3">{query || proxyFilter ? t('analysis.changeFilters') : view === 'domains' ? t('analysis.noDomainsHint') : t('analysis.emptySessionHint')}</p></td></tr>
         {/each}
       </tbody>
     </table>

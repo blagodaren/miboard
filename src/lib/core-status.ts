@@ -36,7 +36,7 @@ export function visibleConfigUrl(input: unknown): string {
   } catch { return '—' }
 }
 
-type DetailKey = keyof typeof import('./locales/core-details').en
+type DetailKey = keyof typeof import('./locales/en/core-details').en
 export type CoreDetailValue = string | number | boolean | (string | number)[]
 export type CoreDetailField = { key: string; label: DetailKey; value: CoreDetailValue }
 export type CoreDetailSection = { id: string; title: DetailKey; hint: DetailKey; fields: CoreDetailField[] }

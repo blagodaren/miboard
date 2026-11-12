@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import type { Connection } from '../src/lib/api.ts'
-import { ConnectionJournal, JournalTracker, JOURNAL_ACTIVE_LIMIT, JOURNAL_LIMIT, JOURNAL_WRITE_INTERVAL, journalConnection, retainJournal, type JournalEntry, type JournalRecord, type JournalStore } from '../src/lib/connection-journal.ts'
+import { ConnectionJournal, JournalTracker, JOURNAL_ACTIVE_LIMIT, JOURNAL_LIMIT, JOURNAL_WRITE_INTERVAL, journalConnection, mergeJournalRecord, retainJournal, type JournalEntry, type JournalRecord, type JournalStore } from '../src/lib/connection-journal.ts'
 import { journalRetentionKey } from '../src/lib/journal-preferences.ts'
 
 const NOW = 1_800_000_000_000
@@ -38,6 +38,105 @@ function preferences(t: TestContext) {
   })
   return data
 }
+
+function sharedJournals(t: TestContext, initial: JournalRecord = { retention: '1h', entries: [] }) {
+  let now = NOW
+  const data = new Map<string, JournalRecord>([['a', structuredClone(initial)]])
+  // One synchronous update models the atomic IDB transaction. The browser test
+  // separately exercises the real IndexedDB implementation in two tabs.
+  const store: JournalStore = {
+    async read(key) { return structuredClone(data.get(key)) },
+    async write(key, record, options) {
+      const merged = mergeJournalRecord(data.get(key), record, options)
+      data.set(key, structuredClone(merged))
+      return merged
+    },
+  }
+  const first = new ConnectionJournal(store, () => now)
+  const second = new ConnectionJournal(store, () => now)
+  t.after(() => Promise.all([first.flush(), second.flush()]))
+  return { first, second, data, advance(milliseconds: number) { now += milliseconds } }
+}
+
+test('a stale tab pruning expired history preserves closures saved by another tab', async t => {
+  const { first, second, data, advance } = sharedJournals(t, { retention: '1h', entries: [entry('expires', NOW - 3600000 + 500)] })
+  await Promise.all([first.activateBackend('a'), second.activateBackend('a')])
+  first.observe([connection('fresh')], NOW - 1000)
+  first.observe([], NOW)
+  await first.flush()
+  advance(1000)
+  second.prune()
+  assert.deepEqual(second.entries, [])
+  await second.flush()
+  assert.deepEqual(data.get('a')!.entries.map(row => row.connection.id), ['fresh'])
+  assert.deepEqual(second.entries.map(row => row.connection.id), ['fresh'])
+})
+
+test('draining a deferred operation validates existing records against drain time, not its old enqueue time', () => {
+  const saved = { retention: '1h' as const, entries: [entry('fresh', NOW + 120000)] }
+  const merged = mergeJournalRecord(saved, { retention: '1h', entries: [] }, { now: NOW, processedAt: NOW + 120000 })
+  assert.deepEqual(merged.entries.map(row => row.connection.id), ['fresh'])
+})
+
+test('concurrent journal writers preserve both sets of closures and reread another tab after switching back', async t => {
+  const { first, second, data } = sharedJournals(t)
+  await Promise.all([first.activateBackend('a'), second.activateBackend('a')])
+  first.observe([connection('first')], NOW - 2000)
+  first.observe([], NOW - 1000)
+  second.observe([connection('second')], NOW - 1000)
+  second.observe([], NOW)
+  await Promise.all([first.flush(), second.flush()])
+  assert.deepEqual(data.get('a')!.entries.map(row => row.connection.id), ['second', 'first'])
+  await first.activateBackend('b')
+  await first.activateBackend('a')
+  assert.deepEqual(first.entries.map(row => row.connection.id), ['second', 'first'])
+})
+
+test('a stale snapshot cannot resurrect cleared entries but can record later closures', async t => {
+  const { first, second, data, advance } = sharedJournals(t, { retention: '1h', entries: [entry('cleared', NOW - 1)] })
+  await Promise.all([first.activateBackend('a'), second.activateBackend('a')])
+  first.clear()
+  await first.flush()
+  await second.flush()
+  assert.deepEqual(data.get('a')!.entries, [])
+  assert.deepEqual(second.entries, [])
+  advance(10)
+  second.observe([connection('new')], NOW + 1)
+  second.observe([], NOW + 2)
+  await second.flush()
+  assert.deepEqual(data.get('a')!.entries.map(row => row.connection.id), ['new'])
+})
+
+test('a delayed clear preserves another tab closure observed after the clear was requested', async t => {
+  const { first, second, data, advance } = sharedJournals(t, { retention: '1h', entries: [entry('cleared', NOW - 1)] })
+  await Promise.all([first.activateBackend('a'), second.activateBackend('a')])
+  first.clear()
+  advance(10)
+  second.observe([connection('new')], NOW + 1)
+  second.observe([], NOW + 2)
+  await second.flush()
+  await first.flush()
+  assert.deepEqual(data.get('a')!.entries.map(row => row.connection.id), ['new'])
+})
+
+test('stale writes cannot re-enable recording or restore expired history after retention is increased', async t => {
+  const { first, second, data } = sharedJournals(t, { retention: '7d', entries: [entry('old', NOW - 7200000)] })
+  await Promise.all([first.activateBackend('a'), second.activateBackend('a')])
+  first.setRetention('1h')
+  await first.flush()
+  first.setRetention('7d')
+  await first.flush()
+  await second.flush()
+  assert.deepEqual(data.get('a')!.entries, [], 'An old snapshot cannot undo expiry')
+  second.observe([connection('before-off')], NOW - 1000)
+  second.observe([], NOW)
+  first.setRetention('off')
+  await first.flush()
+  await second.flush()
+  assert.equal(data.get('a')!.retention, 'off')
+  assert.equal(second.retention, 'off')
+  assert.deepEqual(data.get('a')!.entries, [])
+})
 
 test('only disappearance from a later snapshot creates a completed record with last observed counters', () => {
   const tracker = new JournalTracker()
@@ -284,6 +383,33 @@ test('ordered writes prevent a slow old snapshot from undoing a later clear', as
   await Promise.all([first, second])
   assert.equal(writes[0].entries.length, 1)
   assert.deepEqual(writes[1].entries, [])
+})
+
+test('a lifecycle flush stages its final batch while an earlier durable write is still in flight', async t => {
+  const gate = deferred<void>()
+  const writes: JournalRecord[] = []
+  const journal = new ConnectionJournal({
+    stagesImmediately: true,
+    async read() {},
+    async write(_key, record) {
+      writes.push(structuredClone(record))
+      if (writes.length === 1) await gate.promise
+    },
+  }, () => NOW)
+  t.after(() => journal.flush())
+  await journal.activateBackend('a')
+  journal.observe([connection('before')], NOW - 2000)
+  journal.observe([], NOW - 1000)
+  const first = journal.flush()
+  journal.clear()
+  const clear = journal.flush()
+  journal.observe([connection('after')], NOW)
+  journal.observe([], NOW + 1)
+  const lifecycle = journal.flush()
+  assert.equal(writes.length, 3, 'Every batch is staged before the pagehide callback returns')
+  assert.deepEqual(writes.map(record => record.entries.map(row => row.connection.id)), [['before'], [], ['after']])
+  gate.resolve()
+  await Promise.all([first, clear, lifecycle])
 })
 
 test('off clears the current journal, stops recording and begins a new baseline when re-enabled', async t => {

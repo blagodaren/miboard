@@ -22,6 +22,8 @@
   import AppSettings from '../components/AppSettings.svelte'
   import CoreStatus from '../components/CoreStatus.svelte'
   import CoreProfiles from '../components/CoreProfiles.svelte'
+  import CoreManagement from '../components/CoreManagement.svelte'
+  import BrowserAlertSettings from '../components/BrowserAlertSettings.svelte'
   import SettingsSync from '../components/SettingsSync.svelte'
   import ProviderAlertSettings from '../components/ProviderAlertSettings.svelte'
   import LiveUpdateSettings from '../components/LiveUpdateSettings.svelte'
@@ -57,6 +59,8 @@
   let active = true
   let busy = $state<Record<string, boolean>>({})
   let confirmRestart = $state(false)
+  let confirmTun = $state(false)
+  let requestedTun = $state(false)
   let cardSizeSaved = $state(true)
   let groupHeightSaved = $state(true)
   const groupHeights = $derived([
@@ -88,9 +92,20 @@
 
   function patch(key: string, title: () => string, body: Record<string, unknown>) {
     void run(key, title, async () => {
-      await api.patchConfigs(body)
+      await api.patchConfigs(body, backend)
       if (current()) await core.refreshConfigs()
     })
+  }
+
+  function requestTun(value: boolean) {
+    if (!current() || busy.tun || !core.configs || value === !!core.configs.tun?.enable) return
+    requestedTun = value
+    confirmTun = true
+  }
+
+  function applyTun() {
+    if (!confirmTun || !current() || !core.configs || requestedTun === !!core.configs.tun?.enable) return
+    patch('tun', () => 'TUN', { tun: { enable: requestedTun } })
   }
 
   const modes: { value: Mode; label: string }[] = $derived([
@@ -185,7 +200,7 @@
             {/if}
 
             {#snippet tunCtl()}
-              <Toggle label="TUN" checked={!!cfg.tun?.enable} disabled={busy.tun} onchange={(v) => patch('tun', () => 'TUN', { tun: { enable: v } })} />
+              <Toggle label="TUN" checked={!!cfg.tun?.enable} disabled={busy.tun} onchange={requestTun} />
             {/snippet}
             {@render row('TUN', t('settings.tunHint'), tunCtl)}
 
@@ -204,6 +219,7 @@
         </section>
       {/if}
 
+      <CoreManagement section="runtime" />
       <CoreStatus />
       <CoreProfiles />
 
@@ -226,6 +242,9 @@
 
     <Tabs.Content value="maintenance" data-testid="settings-category-panel-maintenance" class="flex min-w-0 flex-col gap-6 data-[state=inactive]:hidden">
       <AppSettings />
+      <CoreManagement section="upgrades" />
+      <BrowserAlertSettings />
+      <div><Button size="sm" onclick={() => window.dispatchEvent(new Event('miboard:shortcuts-help'))}>{t('panelTools.shortcuts')}</Button></div>
       <section>
         <h2 class="mb-3 px-1 text-[13px] text-fg-2">{t('settings.maintenance')}</h2>
         <div class="rounded-panel border border-line bg-card">
@@ -274,6 +293,14 @@
     </Tabs.Content>
   </div>
 </Tabs.Root>
+
+<Confirm
+  bind:open={confirmTun}
+  title={t(requestedTun ? 'settings.tunEnable' : 'settings.tunDisable')}
+  description={t('settings.tunConfirmDescription')}
+  action={t(requestedTun ? 'settings.tunEnable' : 'settings.tunDisable')}
+  onconfirm={applyTun}
+/>
 
 <Confirm
   bind:open={confirmRestart}

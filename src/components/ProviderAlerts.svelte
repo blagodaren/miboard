@@ -11,7 +11,8 @@
   const enabled = $derived(providerAlertPreferences.enabled(backend.url))
   $effect(() => {
     const session = { ...backend }
-    if (!session.url || !enabled) return
+    const alertsEnabled = enabled
+    if (!session.url) return
     let active = true
     let controller: AbortController | null = null
     let nextCheck = 0
@@ -24,6 +25,11 @@
       try {
         const data = await request<{ providers: Record<string, ProxyProvider> }>('/providers/proxies', { signal: abort.signal, timeout: 10000 }, session)
         if (!active || abort.signal.aborted || document.hidden || !data?.providers || typeof data.providers !== 'object' || Array.isArray(data.providers)) return
+        // Forecast sampling reuses this read even when subscription alerts are off.
+        const { observeSubscriptionForecasts } = await import('../lib/subscription-forecast-service')
+        if (!active || abort.signal.aborted || document.hidden) return
+        observeSubscriptionForecasts(session.url, data.providers)
+        if (!alertsEnabled) return
         const alerts = providerAlertPreferences.inspect(session.url, data.providers)
         const providers = [...new Set(alerts.map(alert => alert.provider))]
         if (providers.length) {

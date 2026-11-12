@@ -109,11 +109,20 @@ try {
   const toggle = page.getByTestId('provider-alert-toggle').getByRole('switch')
   await toggle.waitFor(); await toggle.click()
   assert.equal(await toggle.getAttribute('aria-checked'), 'false')
+  await page.evaluate(origin => {
+    const key = 'miboard.provider-alerts:' + encodeURIComponent(origin)
+    const state = JSON.parse(localStorage.getItem(key))
+    localStorage.setItem(key, JSON.stringify({ ...state, seen: {} }))
+  }, origin)
   const beforeDisabledReload = reads
   await page.reload(); await toggle.waitFor(); await delay(250)
-  assert.equal(reads, beforeDisabledReload, 'Disabled subscription monitor does not fetch providers on Settings')
+  assert.equal(reads, beforeDisabledReload + 1, 'Forecast sampling still reads metadata once when subscription warnings are disabled')
+  assert.equal(await page.getByTestId('provider-subscription-alert').count(), 0, 'Opt-out suppresses even previously unseen warnings')
+  const beforeEnabled = reads
   await toggle.click()
-  await poll(() => reads > beforeDisabledReload, 'Opt-in restarts metadata monitoring')
+  await poll(() => reads > beforeEnabled, 'Opt-in refreshes metadata for warnings')
+  await page.getByTestId('provider-subscription-alert').waitFor()
+  await page.getByTestId('provider-subscription-alert').getByRole('button', { name: 'Dismiss notification', exact: true }).click()
   const beforePolling = reads
   await page.clock.fastForward(9 * 60000)
   assert.equal(reads, beforePolling, 'No metadata polling before 10 minutes')

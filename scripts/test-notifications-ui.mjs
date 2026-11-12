@@ -65,7 +65,11 @@ try {
   await toast('settings:dns').waitFor()
   await chooseSettingsCategory(page, 'core')
   await page.getByRole('switch', { name: 'TUN', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Disable TUN', exact: true }).click()
   await toast('settings:tun').waitFor()
+  // The clock is paused for toast expiry; let the dialog's closing frames run.
+  await page.clock.runFor(32)
+  await page.locator('[data-alert-dialog-overlay]').waitFor({ state: 'hidden' })
   await page.getByRole('switch', { name: 'Allow LAN', exact: true }).click()
   await poll(async () => await page.getByRole('switch', { name: 'Allow LAN', exact: true }).isEnabled(), 'fourth operation completes')
   assert.equal(await toasts.count(), 3, 'Three visible messages; the fourth waits in the queue')

@@ -105,9 +105,9 @@
       <Segmented label={t('latency.mode')} value={delaySettings.value.mode} options={modes} onchange={changeMode} />
     </div>
 
-    <form onsubmit={save} novalidate>
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
-        <div class="min-w-0 sm:pt-2">
+    <form class="latency-form" onsubmit={save} novalidate>
+      <div class="latency-field grid grid-cols-1 items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5">
+        <div class="latency-label min-w-0">
           <label for="latency-url">{t('latency.url')}</label>
           <p id="latency-url-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.urlHint')}</p>
         </div>
@@ -117,12 +117,12 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
-        <div class="min-w-0 sm:pt-2">
+      <div class="latency-field grid grid-cols-1 items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5">
+        <div class="latency-label min-w-0">
           <label for="latency-timeout">{t('latency.timeout')}</label>
           <p id="latency-timeout-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.timeoutHint')}</p>
         </div>
-        <div class="min-w-0 sm:justify-self-end">
+        <div class="latency-control min-w-0">
           <div class="flex items-center gap-3">
             <input id="latency-timeout" class="{inputClass} !w-28 font-mono num" type="number" min="1" max="32767" step="1" bind:value={timeout} aria-invalid={!!(touched.timeout && errors.timeout)} aria-describedby="latency-timeout-hint latency-timeout-unit latency-timeout-error" oninput={edit} onblur={() => touched.timeout = true} />
             <span id="latency-timeout-unit" class="text-[13px] text-fg-3">{t('latency.ms')}</span>
@@ -131,12 +131,12 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
-        <div class="min-w-0 sm:pt-2">
+      <div class="latency-field grid grid-cols-1 items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5">
+        <div class="latency-label min-w-0">
           <label for="latency-yellow">{t('latency.yellow')}</label>
           <p id="latency-threshold-hint" class="mt-0.5 text-[13px] text-fg-3">{t('latency.thresholdHint')}</p>
         </div>
-        <div class="min-w-0 sm:justify-self-end">
+        <div class="latency-control min-w-0">
           <div class="flex items-center gap-3">
             <input id="latency-yellow" class="{inputClass} !w-28 font-mono num" type="number" min="1" max="60000" step="1" bind:value={yellow} aria-invalid={!!(touched.yellow && errors.yellow)} aria-describedby="latency-yellow-unit latency-threshold-hint latency-yellow-error" oninput={edit} onblur={() => touched.yellow = true} />
             <span id="latency-yellow-unit" class="text-[13px] text-fg-3">{t('latency.ms')}</span>
@@ -145,9 +145,9 @@
         </div>
       </div>
 
-      <div class="grid items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5 sm:grid-cols-[minmax(0,1fr)_minmax(180px,350px)]">
-        <label for="latency-red" class="sm:pt-2">{t('latency.red')}</label>
-        <div class="min-w-0 sm:justify-self-end">
+      <div class="latency-field grid grid-cols-1 items-start gap-x-6 gap-y-2 border-t border-line px-4 py-4 sm:px-5">
+        <label for="latency-red" class="latency-label">{t('latency.red')}</label>
+        <div class="latency-control min-w-0">
           <div class="flex items-center gap-3">
             <input id="latency-red" class="{inputClass} !w-28 font-mono num" type="number" min="1" max="60000" step="1" bind:value={red} aria-invalid={!!(touched.red && errors.red)} aria-describedby="latency-red-unit latency-red-error" oninput={edit} onblur={() => touched.red = true} />
             <span id="latency-red-unit" class="text-[13px] text-fg-3">{t('latency.ms')}</span>
@@ -190,3 +190,13 @@
     </div>
   </div>
 </section>
+
+<style>
+  .latency-form { container-type: inline-size; }
+
+  @container (min-width: 640px) {
+    .latency-field { grid-template-columns: minmax(0, 1fr) minmax(180px, 350px); }
+    .latency-label { padding-top: 8px; }
+    .latency-control { justify-self: end; }
+  }
+</style>
