@@ -111,7 +111,7 @@ MIBoard talks only to the mihomo API, and mihomo passes on nothing from the subs
 
 Rules:
 
-- HTTPS anywhere. Plain HTTP only from the dashboard's own origin or loopback (`127.0.0.1`, `localhost`, `[::1]`). The server must allow CORS (`Access-Control-Allow-Origin: *`); the request is sent without cookies. Limit: 64 KB.
+- HTTPS anywhere. Any scheme from the dashboard's own origin: an app that shows MIBoard under its own scheme serves its theme next to it, for example `miboard://app/theme.css`. Plain HTTP also from loopback (`127.0.0.1`, `localhost`, `[::1]`). For a cross-origin download, the server must allow CORS (`Access-Control-Allow-Origin: *`); the request is sent without cookies. Limit: 64 KB.
 - A new URL in the link replaces the old one, `theme=off` removes it, and a link without `theme` keeps what is saved.
 - **Settings → Appearance → Theme from link** shows the URL and the last update, turns the theme off (the choice survives later links), checks for changes now and removes it.
 - Custom CSS applies on top of the link theme, so the user's changes always win.
