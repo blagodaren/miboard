@@ -27,6 +27,7 @@
   import SettingsSync from '../components/SettingsSync.svelte'
   import ProviderAlertSettings from '../components/ProviderAlertSettings.svelte'
   import LiveUpdateSettings from '../components/LiveUpdateSettings.svelte'
+  import CustomCssSettings from '../components/CustomCssSettings.svelte'
   import { notifications } from '../lib/notifications.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import type { ProxyCardSize, ProxyGroupHeight } from '../lib/appearance'
@@ -321,6 +322,7 @@
         </ol>
         {#if !mobileNavSaved}<p class="mt-2 px-1 text-xs text-warning" role="status">{t('settings.mobileNavMemory')}</p>{/if}
       </section>
+      <CustomCssSettings />
     </Tabs.Content>
   </div>
 </Tabs.Root>
