@@ -129,7 +129,7 @@ function urlParams(): URLSearchParams {
 function stripSecretFromUrl() {
   const clean = (q: string) => {
     const p = new URLSearchParams(q)
-    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath', 'label'].forEach((k) => p.delete(k))
+    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath', 'label', 'theme'].forEach((k) => p.delete(k))
     const s = p.toString()
     return s ? '?' + s : ''
   }
