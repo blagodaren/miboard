@@ -42,7 +42,7 @@
   })
   const layout = $derived(narrow ? 'cards' : 'table')
   // Cards have a fixed height, so the virtual window works in whole grid rows.
-  const CARD_ROW = 136, CARD_MIN_WIDTH = 360
+  const CARD_ROW = 136, CARD_MIN_WIDTH = 340
   let listWidth = $state(1024)
   const columnCount = $derived(8 + visibleColumns.length)
   const visible = (column: ColumnKey) => visibleColumns.includes(column)

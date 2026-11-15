@@ -118,8 +118,8 @@ try {
   assert.deepEqual(errors, [], 'no browser runtime errors after live sorting')
   console.log('PASS: 600 live connections retain dialog trigger and keyboard focus across reordering and scrolling')
 
-  // A fresh browser exercises the default card layout, independently of the table fixture.
-  const cardsContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block' })
+  // Phone widths get cards; 760 px still has cards with two grid columns.
+  const cardsContext = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', serviceWorkers: 'block' })
   await stubAppUpdates(cardsContext)
   await cardsContext.addInitScript(() => localStorage.setItem('miboard.locale', 'en'))
   const cardsPage = await cardsContext.newPage()
@@ -132,7 +132,7 @@ try {
   const cardsContainer = cardsPage.getByTestId('connections-table')
   const cards = cardsPage.getByTestId('active-connection-row')
   await cards.first().waitFor()
-  assert.equal(await cards.first().evaluate(element => element.tagName), 'ARTICLE', 'fresh storage uses cards')
+  assert.equal(await cards.first().evaluate(element => element.tagName), 'ARTICLE', 'phone width uses cards')
   const visibleCards = () => cardsContainer.evaluate(element => {
     const bounds = element.getBoundingClientRect()
     return [...element.querySelectorAll('[data-testid="active-connection-row"]')].filter(card => {
@@ -141,12 +141,12 @@ try {
     }).map(card => card.dataset.connectionKey)
   })
   const fullHeight = await cardsContainer.evaluate(element => element.scrollHeight)
-  await cardsContainer.evaluate(element => { element.scrollTop = 5000 })
+  await cardsContainer.evaluate(element => { element.scrollTop = 10000 })
   await poll(async () => Number((await cards.first().getAttribute('data-connection-key')).split('-')[1]) > 50, 'cards render the scrolled window')
   await poll(async () => (await visibleCards()).length > 0, 'scrolled cards actually intersect the viewport')
   assert.equal(await cardsContainer.evaluate(element => element.scrollHeight), fullHeight, 'virtual scrolling preserves the full list height')
   assert(await cards.count() < 80, 'card window stays bounded')
-  for (const width of [1440, 390, 320]) {
+  for (const width of [760, 390, 320]) {
     await cardsPage.setViewportSize({ width, height: width < 768 ? 844 : 1000 })
     // ResizeObserver updates the column count before the scroll extent is measured.
     await cardsPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
@@ -160,7 +160,7 @@ try {
   assert.equal(await cardsContainer.evaluate(element => element.scrollTop), 0)
   assert.deepEqual(await visibleCards(), ['focus-599'])
   await cardsPage.getByRole('searchbox').fill('')
-  await cardsPage.setViewportSize({ width: 1440, height: 1000 })
+  await cardsPage.setViewportSize({ width: 760, height: 1000 })
   const selectedCard = cardsPage.locator('[data-connection-key="focus-0"]')
   const opener = selectedCard.getByRole('button').first()
   await opener.click()
@@ -179,7 +179,7 @@ try {
   assert(await originalOpener.evaluate(element => element.isConnected && element === document.activeElement), 'scrolling and changing columns preserve keyboard focus')
   assert.deepEqual(errors, [], 'no browser runtime errors after card scrolling and reordering')
   await cardsContext.close()
-  console.log('PASS: 600 default cards, visible scrolled/final rows at desktop and mobile widths, filtering, stable dialog trigger and keyboard focus')
+  console.log('PASS: 600 default cards, visible scrolled/final rows at 760/390/320 px, filtering, stable dialog trigger and keyboard focus')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) child.kill()
