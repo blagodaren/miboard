@@ -17,11 +17,11 @@
   import ConnectionDetails from '../components/ConnectionDetails.svelte'
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
-  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout } from '../lib/connection-columns'
+  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
   import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
   import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
-  type SortKey = 'rate' | 'total' | 'start' | 'host'
+  type SortKey = ConnectionSortKey
   const VIRTUAL_THRESHOLD = 150
   const JOURNAL_PAGE_SIZE = 100
   let page = $state(1)
@@ -52,13 +52,16 @@
   const stamp = (value: number) => Number.isFinite(value) && value > 0 ? dateFormat.format(value) : '—'
   const rowKey = (row: DisplayRow) => row.journal ? JSON.stringify([row.id, row.start, row.journal.firstSeenAt]) : row.id
   const deviceName = (row: DisplayRow) => deviceNames[normalizeDeviceIP(row.metadata.sourceIP)] ?? ''
-  function changeView(value: 'active' | 'closed') { view = value; selected = ''; detailsOpen = false; selectedSnapshot = null; paused = false; sort = value === 'closed' ? 'start' : 'rate'; sortDirection = 'desc' }
+  function changeView(value: 'active' | 'closed') { view = value; selected = ''; detailsOpen = false; selectedSnapshot = null; paused = false; ({ key: sort, direction: sortDirection } = readConnectionSort(value)) }
 
   let query = $state('')
   let paused = $state(false)
   let frozen = $state.raw<ConnRow[]>([])
-  let sort = $state<SortKey>('rate')
-  let sortDirection = $state<'asc' | 'desc'>('desc')
+  const initialSort = readConnectionSort('active')
+  let sort = $state<SortKey>(initialSort.key)
+  let sortDirection = $state<'asc' | 'desc'>(initialSort.direction)
+  // Writes follow every change (header, select or direction button); reading the same value back is harmless.
+  $effect(() => saveConnectionSort(view, { key: sort, direction: sortDirection }))
   let confirmAll = $state(false)
   let confirmFiltered = $state(false)
   let scope = $state<ConnectionFilter>('all')
