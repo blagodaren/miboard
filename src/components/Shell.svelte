@@ -7,39 +7,24 @@
   import { t } from '../lib/i18n.svelte'
   import { count } from '../lib/format'
   import { embed } from '../lib/embed'
-  import {
-    IconOverview,
-    IconProxies,
-    IconConnections,
-    IconDevices,
-    IconAnalysis,
-    IconGeography,
-    IconRules,
-    IconLogs,
-    IconSettings,
-    IconServer,
-  } from '../lib/icons'
+  import { IconServer, IconMore, NAV_ICONS } from '../lib/icons'
+  import { NAV_ROUTES, MOBILE_NAV_SLOTS } from '../lib/mobile-nav'
+  import { appearance } from '../lib/appearance.svelte'
   import Segmented from './Segmented.svelte'
   import Brand from './Brand.svelte'
   import SidebarStats from './SidebarStats.svelte'
   import LiveUpdateNotice from './LiveUpdateNotice.svelte'
-  import IconHistory from '@lucide/svelte/icons/history'
 
   let { children }: { children: Snippet } = $props()
 
-  const nav: { route: Exclude<Route, 'setup'>; icon: typeof IconOverview }[] = [
-    { route: 'overview', icon: IconOverview },
-    { route: 'proxies', icon: IconProxies },
-    { route: 'devices', icon: IconDevices },
-    { route: 'connections', icon: IconConnections },
-    { route: 'analysis', icon: IconAnalysis },
-    { route: 'geography', icon: IconGeography },
-    { route: 'rules', icon: IconRules },
-    { route: 'logs', icon: IconLogs },
-    { route: 'history', icon: IconHistory },
-    { route: 'fleet', icon: IconServer },
-    { route: 'settings', icon: IconSettings },
-  ]
+  const nav = NAV_ROUTES.map(route => ({ route, icon: NAV_ICONS[route] }))
+  const bar = $derived(appearance.mobileNav.slice(0, MOBILE_NAV_SLOTS).map(route => ({ route, icon: NAV_ICONS[route] })))
+  const more = $derived(appearance.mobileNav.slice(MOBILE_NAV_SLOTS).map(route => ({ route, icon: NAV_ICONS[route] })))
+  const moreActive = $derived(more.some(item => item.route === router.route))
+  const barIndex = $derived(moreActive ? bar.length : bar.findIndex(item => item.route === router.route))
+  let moreOpen = $state(false)
+  $effect(() => { void router.route; moreOpen = false })
+
   const modes: { value: Mode; label: string }[] = $derived([
     { value: 'rule', label: t('mode.rule') },
     { value: 'global', label: t('mode.global') },
@@ -142,29 +127,68 @@
       {@render children()}
     </main>
 
-    <!-- Нижние вкладки: мобильный -->
-    <nav
-      use:revealSection={router.route}
-      class="mobile-sections fixed inset-x-0 bottom-0 z-20 flex overflow-x-auto border-t border-line bg-deep pb-[env(safe-area-inset-bottom)] md:hidden"
-      aria-label={t('nav.sections')}
-    >
-      {#each nav as item (item.route)}
+    <!-- Нижняя панель: мобильный. Порядок задаётся в настройках, остальное — в ⋯ -->
+    {#if moreOpen}<button type="button" class="more-backdrop md:hidden" tabindex="-1" aria-hidden="true" onclick={() => (moreOpen = false)}></button>{/if}
+    <nav class="mobile-sections md:hidden" aria-label={t('nav.sections')} style:--tab-count={bar.length + (more.length ? 1 : 0)} style:--tab-index={barIndex}>
+      {#if barIndex >= 0}<span class="tab-indicator" aria-hidden="true"></span>{/if}
+      {#each bar as item (item.route)}
         {@const active = router.route === item.route}
-        <a
-          href="#/{item.route}"
-          aria-current={active ? 'page' : undefined}
-          class="flex h-14 min-w-[88px] flex-1 shrink-0 flex-col items-center justify-center gap-1 border-t-2 text-xs leading-none transition-colors
-            {active ? 'border-accent-ink bg-nav-active font-medium text-fg' : 'border-transparent text-fg-3 hover:bg-hover'}"
-        >
+        <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="tab-item" class:active>
           <item.icon class="size-[18px]" strokeWidth={1.5} />
-          <span class="max-w-full truncate px-0.5">{t(`nav.${item.route}`)}</span>
+          <span class="tab-label">{t(`nav.${item.route}`)}</span>
         </a>
       {/each}
+      {#if more.length}
+        <button type="button" class="tab-item" class:active={moreActive} data-testid="mobile-nav-more" aria-expanded={moreOpen} aria-controls="mobile-nav-more" onclick={() => (moreOpen = !moreOpen)}>
+          <IconMore class="size-[18px]" strokeWidth={1.5} />
+          <span class="tab-label">{t('nav.more')}</span>
+        </button>
+      {/if}
+      {#if moreOpen}
+        <div id="mobile-nav-more" class="more-panel" data-testid="mobile-nav-more-panel">
+          {#each more as item (item.route)}
+            {@const active = router.route === item.route}
+            <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="more-item" class:active>
+              <item.icon class="size-[18px] shrink-0" strokeWidth={1.5} />
+              <span class="min-w-0 truncate">{t(`nav.${item.route}`)}</span>
+            </a>
+          {/each}
+        </div>
+      {/if}
     </nav>
   </div>
 </div>
 
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && moreOpen) moreOpen = false }} />
+
 <style>
   .sidebar-link[aria-current='page'] { box-shadow: inset 3px 0 var(--accent); }
-  .mobile-sections { scrollbar-width: thin; scrollbar-color: var(--line-strong) var(--deep); }
+  .mobile-sections {
+    position: fixed; z-index: 20; left: 12px; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom));
+    display: flex; height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 9999px;
+    background: color-mix(in oklab, var(--deep) 82%, transparent); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  }
+  .tab-indicator {
+    position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--tab-count)); border-radius: 9999px;
+    background: color-mix(in oklab, var(--accent) 16%, transparent); transform: translateX(calc(100% * var(--tab-index)));
+    transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1); pointer-events: none;
+  }
+  .tab-item {
+    position: relative; display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    border-radius: 9999px; color: var(--text-3); font-size: 11px; line-height: 14px; transition: color 0.15s;
+  }
+  .tab-item.active { color: var(--accent-ink); font-weight: 500; }
+  .tab-label { max-width: 100%; overflow: hidden; padding: 0 2px; text-overflow: ellipsis; white-space: nowrap; }
+  .more-panel {
+    position: absolute; right: 0; bottom: calc(100% + 8px); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px;
+    width: min(320px, 100%); padding: 6px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
+    transform-origin: bottom right; animation: more-in 0.18s ease-out;
+  }
+  .more-item { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 0 12px; border-radius: 14px; color: var(--text-2); font-size: 13px; }
+  .more-item:hover { background: var(--hover); color: var(--text); }
+  .more-item.active { background: var(--selected); color: var(--selected-text); font-weight: 500; }
+  .more-backdrop { position: fixed; inset: 0; z-index: 19; }
+  @keyframes more-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } }
+  @media (prefers-reduced-motion: reduce) { .tab-indicator { transition: none; } .more-panel { animation: none; } }
 </style>
