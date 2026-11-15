@@ -24,7 +24,7 @@
 - Connection links accept a port in `hostname` and limit `label` length.
   Copied group links preserve embedding flags without secrets or theme parameters.
 - Documented trust in external CSS and automatic link-theme loading.
-  Added History and Cores to the README feature table.
+  Added History and Controllers to the README feature table.
 
 ## [0.1.9] — 2026-11-15
 

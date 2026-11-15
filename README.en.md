@@ -48,7 +48,7 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 | **IP & domains** | Traffic by domain, IP, application, ASN and inbound; DNS diagnostics and domain TXT export |
 | **Geography & rules** | A local country map, traffic distribution, routing chains and rule providers |
 | **Settings** | RU / EN, light and dark themes, card sizes, server profiles, settings transfer and sync |
-| **Cores** | Saved controllers, availability checks and batch actions with results for each profile |
+| **Controllers** | Saved controllers, availability checks and batch actions with results for each profile |
 | **Application** | PWA installation, an offline shell, update checks, stream recovery and an economy mode |
 
 > [!NOTE]
