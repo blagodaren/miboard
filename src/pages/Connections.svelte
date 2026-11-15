@@ -17,11 +17,11 @@
   import ConnectionDetails from '../components/ConnectionDetails.svelte'
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
-  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey } from '../lib/connection-columns'
+  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
   import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
   import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
-  type SortKey = 'rate' | 'total' | 'start' | 'host'
+  type SortKey = ConnectionSortKey
   const VIRTUAL_THRESHOLD = 150
   const JOURNAL_PAGE_SIZE = 100
   let page = $state(1)
@@ -32,6 +32,15 @@
   let selectedSnapshot = $state.raw<DisplayRow | null>(null)
   let visibleColumns = $state<ColumnKey[]>(readConnectionColumns())
   let columnsOpen = $state(false)
+  let layout = $state<ConnectionLayout>(readConnectionLayout())
+  const layouts = $derived([{ value: 'cards' as const, label: t('connectionDetails.cards') }, { value: 'table' as const, label: t('connectionDetails.table') }])
+  function changeLayout(value: ConnectionLayout) {
+    layout = value
+    try { localStorage.setItem(CONNECTION_LAYOUT_KEY, value) } catch { /* Keep this session's layout. */ }
+  }
+  // Cards have a fixed height, so the virtual window works in whole grid rows.
+  const CARD_ROW = 136, CARD_MIN_WIDTH = 360
+  let listWidth = $state(1024)
   const columnCount = $derived(8 + visibleColumns.length)
   const visible = (column: ColumnKey) => visibleColumns.includes(column)
   const columnLabel = (column: ColumnKey) => t(column === 'destination' ? 'journal.destination' : `connectionDetails.${column}`)
@@ -43,13 +52,16 @@
   const stamp = (value: number) => Number.isFinite(value) && value > 0 ? dateFormat.format(value) : '—'
   const rowKey = (row: DisplayRow) => row.journal ? JSON.stringify([row.id, row.start, row.journal.firstSeenAt]) : row.id
   const deviceName = (row: DisplayRow) => deviceNames[normalizeDeviceIP(row.metadata.sourceIP)] ?? ''
-  function changeView(value: 'active' | 'closed') { view = value; selected = ''; detailsOpen = false; selectedSnapshot = null; paused = false; sort = value === 'closed' ? 'start' : 'rate'; sortDirection = 'desc' }
+  function changeView(value: 'active' | 'closed') { view = value; selected = ''; detailsOpen = false; selectedSnapshot = null; paused = false; ({ key: sort, direction: sortDirection } = readConnectionSort(value)) }
 
   let query = $state('')
   let paused = $state(false)
   let frozen = $state.raw<ConnRow[]>([])
-  let sort = $state<SortKey>('rate')
-  let sortDirection = $state<'asc' | 'desc'>('desc')
+  const initialSort = readConnectionSort('active')
+  let sort = $state<SortKey>(initialSort.key)
+  let sortDirection = $state<'asc' | 'desc'>(initialSort.direction)
+  // Writes follow every change (header, select or direction button); reading the same value back is harmless.
+  $effect(() => saveConnectionSort(view, { key: sort, direction: sortDirection }))
   let confirmAll = $state(false)
   let confirmFiltered = $state(false)
   let scope = $state<ConnectionFilter>('all')
@@ -143,6 +155,12 @@
     if (detailsOpen && selectedCurrent && selectedCurrent !== selectedSnapshot) selectedSnapshot = selectedCurrent
   })
 
+  const sortOptions = $derived<{ value: SortKey; label: string }[]>([
+    { value: 'rate', label: t(view === 'closed' ? 'journal.lastSeen' : 'connections.speed') },
+    { value: 'total', label: t('connections.total') },
+    { value: 'start', label: t(view === 'closed' ? 'journal.observedEnd' : 'connections.time') },
+    { value: 'host', label: t('connections.host') },
+  ])
   function changeSort(key: SortKey) {
     if (sort === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
@@ -174,6 +192,18 @@
   // Keep the last detail trigger mounted through the dialog's close/focus-restoration phase.
   const renderedIndices = $derived(virtualized ? pinnedRuleIndices(windowRows.start, windowRows.end, rows.length, [rows.findIndex(row => rowKey(row) === focusedRow), rows.findIndex(row => rowKey(row) === selected)]) : [])
   const displayedRows = $derived(view === 'closed' ? rows.slice((currentPage - 1) * JOURNAL_PAGE_SIZE, currentPage * JOURNAL_PAGE_SIZE) : virtualized ? renderedIndices.map(index => rows[index]) : rows)
+  const cardColumns = $derived(Math.max(1, Math.floor((listWidth + 8) / (CARD_MIN_WIDTH + 8))))
+  const renderedCardIndices = $derived.by(() => {
+    if (!virtualized) return []
+    const total = Math.ceil(rows.length / cardColumns)
+    const range = virtualRange(total, scrollTop, viewportHeight, CARD_ROW)
+    const pinned = [focusedRow, selected].map(key => rows.findIndex(row => rowKey(row) === key))
+    return pinnedRuleIndices(range.start * cardColumns, range.end * cardColumns, rows.length, pinned)
+  })
+  // One keyed list preserves a focused card's DOM when sorting moves it to another grid row.
+  const displayedCards = $derived(virtualized
+    ? renderedCardIndices.map(index => ({ connection: rows[index], index }))
+    : displayedRows.map((connection, index) => ({ connection, index })))
   const bottomGap = $derived(virtualized && renderedIndices.length ? Math.max(0, rows.length - renderedIndices[renderedIndices.length - 1] - 1) * 64 : 0)
   function trackTableFocus(event: FocusEvent) {
     const row = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-connection-key]') : null
@@ -238,6 +268,63 @@
   </th>
 {/snippet}
 
+{#snippet rowActions(c: DisplayRow)}
+            {#if !c.journal}
+            {#if usesSmart(c)}
+              <Button
+                size="sm"
+                variant="ghost"
+                type="button"
+                class="w-11 !px-0 sm:w-8"
+                aria-label={t('prizrak.switchNode', { host: host(c) })}
+                title={t('prizrak.switchNode', { host: host(c) })}
+                aria-busy={!!switching[JSON.stringify(c.id)]}
+                disabled={!!switching[JSON.stringify(c.id)] || !canSwitch(c)}
+                onclick={() => switchNode(c)}
+              >
+                <IconRefresh class="size-4" strokeWidth={1.5} aria-hidden="true" />
+              </Button>
+            {/if}
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              class="w-11 !px-0 sm:w-8"
+              aria-label={t('connections.closeHost', { host: host(c) })}
+              onclick={() => close(c.id)}
+            >
+              <IconClose class="size-4" strokeWidth={1.5} aria-hidden="true" />
+            </Button>
+            {:else}
+              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-haspopup="dialog" onclick={() => showDetails(c)}><Info class="size-4" strokeWidth={1.5} /></Button>
+            {/if}
+{/snippet}
+
+{#snippet card(c: DisplayRow, index: number)}
+  {@const endpoint = connectionEndpoint(host(c), c.metadata.destinationPort)}
+  <article class="connection-card {detailsOpen && selected === rowKey(c) ? 'is-selected' : ''}" style:--card-column={index % cardColumns} style:top={virtualized ? Math.floor(index / cardColumns) * CARD_ROW + 'px' : undefined} data-connection-key={rowKey(c)} data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
+    <div class="card-head">
+      <button type="button" class="card-host" aria-haspopup="dialog" aria-label={t('journal.details', { host: host(c) })} title={endpoint} onclick={() => showDetails(c)}>{endpoint}</button>
+      <span class="num card-time">{c.journal ? stamp(c.journal.closedAt) : since(c.start, now)}</span>
+      <div class="card-actions">{@render rowActions(c)}</div>
+    </div>
+    <div class="card-line font-mono">{c.metadata.type || '—'} · {c.metadata.network?.toUpperCase() || '—'} · {deviceName(c) || c.metadata.process || c.metadata.sourceIP || '—'}</div>
+    <div class="card-line" title={[c.rule, c.rulePayload].filter(Boolean).join(': ') + ' → ' + chain(c)}>
+      <span class="text-fg">{c.rule || '—'}</span>{#if c.rulePayload}<span class="ml-1.5 font-mono text-fg-3">{c.rulePayload}</span>{/if}
+      <span class="mx-1.5 text-fg-3">→</span>{chain(c) || '—'}
+    </div>
+    <div class="card-stats num font-mono">
+      {#if c.journal}
+        <span class="min-w-0 truncate font-sans text-fg-3">{c.journal.afterGap ? t('journal.afterGap') : `${t('journal.lastSeen')} ${stamp(c.journal.lastSeenAt)}`}</span>
+      {:else}
+        <span class={c.dl ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {speed(c.dl)}</span>
+        <span class={c.ul ? 'text-traffic-up-ink' : 'text-fg-3'}>↑ {speed(c.ul)}</span>
+      {/if}
+      <span class="card-total"><span class={c.download ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {bytes(c.download)}</span> <span class={c.upload ? 'text-traffic-up-ink' : 'text-fg-3'}>↑ {bytes(c.upload)}</span></span>
+    </div>
+  </article>
+{/snippet}
+
 <PageHeader title={t('connections.title')} meta={t('connections.meta', { shown: count(rows.length), total: count(viewTotal) }) + (paused ? t('connections.paused') : '')}>
   {#snippet actions()}
     <SearchInput bind:value={query} placeholder={t('connectionDetails.search')} />
@@ -265,9 +352,20 @@
 
 <div class="connections-toolbar">
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
-  <Button size="sm" data-testid="connection-columns-toggle" aria-expanded={columnsOpen} aria-controls="connection-columns" onclick={() => columnsOpen = !columnsOpen}><Columns strokeWidth={1.5} aria-hidden="true" />{t('connectionDetails.columns')}<span class="num text-fg-3">{visibleColumns.length}</span></Button>
+  <div class="flex flex-wrap items-center gap-2">
+  <div data-testid="connection-layout"><Segmented value={layout} options={layouts} onchange={changeLayout} label={t('connectionDetails.layout')} /></div>
+  {#if layout === 'cards'}
+    <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('connections.sortBy')}
+      <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">
+        {#each sortOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+      </select>
+    </label>
+    <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('connections.sortAscending')} aria-pressed={sortDirection === 'asc'} onclick={() => (sortDirection = sortDirection === 'desc' ? 'asc' : 'desc')}><IconChevron class="size-4 {sortDirection === 'asc' ? 'rotate-180' : ''}" strokeWidth={1.5} aria-hidden="true" /></Button>
+  {/if}
+  {#if layout === 'table'}<Button size="sm" data-testid="connection-columns-toggle" aria-expanded={columnsOpen} aria-controls="connection-columns" onclick={() => columnsOpen = !columnsOpen}><Columns strokeWidth={1.5} aria-hidden="true" />{t('connectionDetails.columns')}<span class="num text-fg-3">{visibleColumns.length}</span></Button>{/if}
+  </div>
 </div>
-{#if columnsOpen}
+{#if columnsOpen && layout === 'table'}
   <section id="connection-columns" class="column-options" data-testid="connection-columns" aria-label={t('connectionDetails.columns')}>
     <div class="column-options-grid">
       {#each columnOptions as column (column)}
@@ -291,7 +389,13 @@
 
 {#if virtualized}<p class="mb-3 text-xs text-fg-3">{t('panelTools.virtual', { count: rows.length })}</p>{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex (A scrollable region needs keyboard focus for arrow/PageDown scrolling.) -->
-<div class="connections-table relative overflow-x-auto rounded-panel border border-line bg-card" class:virtual-table={virtualized} data-testid="connections-table" bind:this={tableContainer} bind:clientHeight={viewportHeight} onscroll={event => scrollTop = event.currentTarget.scrollTop} onfocusin={trackTableFocus} onfocusout={clearTableFocus} tabindex={virtualized ? 0 : undefined} role="region" aria-label={t('connections.title')}>
+<div class="connections-table relative {layout === 'table' ? 'overflow-x-auto rounded-panel border border-line bg-card' : 'connections-cards'}" class:virtual-table={virtualized} data-testid="connections-table" bind:this={tableContainer} bind:clientHeight={viewportHeight} onscroll={event => scrollTop = event.currentTarget.scrollTop} onfocusin={trackTableFocus} onfocusout={clearTableFocus} tabindex={virtualized ? 0 : undefined} role="region" aria-label={t('connections.title')}>
+  {#if layout === 'cards'}
+    <div class="cards-grid" class:virtual-cards={virtualized} bind:clientWidth={listWidth} style:--card-columns={cardColumns} style:height={virtualized ? Math.ceil(rows.length / cardColumns) * CARD_ROW + 'px' : undefined}>
+      {#each displayedCards as item (rowKey(item.connection))}{@render card(item.connection, item.index)}{/each}
+      {#if !rows.length}<p class="col-span-full rounded-panel border border-line bg-card px-4 py-8 text-center text-fg-3">{query ? t('connections.noResults') : view === 'closed' ? t('journal.empty') : t('connections.noConnections')}</p>{/if}
+    </div>
+  {:else}
   <table class="w-full min-w-[960px] text-[13px]" aria-rowcount={rows.length + 1}>
     <thead>
       <tr>
@@ -358,35 +462,7 @@
             {:else}{since(c.start, now)}{/if}
           </td>
           <td class="whitespace-nowrap pr-3 text-right">
-            {#if !c.journal}
-            {#if usesSmart(c)}
-              <Button
-                size="sm"
-                variant="ghost"
-                type="button"
-                class="w-11 !px-0 sm:w-8"
-                aria-label={t('prizrak.switchNode', { host: host(c) })}
-                title={t('prizrak.switchNode', { host: host(c) })}
-                aria-busy={!!switching[JSON.stringify(c.id)]}
-                disabled={!!switching[JSON.stringify(c.id)] || !canSwitch(c)}
-                onclick={() => switchNode(c)}
-              >
-                <IconRefresh class="size-4" strokeWidth={1.5} aria-hidden="true" />
-              </Button>
-            {/if}
-            <Button
-              size="sm"
-              variant="ghost"
-              type="button"
-              class="w-11 !px-0 sm:w-8"
-              aria-label={t('connections.closeHost', { host: host(c) })}
-              onclick={() => close(c.id)}
-            >
-              <IconClose class="size-4" strokeWidth={1.5} aria-hidden="true" />
-            </Button>
-            {:else}
-              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('journal.details', { host: host(c) })} aria-haspopup="dialog" onclick={() => showDetails(c)}><Info class="size-4" strokeWidth={1.5} /></Button>
-            {/if}
+            {@render rowActions(c)}
           </td>
         </tr>
       {:else}
@@ -397,8 +473,9 @@
       {#if bottomGap > 0}<tr aria-hidden="true"><td colspan={columnCount} style:height={bottomGap + 'px'} class="!p-0"></td></tr>{/if}
     </tbody>
   </table>
+  {/if}
   {#if view === 'closed' && pages > 1}
-    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3" data-testid="journal-pagination" role="group" aria-label={t('journal.pages')}>
+    <div class="flex flex-wrap items-center justify-between gap-3 {layout === 'table' ? 'border-t border-line' : 'mt-2 rounded-panel border border-line bg-card'} px-4 py-3" data-testid="journal-pagination" role="group" aria-label={t('journal.pages')}>
       <span class="num font-mono text-xs text-fg-3">{t('journal.page', { current: count(currentPage), pages: count(pages) })}</span>
       <div class="flex gap-2">
         <Button size="sm" disabled={currentPage === 1} onclick={() => page = currentPage - 1}>{t('journal.previous')}</Button>
@@ -427,6 +504,21 @@
   .column-options label { display: flex; align-items: center; gap: 9px; min-height: 36px; color: var(--text-2); font-size: 13px; cursor: pointer; }
   .column-options input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
   .connections-table { max-width: 100%; }
+  .cards-grid { display: grid; grid-template-columns: repeat(var(--card-columns), minmax(0, 1fr)); grid-auto-rows: 136px; column-gap: 8px; }
+  .cards-grid.virtual-cards { display: block; position: relative; }
+  .virtual-cards .connection-card { position: absolute; left: calc(var(--card-column) * (100% + 8px) / var(--card-columns)); width: calc((100% - (var(--card-columns) - 1) * 8px) / var(--card-columns)); }
+  .connection-card { display: flex; height: 128px; min-width: 0; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); font-size: 13px; transition: background-color 150ms, border-color 150ms; }
+  .connection-card:hover { background: var(--hover); }
+  .connection-card.is-selected { border-color: var(--selected-border); background: var(--selected); }
+  .card-head { display: flex; min-width: 0; align-items: center; gap: 8px; }
+  .card-host { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-weight: 500; }
+  .card-host:hover { color: var(--accent-ink); }
+  .card-time { flex-shrink: 0; color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
+  .card-actions { display: flex; flex-shrink: 0; margin: -12px -8px -12px 0; }
+  .card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; line-height: 18px; }
+  .card-stats { display: flex; align-items: center; gap: 10px; margin-top: auto; font-size: 12px; line-height: 16px; white-space: nowrap; }
+  .card-total { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
+  .connections-cards.virtual-table { padding-right: 4px; }
   .virtual-table { max-height: 70dvh; overflow-y: auto; overflow-anchor: none; }
   .virtual-table thead { position: sticky; top: 0; z-index: 1; background: var(--card); height: 44px; }
   .virtual-table tr[data-testid="active-connection-row"] { height: 64px; }

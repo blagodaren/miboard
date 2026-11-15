@@ -86,6 +86,7 @@ try {
       await stubAppUpdates(context)
       await context.addInitScript(({ locale, origin, memory }) => {
         localStorage.setItem('miboard.locale', locale)
+        localStorage.setItem('miboard.connection-layout', 'table')
         localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.10': 'Work laptop' }))
         localStorage.setItem('miboard.backends', JSON.stringify([{ id: 'unrelated-fixture', url: 'http://unrelated-fixture.invalid:9090', secret: 'fixture-only', name: 'Keep this profile' }]))
         if (memory) Object.defineProperty(window, 'indexedDB', { configurable: true, get() { throw new DOMException('Blocked in fixture', 'SecurityError') } })

@@ -16,3 +16,39 @@ export function readConnectionColumns(): ConnectionColumn[] {
   } catch { /* Column preferences are optional. */ }
   return [...DEFAULT_CONNECTION_COLUMNS]
 }
+
+export const CONNECTION_LAYOUT_KEY = 'miboard.connection-layout'
+export type ConnectionLayout = 'cards' | 'table'
+
+export function readConnectionLayout(): ConnectionLayout {
+  try { return localStorage.getItem(CONNECTION_LAYOUT_KEY) === 'table' ? 'table' : 'cards' } catch { return 'cards' }
+}
+
+export const CONNECTION_SORT_KEY = 'miboard.connection-sort.v1'
+export const CONNECTION_SORT_KEYS = ['rate', 'total', 'start', 'host'] as const
+export type ConnectionSortKey = typeof CONNECTION_SORT_KEYS[number]
+export type ConnectionSort = { key: ConnectionSortKey; direction: 'asc' | 'desc' }
+type SortView = 'active' | 'closed'
+const DEFAULT_SORT: Record<SortView, ConnectionSort> = { active: { key: 'rate', direction: 'desc' }, closed: { key: 'start', direction: 'desc' } }
+
+function validSort(value: unknown): value is ConnectionSort {
+  const sort = value as ConnectionSort | null
+  return !!sort && typeof sort === 'object' && CONNECTION_SORT_KEYS.includes(sort.key) && (sort.direction === 'asc' || sort.direction === 'desc')
+}
+
+function readSorts(): Partial<Record<SortView, unknown>> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(CONNECTION_SORT_KEY) ?? 'null')
+    return value && typeof value === 'object' ? value : {}
+  } catch { return {} }
+}
+
+/** Active and completed connections keep their own sort: speed means little for closed ones. */
+export function readConnectionSort(view: SortView): ConnectionSort {
+  const saved = readSorts()[view]
+  return validSort(saved) ? { key: saved.key, direction: saved.direction } : { ...DEFAULT_SORT[view] }
+}
+
+export function saveConnectionSort(view: SortView, sort: ConnectionSort) {
+  try { localStorage.setItem(CONNECTION_SORT_KEY, JSON.stringify({ ...readSorts(), [view]: sort })) } catch { /* Keep this session's sort. */ }
+}

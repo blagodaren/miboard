@@ -116,6 +116,7 @@ try {
     await context.addInitScript(({ locale, theme, origin }) => {
       localStorage.setItem('miboard.locale', locale)
       localStorage.setItem('miboard.theme', theme)
+      if (!localStorage.getItem('miboard.connection-layout')) localStorage.setItem('miboard.connection-layout', 'table')
       localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.214': 'Fixture laptop' }))
       window.__copiedConnection = null
       window.__clipboardShouldFail = false
@@ -170,6 +171,23 @@ try {
   assert.equal(await columns.locator('input[data-column="sniffHost"]').isChecked(), false)
   await page.getByTestId('connection-columns-toggle').click()
   console.log('PASS: expanded source/destination/inbound columns, field search, persisted columns and reset')
+
+  const layoutButtons = page.getByTestId('connection-layout').locator('button')
+  const cardsShown = async () => await activeRows(page).count() > 0 && await activeRows(page).first().evaluate(node => node.tagName) === 'ARTICLE'
+  await layoutButtons.nth(0).click()
+  await poll(cardsShown, 'cards layout')
+  assert.equal(await page.getByTestId('connection-columns-toggle').count(), 0, 'Column picker belongs to the table layout')
+  assert.match(await richRow(page).innerText(), /raw\.fixture\.example/)
+  await page.getByTestId('connection-card-sort').selectOption('host')
+  const hosts = await activeRows(page).locator('.card-host').allInnerTexts()
+  assert.deepEqual(hosts, [...hosts].sort((a, b) => a.localeCompare(b, 'en')), 'Cards sort by host')
+  await page.reload()
+  await poll(cardsShown, 'cards layout survives reload')
+  assert.equal(await page.getByTestId('connection-card-sort').inputValue(), 'host', 'Sort survives reload')
+  assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('miboard.connection-sort.v1'))).active, { key: 'host', direction: 'asc' })
+  await layoutButtons.nth(1).click()
+  await poll(async () => await activeRows(page).first().evaluate(node => node.tagName) === 'TR', 'table layout restored')
+  console.log('PASS: cards layout, persisted layout and sort')
 
   const opener = richRow(page).getByRole('button', { name: 'Connection details for raw.fixture.example', exact: true }).first()
   await opener.click()
