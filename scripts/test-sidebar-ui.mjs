@@ -253,6 +253,18 @@ try {
   assert.equal(await page.evaluate(() => window.scrollY), 0, 'Revealing the selected navigation item does not scroll page content')
   await page.screenshot({ path: path.join(screenshots, 'sidebar-en-dark-settings-deeplink-1024x600.png'), animations: 'disabled' })
 
+  const sidebar = page.getByTestId('sidebar')
+  await page.getByTestId('sidebar-toggle').click()
+  await poll(async () => Math.round((await sidebar.boundingBox()).width) === 72, 'sidebar collapses to icons')
+  await sidebar.getByRole('link', { name: 'Settings', exact: true }).waitFor()
+  assert.equal(await stats.isVisible(), false, 'Collapsed sidebar hides the stats panel')
+  await page.reload()
+  await page.getByRole('heading', { level: 1, name: 'Settings', exact: true }).waitFor()
+  assert.equal(await sidebar.getAttribute('data-collapsed'), 'true', 'Collapsed state survives reload')
+  await page.getByTestId('sidebar-toggle').click()
+  await poll(async () => Math.round((await sidebar.boundingBox()).width) === 248, 'sidebar expands')
+  console.log('PASS: desktop sidebar collapses to icons, keeps link names and remembers the state')
+
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.equal(await stats.isVisible(), false, 'Desktop stats are hidden on mobile')

@@ -12,6 +12,8 @@ export const ru: Record<keyof typeof en, Message> = {
   'nav.settings': 'Настройки',
   'nav.sections': 'Разделы',
   'nav.more': 'Ещё',
+  'nav.collapse': 'Свернуть панель',
+  'nav.expand': 'Развернуть панель',
   'common.cancel': 'Отмена',
   'common.search': 'Поиск',
   'common.done': 'Готово',
