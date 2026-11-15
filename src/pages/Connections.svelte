@@ -152,6 +152,12 @@
     if (detailsOpen && selectedCurrent && selectedCurrent !== selectedSnapshot) selectedSnapshot = selectedCurrent
   })
 
+  const sortOptions = $derived<{ value: SortKey; label: string }[]>([
+    { value: 'rate', label: t(view === 'closed' ? 'journal.lastSeen' : 'connections.speed') },
+    { value: 'total', label: t('connections.total') },
+    { value: 'start', label: t(view === 'closed' ? 'journal.observedEnd' : 'connections.time') },
+    { value: 'host', label: t('connections.host') },
+  ])
   function changeSort(key: SortKey) {
     if (sort === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
@@ -304,7 +310,7 @@
     </div>
     <div class="card-stats num font-mono">
       {#if c.journal}
-        <span class="text-fg-3">{t('journal.lastSeen')} {stamp(c.journal.lastSeenAt)}</span>
+        <span class="min-w-0 truncate font-sans text-fg-3">{c.journal.afterGap ? t('journal.afterGap') : `${t('journal.lastSeen')} ${stamp(c.journal.lastSeenAt)}`}</span>
       {:else}
         <span class={c.dl ? 'text-traffic-down-ink' : 'text-fg-3'}>↓ {speed(c.dl)}</span>
         <span class={c.ul ? 'text-traffic-up-ink' : 'text-fg-3'}>↑ {speed(c.ul)}</span>
@@ -343,6 +349,14 @@
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
   <div class="flex flex-wrap items-center gap-2">
   <div data-testid="connection-layout"><Segmented value={layout} options={layouts} onchange={changeLayout} label={t('connectionDetails.layout')} /></div>
+  {#if layout === 'cards'}
+    <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('connections.sortBy')}
+      <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">
+        {#each sortOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+      </select>
+    </label>
+    <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" aria-label={t('connections.sortAscending')} aria-pressed={sortDirection === 'asc'} onclick={() => (sortDirection = sortDirection === 'desc' ? 'asc' : 'desc')}><IconChevron class="size-4 {sortDirection === 'asc' ? 'rotate-180' : ''}" strokeWidth={1.5} aria-hidden="true" /></Button>
+  {/if}
   {#if layout === 'table'}<Button size="sm" data-testid="connection-columns-toggle" aria-expanded={columnsOpen} aria-controls="connection-columns" onclick={() => columnsOpen = !columnsOpen}><Columns strokeWidth={1.5} aria-hidden="true" />{t('connectionDetails.columns')}<span class="num text-fg-3">{visibleColumns.length}</span></Button>{/if}
   </div>
 </div>

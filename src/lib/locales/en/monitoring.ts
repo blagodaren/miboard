@@ -68,6 +68,8 @@ export const en = {
   'connections.closeAllError': 'Could not close all connections: {message}',
   'connections.activity': 'Activity',
   'connections.host': 'Host',
+  'connections.sortBy': 'Sort by',
+  'connections.sortAscending': 'Ascending order',
   'connections.rule': 'Rule',
   'connections.chain': 'Chain',
   'connections.speed': 'Speed',
