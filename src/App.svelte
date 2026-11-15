@@ -2,8 +2,9 @@
   import { onMount } from 'svelte'
   import { core, router } from './lib/core.svelte'
   import { t } from './lib/i18n.svelte'
-  import Shell from './components/Shell.svelte'
   import RoutePage from './components/RoutePage.svelte'
+  import ErrorBoundary from './components/ErrorBoundary.svelte'
+  import RecoveryPanel from './components/RecoveryPanel.svelte'
   import NotificationViewport from './components/NotificationViewport.svelte'
   import { pwa } from './lib/pwa.svelte'
 
@@ -30,11 +31,19 @@
 {:else if router.route === 'setup' || core.status === 'setup' || core.status === 'connecting'}
   <RoutePage route="setup" />
 {:else}
-  <Shell>
-    {#key router.route}
-      <div class="enter"><RoutePage route={router.route} /></div>
-    {/key}
-  </Shell>
+  {#await import('./components/Shell.svelte')}
+    <div class="min-h-dvh bg-page px-6 py-8 text-sm text-fg-2" role="status">{t('common.loadingPage')}</div>
+  {:then module}
+    <ErrorBoundary>
+      <module.default>
+        {#key router.route}
+          <div class="enter"><RoutePage route={router.route} /></div>
+        {/key}
+      </module.default>
+    </ErrorBoundary>
+  {:catch}
+    <RecoveryPanel loading />
+  {/await}
 {/if}
 
 <NotificationViewport />

@@ -74,6 +74,7 @@ try {
   await page.goto(`${origin}/miboard/#/setup`)
   await page.locator('#backend-url').waitFor()
   assert(![...initialScripts].some(name => /\/(Overview|Geography|Devices|Proxies|Connections|Rules|Logs|Settings)-/.test(name)), 'Setup does not load the other pages')
+  assert(![...initialScripts].some(name => /\/Shell-/.test(name)), 'Setup does not load navigation before connecting')
   const startupBytes = [...initialScripts].reduce((sum, name) => sum + (files.get(name)?.length ?? 0), 0)
   const startupGzipBytes = [...initialScripts].reduce((sum, name) => sum + (files.has(name) ? gzipSync(files.get(name)).length : 0), 0)
   assert(startupBytes < 330_000, `English Setup JavaScript stays below 330 kB, got ${startupBytes}`)
@@ -159,8 +160,18 @@ try {
   assert(await css.page.evaluate(() => [...document.styleSheets].some(sheet => /\/Geography-.*\.css$/.test(sheet.href ?? ''))), 'Map stylesheet is loaded')
   await css.context.close()
 
-  // The outer boundary also recovers failures in the shared shell, both during
-  // its first render and a later reactive update. Faults are confined to tests.
+  // A failed navigation download leaves reload available.
+  const failedShell = await session()
+  await failedShell.page.route('**/Shell-*.js', route => route.abort('failed'))
+  await failedShell.page.goto(origin + '/miboard/#/overview')
+  await failedShell.page.getByRole('heading', { name: 'Could not load this page' }).waitFor()
+  await failedShell.page.unroute('**/Shell-*.js')
+  await failedShell.page.getByRole('button', { name: 'Reload app' }).click()
+  await failedShell.page.getByRole('heading', { name: 'Overview', exact: true }).waitFor()
+  await failedShell.context.close()
+
+  // The navigation boundary recovers first-render and reactive failures.
+  // Faults are confined to tests.
   for (const phase of ['mount', 'update']) {
     const shell = await session()
     await shell.context.addInitScript(phase => {
@@ -181,7 +192,7 @@ try {
       await shell.page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru')
     }
     await shell.page.getByTestId('page-recovery').waitFor()
-    assert.equal(await shell.page.getByRole('navigation').count(), 0, 'A shell failure reaches the outer boundary')
+    assert.equal(await shell.page.getByRole('navigation').count(), 0, 'A shell failure hides broken navigation')
     assert(!(await shell.page.locator('body').innerText()).includes('private-fixture-secret'))
     await shell.page.getByRole('button', { name: /^(Try again|Попробовать снова)$/ }).click()
     await shell.page.getByRole('heading', { name: phase === 'mount' ? 'Overview' : 'Настройки', exact: true }).waitFor()
