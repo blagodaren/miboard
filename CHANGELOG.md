@@ -1,5 +1,47 @@
 # Журнал изменений
 
+## [0.1.9] — 2026-11-15
+
+### Русский
+
+- Соединения показываются карточками или таблицей; выбор сохраняется в браузере.
+  Сортировка запоминается отдельно для активных и завершённых соединений.
+- Мобильная панель содержит четыре выбранных раздела и меню «Ещё».
+  Порядок разделов настраивается во «Внешнем виде»; боковая панель на компьютере
+  сворачивается до значков и сохраняет своё состояние.
+- Добавлены свой CSS и темы по ссылке `theme=<url>`. Сохранённая тема применяется
+  при запуске и проверяется на обновления; при ошибке загрузки остаётся кешированная
+  копия. Тему можно отключить, удалить или сбросить через `theme=off`.
+- Большие списки карточек сохраняют содержимое при прокрутке и клавиатурный фокус
+  при обновлениях. Меню «Ещё» корректно закрывается с возвратом фокуса.
+  Навигация загружается после подключения к контроллеру, уменьшая начальную загрузку.
+
+Спасибо [@prettyleaf](https://github.com/prettyleaf) за PR
+[#3](https://github.com/blagodaren/miboard/pull/3),
+[#4](https://github.com/blagodaren/miboard/pull/4),
+[#5](https://github.com/blagodaren/miboard/pull/5) и
+[#6](https://github.com/blagodaren/miboard/pull/6).
+
+### English
+
+- Connections can be displayed as cards or a table, with the choice saved in the
+  browser. Active and completed connections remember their sorting separately.
+- The mobile bar contains four selected sections and a More menu. Section order
+  is configurable under Appearance; the desktop sidebar can collapse to icons
+  and remembers its state.
+- Added custom CSS and themes passed through `theme=<url>`. Saved themes apply
+  at startup and check for updates; failed downloads retain the cached copy.
+  Themes can be disabled, removed, or cleared with `theme=off`.
+- Large card lists retain their content while scrolling and keyboard focus during
+  live updates. The More menu closes correctly and restores focus.
+  Navigation loads after connecting to a controller, reducing the initial load.
+
+Thanks to [@prettyleaf](https://github.com/prettyleaf) for PRs
+[#3](https://github.com/blagodaren/miboard/pull/3),
+[#4](https://github.com/blagodaren/miboard/pull/4),
+[#5](https://github.com/blagodaren/miboard/pull/5) and
+[#6](https://github.com/blagodaren/miboard/pull/6).
+
 ## [0.1.8] — 2026-11-15
 
 ### Русский

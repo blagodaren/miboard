@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.9/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -52,13 +52,21 @@ external-controller-cors:
 
 For [GitHub Pages](https://blagodaren.github.io/miboard/), allow `https://blagodaren.github.io` instead. The hosted page serves only the interface; it does not relay API requests. HTTPS pages should connect to an HTTPS API with a trusted certificate, using WSS for WebSocket streams. CORS does not bypass mixed-content restrictions. Browser permission may also be required to access a local network. If HTTPS is unavailable, open the core's own `/ui/` directly. The [GitHub Pages guide](../GITHUB_PAGES.md) is currently in Russian.
 
+## Navigation
+
+On desktop, the button at the bottom of the sidebar collapses it to icons; its state
+is saved in this browser. On narrow screens, the bottom bar shows four sections and
+keeps the rest in **More**. Change their order under **Settings → Appearance → Mobile
+bottom bar**: the first four appear on the bar. The order is saved in the browser and
+can be reset to its default.
+
 ## Settings and data capture
 
 Settings are split into five categories:
 
 | Category | Controls |
 | --- | --- |
-| Appearance | Theme, language, proxy card size and group height |
+| Appearance | Theme, language, proxy card size and group height, mobile navigation order, custom CSS and link theme |
 | Connection and core | Server, routing mode, TUN/LAN, ports, core status and Prizrak-Core |
 | Proxies | Latency settings and subscription warnings |
 | Data | Live updates, connection journal, settings sync, import and export |
@@ -242,7 +250,7 @@ DNS types include A, AAAA, CNAME, MX, TXT, NS, SOA, PTR and CAA. A PTR input may
 
 ## Connections and journal
 
-**Connections** has active and closed views, with search across host, device, IP, port, process, inbound and proxy. **Columns** toggles type, process, Sniff Host, source/destination, inbound, DNS mode, providers and peak rates, with browser persistence.
+**Connections** has active and closed views, with search across host, device, IP, port, process, inbound and proxy. Connections appear as cards by default; a switch selects the table layout. The layout is saved in this browser, while the sort field and direction are remembered separately for active and closed connections. Cards use a sort selector and direction button; the table uses column headers. In table layout, **Columns** toggles type, process, Sniff Host, source/destination, inbound, DNS mode, providers and peak rates, with browser persistence.
 
 Click the host or info control to open details and copyable JSON: endpoints, routing/providers, rule, rates/volumes, process, GeoIP/ASN and other core metadata. Active JSON retains received fields; closed records show the saved known-field subset. Missing data is not reconstructed. If a connection disappears while open, its final snapshot remains with a status label. Tests: `npm run test:connections` and `npm run test:connections:ui`.
 
