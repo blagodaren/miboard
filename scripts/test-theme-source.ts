@@ -15,6 +15,18 @@ test('theme link parameter accepts HTTPS, same-origin and loopback HTTP only', (
   assert.equal(parseThemeParam('data:text/css,a{}', page), undefined)
 })
 
+test('theme link parameter accepts the page\'s own origin under an app scheme', () => {
+  const app = 'miboard://app'
+  assert.equal(parseThemeParam('miboard://app/prizrak-theme.css', app), 'miboard://app/prizrak-theme.css')
+  assert.equal(parseThemeParam('miboard://other/prizrak-theme.css', app), undefined)
+  assert.equal(parseThemeParam('other://app/prizrak-theme.css', app), undefined)
+  assert.equal(parseThemeParam('http://evil.example/theme.css', app), undefined)
+  assert.equal(parseThemeParam('javascript:alert(1)', app), undefined)
+  assert.equal(parseThemeParam('data:text/css,a{}', app), undefined)
+  assert.equal(parseThemeParam('https://cdn.example/theme.css', app), 'https://cdn.example/theme.css')
+  assert.equal(parseThemeParam('http://127.0.0.1:9090/ui/theme.css', app), 'http://127.0.0.1:9090/ui/theme.css')
+})
+
 test('stored theme source shape is checked', () => {
   assert.equal(validThemeSource({ url: 'https://a/b.css', css: '', updatedAt: 0, enabled: true }), true)
   assert.equal(validThemeSource({ url: 'https://a/b.css', css: '', updatedAt: 0 }), false)
