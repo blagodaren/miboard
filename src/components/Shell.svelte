@@ -14,10 +14,13 @@
   import Brand from './Brand.svelte'
   import SidebarStats from './SidebarStats.svelte'
   import LiveUpdateNotice from './LiveUpdateNotice.svelte'
+  import IconCollapse from '@lucide/svelte/icons/panel-left-close'
+  import IconExpand from '@lucide/svelte/icons/panel-left-open'
 
   let { children }: { children: Snippet } = $props()
 
   const nav = NAV_ROUTES.map(route => ({ route, icon: NAV_ICONS[route] }))
+  const collapsed = $derived(appearance.sidebarCollapsed)
   const bar = $derived(appearance.mobileNav.slice(0, MOBILE_NAV_SLOTS).map(route => ({ route, icon: NAV_ICONS[route] })))
   const more = $derived(appearance.mobileNav.slice(MOBILE_NAV_SLOTS).map(route => ({ route, icon: NAV_ICONS[route] })))
   const moreActive = $derived(more.some(item => item.route === router.route))
@@ -63,9 +66,9 @@
   }
 </script>
 
-{#snippet brand()}
-  <div class="flex items-center gap-2.5">
-    <Brand />
+{#snippet brand(compact = false)}
+  <div class="flex items-center gap-2.5" class:justify-center={compact}>
+    <Brand {compact} />
     <span
       class="led"
       data-on={linkUp}
@@ -78,9 +81,11 @@
 <div class="flex min-h-dvh">
   <!-- Сайдбар: десктоп -->
   <aside
-    class="sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col overflow-y-auto border-r border-line bg-deep px-3 pb-4 pt-5 md:flex"
+    class="sticky top-0 hidden h-dvh shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-line bg-deep pb-4 pt-5 transition-[width] duration-200 md:flex {collapsed ? 'w-[72px] px-2' : 'w-[248px] px-3'}"
+    data-collapsed={collapsed}
+    data-testid="sidebar"
   >
-    <div class="shrink-0 px-3">{@render brand()}</div>
+    <div class="shrink-0 {collapsed ? 'flex flex-col items-center gap-2' : 'px-3'}">{@render brand(collapsed)}</div>
 
     <nav use:revealSection={router.route} class="mt-8 flex min-h-24 flex-col gap-0.5 overflow-y-auto" aria-label={t('nav.sections')}>
       {#each nav as item (item.route)}
@@ -88,33 +93,42 @@
         <a
           href="#/{item.route}"
           aria-current={active ? 'page' : undefined}
-          class="sidebar-link flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 transition-colors duration-150
+          title={collapsed ? t(`nav.${item.route}`) : undefined}
+          class="sidebar-link relative flex h-9 shrink-0 items-center gap-2.5 rounded-lg transition-colors duration-150 {collapsed ? 'justify-center px-0' : 'px-3'}
             {active ? 'bg-nav-active font-medium text-fg' : 'text-fg-2 hover:bg-hover hover:text-fg'}"
         >
-          <item.icon class="size-4 {active ? 'text-fg' : 'text-fg-3'}" strokeWidth={1.5} />
-          <span class="flex-1">{t(`nav.${item.route}`)}</span>
+          <item.icon class="size-4 shrink-0 {active ? 'text-fg' : 'text-fg-3'}" strokeWidth={1.5} />
+          <span class="flex-1" class:sr-only={collapsed}>{t(`nav.${item.route}`)}</span>
           {#if item.route === 'connections' && core.conns.length}
-            <span class="num font-mono text-xs text-fg-3">{count(core.conns.length)}</span>
+            {#if collapsed}<span class="count-dot" aria-hidden="true"></span>{:else}<span class="num font-mono text-xs text-fg-3">{count(core.conns.length)}</span>{/if}
           {/if}
         </a>
       {/each}
     </nav>
 
-    <div class="mt-auto flex shrink-0 flex-col gap-3 px-1 pt-3">
-      <SidebarStats />
-      {#if core.configs && !embed.hideMode}
-        <div class="flex flex-col gap-2">
-          <span class="px-2 text-xs text-fg-3">{t('mode.label')}</span>
-          <Segmented label={t('mode.routing')} full value={core.configs.mode} options={modes} onchange={(m) => core.setMode(m)} />
-        </div>
+    <div class="mt-auto flex shrink-0 flex-col gap-3 pt-3 {collapsed ? 'items-center' : 'px-1'}">
+      {#if !collapsed}
+        <SidebarStats />
+        {#if core.configs && !embed.hideMode}
+          <div class="flex flex-col gap-2">
+            <span class="px-2 text-xs text-fg-3">{t('mode.label')}</span>
+            <Segmented label={t('mode.routing')} full value={core.configs.mode} options={modes} onchange={(m) => core.setMode(m)} />
+          </div>
+        {/if}
       {/if}
-      <a href="#/setup" class="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-fg-2 transition-colors hover:bg-hover hover:text-fg" title={t('backends.switchServer')}>
-        <IconServer class="size-4 shrink-0" strokeWidth={1.5} />
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-xs">{core.backend.name || host}</span>
-          <span class="mt-0.5 block truncate font-mono text-xs text-fg-3">{core.version}</span>
-        </span>
-      </a>
+      <div class="flex min-w-0 items-center gap-1 {collapsed ? 'flex-col' : ''}">
+        <a href="#/setup" class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-fg-2 transition-colors hover:bg-hover hover:text-fg" title={collapsed ? `${core.backend.name || host} · ${core.version}` : t('backends.switchServer')}>
+          <IconServer class="size-4 shrink-0" strokeWidth={1.5} />
+          <span class="min-w-0 flex-1" class:sr-only={collapsed}>
+            <span class="block truncate text-xs">{core.backend.name || host}</span>
+            <span class="mt-0.5 block truncate font-mono text-xs text-fg-3">{core.version}</span>
+          </span>
+        </a>
+        <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-3 transition-colors hover:bg-hover hover:text-fg" data-testid="sidebar-toggle"
+          aria-label={t(collapsed ? 'nav.expand' : 'nav.collapse')} title={t(collapsed ? 'nav.expand' : 'nav.collapse')} aria-expanded={!collapsed} onclick={() => appearance.toggleSidebar()}>
+          {#if collapsed}<IconExpand class="size-4" strokeWidth={1.5} />{:else}<IconCollapse class="size-4" strokeWidth={1.5} />{/if}
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -168,6 +182,8 @@
 
 <style>
   .sidebar-link[aria-current='page'] { box-shadow: inset 3px 0 var(--accent); }
+  .count-dot { position: absolute; top: 7px; right: 12px; width: 6px; height: 6px; border-radius: 9999px; background: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { aside { transition: none; } }
   .mobile-sections {
     position: fixed; z-index: 20; left: 12px; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom));
     height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 9999px;

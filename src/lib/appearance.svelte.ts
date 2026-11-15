@@ -1,3 +1,5 @@
+const SIDEBAR_COLLAPSED_KEY = 'miboard.sidebar-collapsed'
+function readSidebarCollapsed() { try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1' } catch { return false } }
 import { MOBILE_NAV_KEY, normalizeMobileNav, readMobileNav, type NavRoute } from './mobile-nav'
 import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight } from './appearance'
 
@@ -5,6 +7,12 @@ class AppearanceState {
   proxyCardSize = $state<ProxyCardSize>(readProxyCardSize())
   proxyGroupHeight = $state<ProxyGroupHeight>(readProxyGroupHeight())
   mobileNav = $state<NavRoute[]>(readMobileNav())
+  sidebarCollapsed = $state(readSidebarCollapsed())
+
+  toggleSidebar() {
+    this.sidebarCollapsed = !this.sidebarCollapsed
+    try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, this.sidebarCollapsed ? '1' : '0') } catch { /* Kept for this session. */ }
+  }
 
   setMobileNav(value: readonly NavRoute[]): boolean {
     this.mobileNav = normalizeMobileNav(value)
