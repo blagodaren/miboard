@@ -1,4 +1,5 @@
 import { applyStyle, MAX_CUSTOM_CSS } from './custom-css.svelte'
+import { embedParams } from './embed'
 import { parseThemeParam, THEME_SOURCE_KEY, validThemeSource, type ThemeSource } from './theme-source'
 
 const STYLE_ID = 'miboard-theme-source'
@@ -18,7 +19,20 @@ class ThemeSourceState {
   apply() { applyStyle(STYLE_ID, this.source?.enabled ? this.source.css : '') }
 
   /** Applies the saved copy at once, then follows the link parameter and checks the URL for changes. */
-  start(param: string | null) {
+  start() {
+    const param = embedParams(location.search, location.hash).get('theme')
+    // Consume theme-only links too: otherwise Remove is undone on the next reload.
+    // Leave credentials and UI flags for their own startup handlers.
+    if (param !== null) {
+      const clean = (query: string) => {
+        const params = new URLSearchParams(query)
+        params.delete('theme')
+        const value = params.toString()
+        return value ? '?' + value : ''
+      }
+      const [route, query = ''] = location.hash.split('?')
+      history.replaceState(history.state, '', location.pathname + clean(location.search) + route + clean(query))
+    }
     const url = parseThemeParam(param, location.origin)
     if (url === null) this.remove()
     // A new URL keeps the user's on/off choice; the old CSS stays until the new one loads.
