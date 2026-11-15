@@ -6,6 +6,12 @@ export const MOBILE_NAV_SLOTS = 4
 const FIRST: NavRoute[] = ['overview', 'proxies', 'connections', 'settings']
 export const DEFAULT_MOBILE_NAV: readonly NavRoute[] = [...FIRST, ...NAV_ROUTES.filter(route => !FIRST.includes(route))]
 
+/** Partial orders remain portable when later versions add navigation sections. */
+export function validMobileNav(value: unknown): value is NavRoute[] {
+  return Array.isArray(value) && value.length <= NAV_ROUTES.length && new Set(value).size === value.length
+    && value.every(route => typeof route === 'string' && NAV_ROUTES.includes(route as NavRoute))
+}
+
 /** Keeps known sections once, in the saved order; sections added in later versions go last. */
 export function normalizeMobileNav(value: unknown): NavRoute[] {
   const saved = Array.isArray(value) ? value.filter((route, index): route is NavRoute => NAV_ROUTES.includes(route) && value.indexOf(route) === index) : []

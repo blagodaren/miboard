@@ -8,6 +8,7 @@
   import { t, i18n } from '../lib/i18n.svelte'
   import { bytes } from '../lib/format'
   import Button from './Button.svelte'
+  import Confirm from './Confirm.svelte'
 
   let days = $state(7)
   let dimension = $state<'devices' | 'domains' | 'hours'>('devices')
@@ -22,6 +23,9 @@
   let busy = $state(false)
   let message = $state('')
   let failure = $state(false)
+  let confirmClear = $state(false)
+  let clearMessage = $state('')
+  let clearFailed = $state(false)
   let abort: AbortController | null = null
   let active = true
   const backend = { ...core.backend }
@@ -45,6 +49,19 @@
     persistBusy = true
     try { persisted = await navigator.storage?.persist?.() ?? false } catch { persisted = false }
     finally { if (active) persistBusy = false }
+  }
+  async function clearHistory() {
+    if (!current()) return
+    clearMessage = ''
+    const memory = longHistory.storageState === 'memory'
+    try {
+      if (await longHistory.clear(backend.url) && current()) {
+        page = 0; clearFailed = false
+        clearMessage = t(memory ? 'history.clearedMemory' : 'history.cleared')
+      }
+    } catch {
+      if (current()) { clearFailed = true; clearMessage = t('history.clearFailed') }
+    }
   }
   function report(error: unknown) {
     failure = true
@@ -82,10 +99,14 @@
 
 <section class="min-w-0 space-y-5" data-testid="long-history">
   <div>
-    <h2 class="text-base font-medium">{t('history.title')}</h2>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-base font-medium">{t('history.title')}</h2>
+      <Button size="sm" variant="ghost" class="!text-bad" disabled={longHistory.loading || longHistory.clearing || !longHistory.buckets.length || longHistory.backendUrl !== backend.url} onclick={() => { confirmClear = true }}>{t(longHistory.clearing ? 'history.clearing' : 'history.clear')}</Button>
+    </div>
     <p class="mt-2 max-w-4xl text-[13px] leading-6 text-fg-3">{t('history.hint')}</p>
     <p class="mt-2 text-xs text-fg-2" role="status">{t(`history.${longHistory.recording}`)}</p>
   </div>
+  {#if clearMessage}<p class="text-xs leading-5" class:text-warning={clearFailed} class:text-fg-2={!clearFailed} role="status">{clearMessage}</p>{/if}
   {#if longHistory.storageState === 'memory'}<p class="rounded-card border border-line p-4 text-[13px] text-warning" role="status">{t('history.memory')}</p>{/if}
   <div class="flex flex-wrap items-end gap-4">
     <label class="min-w-40 flex-1 space-y-1 text-xs text-fg-3">{t('history.range')}<select class={input} bind:value={days} onchange={() => { page = 0 }}><option value={1}>{t('history.day')}</option><option value={7}>{t('history.week')}</option><option value={30}>{t('history.month')}</option></select></label>
@@ -123,3 +144,5 @@
     {/if}
   </section>
 </section>
+
+<Confirm bind:open={confirmClear} title={t('history.clearTitle')} description={t(longHistory.storageState === 'memory' ? 'history.clearMemoryDescription' : 'history.clearDescription')} action={t('history.clear')} onconfirm={clearHistory} />

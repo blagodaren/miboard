@@ -22,12 +22,12 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 
 | Parameter | Effect |
 |---|---|
-| `hostname` | Core address. `port`, protocol, `secondaryPath` and `label` apply only with it; `secret` also works on its own. IPv6 may be `::1` or `[::1]` |
-| `port` | `external-controller` port |
+| `hostname` | Core address, including `router.local:9090` or `127.0.0.1:9090`. IPv6 may be `::1`, `[::1]` or `[::1]:9090`. `port`, protocol, `secondaryPath` and `label` apply only with it; `secret` also works on its own |
+| `port` | `external-controller` port; an explicit value overrides the port in `hostname` |
 | `secret` | Controller secret |
 | `protocol=http` / `protocol=https`, `http`, `https` | API protocol; the page protocol when omitted |
 | `secondaryPath` | API path behind a reverse proxy, for example `/api` |
-| `label` | Name for a new profile. A saved server keeps its name |
+| `label` | Name for a new profile, limited to the input field's length (80 UTF-16 units without splitting an emoji). A saved server keeps its name |
 | `hideMode=1` | Hide the rule / global / direct switch (see below) |
 | `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
 | `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
@@ -115,7 +115,20 @@ Rules:
 - A new URL in the link replaces the old one, `theme=off` removes it, and a link without `theme` keeps what is saved.
 - **Settings → Appearance → Theme from link** shows the URL and the last update, turns the theme off (the choice survives later links), checks for changes now and removes it.
 - Custom CSS applies on top of the link theme, so the user's changes always win.
-- The CSS can only change the look: the page's CSP blocks scripts and external stylesheets from it. Images in `url()` can load from any HTTPS host, so a theme can tell its author that the dashboard was opened.
+
+**Trusting CSS.** Opening a link with `theme=` automatically saves the URL and loads the theme
+without a separate confirmation. The parameter leaves the address bar; its source remains
+visible in settings. The server owner sees CSS requests, including the user's IP address,
+and can change the theme's contents before the dashboard's next start.
+
+CSP restricts script execution, but CSS can still hide labels and controls, cover them or
+change their clickable area. External images in `url()` make network requests; attribute
+selectors can tie those requests to values in the markup, such as node and group names.
+CSS has no direct access to localStorage. Only load themes or paste CSS from sources you trust.
+
+Turning the theme off stops applying its CSS, but the saved URL is still checked at startup.
+To stop those requests, remove the theme in settings or open the dashboard with `theme=off`.
+These rules also apply to the public dashboard on GitHub Pages.
 
 
 ## App installation and updates
@@ -260,11 +273,15 @@ Closed records persist in IndexedDB separately for each server. **Settings → D
 
 ## Settings transfer and sync
 
-**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode, expanded groups, connection columns, subscription alerts and per-server journal retention. Secrets are excluded by default and require an explicit opt-in. Journal entries, alert acknowledgements and mihomo configuration are excluded.
+**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode, expanded groups, connection columns, connection layout and sorting, mobile navigation order, collapsed sidebar state, custom CSS, subscription alerts and per-server journal retention. Secrets are excluded by default and require an explicit opt-in. Journal entries, alert acknowledgements and mihomo configuration are excluded.
 
 Import validates first and previews replacements. Applying merges records; an absent or empty secret never erases the stored one. It does not switch the live connection. Reload is explicit for applying interface preferences. Test: `npm run test:settings-transfer`.
 
-Core sync stores device names, the current core's group sorting, subscription alert preference, journal retention and interface preferences at `/storage/miboard.settings.v1`. Server profiles, controller URLs, secrets and journal records are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
+Custom CSS is applied only when **Import custom CSS from this file** is checked in the preview.
+Otherwise the current CSS is kept. Only enable this for files you trust; CSS can hide controls
+and load external resources. Older backups without the new preferences leave their current values intact.
+
+Core sync stores device names, the current core's group sorting, subscription alert preference, journal retention and interface preferences at `/storage/miboard.settings.v1`, including connection layout and sorting, mobile navigation order and collapsed sidebar state. Server profiles, controller URLs, secrets, journal records, custom CSS and link themes are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
 
 ## Rules
 
@@ -340,8 +357,9 @@ The per-document limit does not reserve space. Cores without `/storage`
 can still use local scenes.
 
 The link button in a group header copies `#/proxies?group=<name>`, expanding that group
-and scrolling to it. The copied URL excludes connection parameters and secrets; it uses
-the recipient browser's connection. The dashboard's own address remains in the link.
+and scrolling to it. Active `hideMode`, `disableUpgradeCore` and `disableTunMode` flags
+are kept before `#` so they survive reloads. Connection parameters, secrets and themes
+are excluded; it uses the recipient browser's connection. The dashboard's own address remains in the link.
 
 **Check URLs through nodes** builds a matrix of up to five URLs and twenty nodes, including
 provider-only nodes. At most three requests run concurrently, the timeout is configurable
@@ -364,6 +382,11 @@ per processed snapshot. Smaller destinations are aggregated, so this is not a co
 record. One tab records for each core within a browser to avoid duplication. If IndexedDB is
 unavailable, the UI reports tab-memory-only storage. The browser may remove site data;
 requesting persistent storage is not a substitute for a backup.
+
+**Clear history** deletes all local hourly history for the selected core after confirmation,
+regardless of the displayed date range. Other cores and shared daily snapshots are kept.
+Open tabs refresh their view, and new observations start from a fresh baseline. If browser
+storage is unavailable, the action clears only this tab's temporary history.
 
 A **named daily snapshot** can be saved on the core and read in another browser using its
 collector code. Days use UTC and snapshots are limited to 128 KiB. Replacing a snapshot requires

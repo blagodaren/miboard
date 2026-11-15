@@ -3,6 +3,7 @@
   import { Tabs } from 'bits-ui'
   import { api, request as apiRequest, errorMessage, type Proxy, type ProxyProvider } from '../lib/api'
   import { core } from '../lib/core.svelte'
+  import { embed, embedSearch } from '../lib/embed'
   import { count, delayBand } from '../lib/format'
   import { t, i18n, type MessageKey } from '../lib/i18n.svelte'
   import { notifications } from '../lib/notifications.svelte'
@@ -217,8 +218,8 @@
   }
   async function copyGroupLink(name: string) {
     const url = new URL(location.href)
-    // Setup links may contain controller credentials. They must never enter copied group URLs.
-    url.search = ''
+    // Keep the session's UI flags before # so they survive reloads; never copy setup credentials.
+    url.search = embedSearch(embed)
     url.hash = `/proxies?${new URLSearchParams({ group: name })}`
     try {
       await navigator.clipboard.writeText(url.href)

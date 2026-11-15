@@ -1,5 +1,4 @@
-const SIDEBAR_COLLAPSED_KEY = 'miboard.sidebar-collapsed'
-function readSidebarCollapsed() { try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1' } catch { return false } }
+import { SIDEBAR_COLLAPSED_KEY, readSidebarCollapsed } from './appearance'
 import { MOBILE_NAV_KEY, normalizeMobileNav, readMobileNav, type NavRoute } from './mobile-nav'
 import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight } from './appearance'
 

@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -57,6 +57,92 @@ const profile = { url: 'http://router.test:9090', secret: 'keep-this-secret', na
 const aliasesKey = 'miboard.device-names.' + encodeURIComponent(profile.url)
 const sortKey = (group: string) => 'miboard.proxy-sort.v1' + JSON.stringify([profile.url, group])
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+
+test('connection views, independent sorts and navigation round-trip while older or partial files preserve omitted values', () => {
+  const sorts = { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } }
+  const source = session({
+    'miboard.connection-layout': 'table', 'miboard.connection-sort.v1': sorts,
+    'miboard.mobile-nav.v1': ['history', 'fleet', 'connections', 'settings'], 'miboard.sidebar-collapsed': '1',
+  })
+  const target = session()
+  const output = source.transfer.exportSettings()
+  const exported = JSON.parse(output).preferences
+  assert.equal(exported.connectionLayout, 'table')
+  assert.deepEqual(exported.connectionSort, sorts)
+  assert.deepEqual(exported.mobileNav.slice(0, 4), ['history', 'fleet', 'connections', 'settings'])
+  assert.equal(exported.sidebarCollapsed, true)
+  const preview = target.transfer.previewSettingsImport(output)
+  assert.equal(preview.invalid, 0)
+  assert.equal(target.activity().writes, 0)
+  target.transfer.applySettingsImport(preview)
+  assert.equal(target.store.get('miboard.connection-layout'), 'table')
+  assert.deepEqual(JSON.parse(target.store.get('miboard.connection-sort.v1')!), sorts)
+  assert.deepEqual(JSON.parse(target.store.get('miboard.mobile-nav.v1')!), exported.mobileNav)
+  assert.equal(target.store.get('miboard.sidebar-collapsed'), '1')
+  const before = target.snapshot()
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base())))
+  assert.deepEqual(target.snapshot(), before)
+  target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base({ preferences: { connectionSort: { active: { key: 'rate', direction: 'desc' } } } }))))
+  assert.deepEqual(JSON.parse(target.store.get('miboard.connection-sort.v1')!), { active: { key: 'rate', direction: 'desc' }, closed: sorts.closed })
+  assert.equal(target.activity().network + target.activity().sockets, 0)
+})
+
+test('custom CSS exports as data and applies only with a separate opt-in; theme URLs and trust never transfer', () => {
+  const css = 'body { background: url("https://external.invalid/tracker"); }'
+  const source = session({ 'miboard.custom-css': css, 'miboard.theme-source.v1': { url: 'https://theme.invalid/style.css', enabled: true, trusted: true } })
+  const output = source.transfer.exportSettings()
+  assert.equal(JSON.parse(output).preferences.customCss, css)
+  assert.ok(!output.includes('theme.invalid') && !output.includes('trusted'))
+  const target = session({ 'miboard.custom-css': 'body { color: green; }' })
+  const preview = target.transfer.previewSettingsImport(output)
+  const before = target.store.get('miboard.custom-css')
+  target.transfer.applySettingsImport(preview)
+  assert.equal(target.store.get('miboard.custom-css'), before, 'Ordinary import must not execute untrusted CSS on reload')
+  target.transfer.applySettingsImport(preview, { includeCustomCss: true })
+  assert.equal(target.store.get('miboard.custom-css'), css)
+  const clear = target.transfer.previewSettingsImport(JSON.stringify(base({ preferences: { customCss: '' } })))
+  target.transfer.applySettingsImport(clear)
+  assert.equal(target.store.get('miboard.custom-css'), css, 'Skipping CSS also preserves it when the file requests clearing it')
+  target.transfer.applySettingsImport(clear, { includeCustomCss: true })
+  assert.equal(target.store.has('miboard.custom-css'), false)
+  assert.equal(target.activity().network + target.activity().sockets, 0)
+})
+
+test('malformed navigation, sort and CSS preferences invalidate the entire import', () => {
+  const s = session({ 'miboard.connection-layout': 'cards', 'miboard.custom-css': 'body { color: green }' })
+  const before = s.snapshot()
+  for (const preferences of [
+    { connectionLayout: 'grid' }, { connectionLayout: ['table'] },
+    { connectionSort: { active: { key: 'speed', direction: 'desc' } } },
+    { connectionSort: { active: { key: 'host', direction: 'asc', injected: true } } },
+    { connectionSort: { unknown: { key: 'host', direction: 'asc' } } },
+    { connectionSort: [{ key: 'host', direction: 'asc' }] },
+    { mobileNav: ['connections', 'connections'] }, { mobileNav: ['injected'] }, { mobileNav: 'connections' },
+    { sidebarCollapsed: '1' }, { customCss: { text: 'body {}' } }, { customCss: 'x'.repeat(64 * 1024 + 1) },
+    { themeSource: { url: 'https://external.invalid/theme.css', enabled: true } },
+  ]) {
+    const preview = s.transfer.previewSettingsImport(JSON.stringify(base({ preferences })))
+    assert.ok(preview.invalid > 0, JSON.stringify(preferences).slice(0, 200))
+    assert.throws(() => s.transfer.applySettingsImport(preview, { includeCustomCss: true }), { code: 'invalid' })
+  }
+  assert.deepEqual(s.snapshot(), before)
+})
+
+test('a late storage failure rolls back every new preference including explicitly accepted CSS', () => {
+  const s = session({
+    'miboard.connection-layout': 'table', 'miboard.connection-sort.v1': { active: { key: 'host', direction: 'asc' } },
+    'miboard.mobile-nav.v1': ['settings', 'connections'], 'miboard.sidebar-collapsed': '1',
+    'miboard.custom-css': 'body { color: green; }', 'miboard.theme': 'light',
+  })
+  const before = s.snapshot()
+  const preview = s.transfer.previewSettingsImport(JSON.stringify(base({ preferences: {
+    connectionLayout: 'cards', connectionSort: { closed: { key: 'total', direction: 'asc' } },
+    mobileNav: ['fleet'], sidebarCollapsed: false, customCss: 'body { color: red; }', theme: 'dark',
+  } })))
+  s.failNext('miboard.theme')
+  assert.throws(() => s.transfer.applySettingsImport(preview, { includeCustomCss: true }), { code: 'storage' })
+  assert.deepEqual(s.snapshot(), before)
+})
 
 test('columns, alert opt-in and per-core retention round-trip without exporting history or alert acknowledgements', () => {
   const alertKey = 'miboard.provider-alerts:' + encodeURIComponent(profile.url)
