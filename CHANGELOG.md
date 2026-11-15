@@ -1,6 +1,6 @@
 # Журнал изменений
 
-## [Unreleased]
+## [0.1.10] — 2026-11-16
 
 ### Русский
 
@@ -11,8 +11,13 @@
   Данные других ядер и опубликованные суточные снимки сохраняются.
 - Ссылки подключения поддерживают `hostname` с портом и ограничивают длину `label`.
   Скопированные ссылки на группы сохраняют флаги встраивания без secret и параметров темы.
+- Темы по ссылке поддерживают собственную схему приложения при совпадении origin
+  с панелью, например `miboard://app/theme.css`. Исправлена проверка адресов
+  с прописными буквами в имени хоста; другая схема, хост или порт не считаются своим origin.
 - Уточнены доверие к внешнему CSS и автоматическое подключение тем по ссылке.
   В таблицу возможностей README добавлены «История» и «Ядра».
+
+Спасибо [@legiz-ru](https://github.com/legiz-ru) за [PR #8](https://github.com/blagodaren/miboard/pull/8).
 
 ### English
 
@@ -23,8 +28,13 @@
   Other cores' data and shared daily snapshots are preserved.
 - Connection links accept a port in `hostname` and limit `label` length.
   Copied group links preserve embedding flags without secrets or theme parameters.
+- Link themes support an application's custom scheme when their origin matches
+  the dashboard, for example `miboard://app/theme.css`. Fixed validation of URLs
+  with uppercase host names; a different scheme, host or port is not treated as the same origin.
 - Documented trust in external CSS and automatic link-theme loading.
   Added History and Controllers to the README feature table.
+
+Thanks to [@legiz-ru](https://github.com/legiz-ru) for [PR #8](https://github.com/blagodaren/miboard/pull/8).
 
 ## [0.1.9] — 2026-11-15
 
