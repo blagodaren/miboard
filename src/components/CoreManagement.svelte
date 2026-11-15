@@ -4,13 +4,15 @@
   import { errorMessage, request, type Backend, type Configs } from '../lib/api'
   import { t, type MessageKey } from '../lib/i18n.svelte'
   import { connectionJournal } from '../lib/connection-journal.svelte'
-  import { CoreManagementError, LOG_LEVELS, RUNTIME_FLAGS, RUNTIME_PORTS, rebaseRuntimeDraft, runtimeDraft, runtimePatch, upgradeCore, writeRuntimeSettings, type CoreUpgrade, type RuntimeDraft, type RuntimeField, type RuntimeIssue, type UpgradeResult } from '../lib/core-management'
+  import { embed } from '../lib/embed'
+  import { CoreManagementError, LOG_LEVELS, RUNTIME_FLAGS, RUNTIME_PORTS, coreUpgrades, rebaseRuntimeDraft, runtimeDraft, runtimePatch, upgradeCore, writeRuntimeSettings, type CoreUpgrade, type RuntimeDraft, type RuntimeField, type RuntimeIssue, type UpgradeResult } from '../lib/core-management'
   import Button from './Button.svelte'
   import Toggle from './Toggle.svelte'
   import Confirm from './Confirm.svelte'
 
   let { section = 'all' }: { section?: 'runtime' | 'upgrades' | 'all' } = $props()
   const id = $props.id()
+  const upgrades = coreUpgrades(embed)
   const flagLabels = { ipv6: 'coreManagement.ipv6', sniffing: 'coreManagement.sniffing', 'tcp-concurrent': 'coreManagement.concurrent' } as const
   const fieldClass = 'min-h-11 w-full min-w-0 rounded-control border border-field-border bg-field px-3 text-[13px] text-fg disabled:opacity-50 aria-invalid:border-bad'
   let baseline = $state.raw<Configs | null>(null)
@@ -85,12 +87,12 @@
     finally { if (controller === abort) { busy = null; controller = null; pendingSettings = null } }
   }
   function prepareUpgrade(action: CoreUpgrade) {
-    if (busy || core.status !== 'ok') return
+    if (busy || core.status !== 'ok' || !upgrades.includes(action)) return
     pendingUpgrade = action; pendingBackend = { ...core.backend }; confirmUpgrade = true
   }
   async function applyUpgrade() {
     const backend = pendingBackend, action = pendingUpgrade
-    if (!backend || !sameBackend(backend) || busy || core.status !== 'ok') return
+    if (!backend || !sameBackend(backend) || busy || core.status !== 'ok' || !upgrades.includes(action)) return
     const abort = new AbortController(); controller = abort; busy = action; error = null; upgradeResult = null
     try {
       const result = await upgradeCore(request, backend, action, abort.signal)
@@ -162,8 +164,8 @@
       <p class="text-[13px] leading-5 text-fg-3">{t('coreManagement.upgradesHint')}</p>
       {#if core.status !== 'ok' && !busy}<p class="mt-2 text-[13px] text-warning" role="status">{t('coreManagement.offline')}</p>{/if}
       <div class="mt-4 flex flex-wrap gap-2">
-        {#each ['core', 'ui', 'geo'] as kind}
-          <Button size="sm" disabled={busy !== null || core.status !== 'ok'} onclick={() => prepareUpgrade(kind as CoreUpgrade)} data-testid={`core-upgrade-${kind}`}>{t(`coreManagement.upgrade.${kind}` as MessageKey)}</Button>
+        {#each upgrades as kind}
+          <Button size="sm" disabled={busy !== null || core.status !== 'ok'} onclick={() => prepareUpgrade(kind)} data-testid={`core-upgrade-${kind}`}>{t(`coreManagement.upgrade.${kind}` as MessageKey)}</Button>
         {/each}
       </div>
       {#if busy && busy !== 'settings'}<p class="mt-3 text-[13px] text-fg-2" role="status">{t('coreManagement.upgrading')}</p>{/if}

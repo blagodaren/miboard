@@ -101,7 +101,7 @@ For a core running on a router, use its trusted LAN interface address instead of
 http://127.0.0.1:9090/ui/miboard/
 ```
 
-Replace the host with your router's address when appropriate. The dashboard asks for the `secret`. Server profiles are saved in this browser.
+Replace the host with your router's address when appropriate. The dashboard asks for the `secret`. Server profiles are saved in this browser. A zashboard-style link (`#/setup?hostname=…&port=…&secret=…`) connects right away; see [link parameters](docs/FEATURES.en.md#connection-and-server-profiles).
 
 **3. Choose your appearance.** **Settings → Appearance** contains language, theme and card size controls. The interface defaults to English.
 

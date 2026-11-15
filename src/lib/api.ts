@@ -129,7 +129,7 @@ function urlParams(): URLSearchParams {
 function stripSecretFromUrl() {
   const clean = (q: string) => {
     const p = new URLSearchParams(q)
-    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath'].forEach((k) => p.delete(k))
+    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath', 'label'].forEach((k) => p.delete(k))
     const s = p.toString()
     return s ? '?' + s : ''
   }
@@ -158,8 +158,14 @@ export function initialBackend(): Backend | null {
     const proto = p.get('protocol') ?? (p.has('https') ? 'https' : p.has('http') ? 'http' : location.protocol.replace(':', ''))
     const port = p.get('port') ? ':' + p.get('port') : ''
     const path = p.get('secondaryPath') ?? ''
-    const url = normalizeUrl(`${proto}://${p.get('hostname')}${port}${path}`)
+    // IPv6 в ссылке может прийти без скобок (`hostname=::1`); в URL адрес пишется как [::1].
+    const host = p.get('hostname')!
+    const hostname = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+    const url = normalizeUrl(`${proto}://${hostname}${port}${path}`)
     const b = forUrl(url, p.get('secret'))
+    // label называет только новый профиль: имя, которое пользователь уже дал серверу, не меняем.
+    const label = p.get('label')?.trim()
+    if (label && !b.name) b.name = label
     stripSecretFromUrl()
     return b
   }
