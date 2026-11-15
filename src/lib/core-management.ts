@@ -95,6 +95,10 @@ export async function writeRuntimeSettings(send: CoreRequest, backend: Backend, 
 
 export type CoreUpgrade = 'core' | 'ui' | 'geo'
 export const CORE_UPGRADE_PATHS: Record<CoreUpgrade, string> = { core: '/upgrade', ui: '/upgrade/ui', geo: '/upgrade/geo' }
+/** `disableUpgradeCore` hides only the core binary update: UI and geo database updates stay available. */
+export function coreUpgrades(options: { disableUpgradeCore?: boolean } = {}): CoreUpgrade[] {
+  return options.disableUpgradeCore ? ['ui', 'geo'] : ['core', 'ui', 'geo']
+}
 export type UpgradeResult = { previousVersion: string; version: string; outcome: 'accepted' | 'versionChanged' | 'unconfirmed' }
 
 const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {

@@ -455,6 +455,38 @@ test('deep link с hostcase и default port находит сохранённы�
   assert.equal(s.location.search, '')
 })
 
+test('ссылка zashboard с label и флагами подключает новый профиль без ручного ввода', async () => {
+  const link = 'https://dashboard.test/#/setup?http=true&hostname=127.0.0.1&port=9090&secret=s3cret&label=Prizrak-Box&disableUpgradeCore=1'
+  const s = session({}, link)
+  const core = s.core()
+  const router = s.router()
+  assert.equal(router.route, 'setup')
+  await core.boot()
+  assert.equal(core.status, 'lost', 'REST is reachable; the WebSocket opens next')
+  assert.equal(s.requests[0].url, 'http://127.0.0.1:9090/version')
+  assert.equal(s.requests[0].init.headers.Authorization, 'Bearer s3cret')
+  assert.deepEqual(plain(s.api.savedBackends()), [{ url: 'http://127.0.0.1:9090', secret: 's3cret', name: 'Prizrak-Box', id: s.api.savedBackends()[0].id }])
+  assert.equal(router.route, 'overview')
+  assert.equal(s.location.search, '')
+  assert.equal(s.location.hash, '#/overview')
+
+  const before = session({}, link)
+  before.api.initialBackend()
+  assert.equal(before.location.hash, '#/setup?disableUpgradeCore=1', 'credentials and label leave the address, UI flags stay')
+})
+
+test('label не переименовывает сохранённый профиль; IPv6 без скобок становится корректным URL', () => {
+  const seed = { 'miboard.backends': [{ url: 'http://127.0.0.1:9090', secret: 'saved', name: 'Дом' }] }
+  const renamed = session(seed, 'https://dashboard.test/#/setup?hostname=127.0.0.1&port=9090&protocol=http&label=Other')
+  assert.deepEqual(plain(renamed.api.initialBackend()), { url: 'http://127.0.0.1:9090', secret: 'saved', name: 'Дом' })
+  const blank = session({}, 'https://dashboard.test/#/setup?hostname=127.0.0.1&http=1&label=%20%20')
+  assert.deepEqual(plain(blank.api.initialBackend()), { url: 'http://127.0.0.1', secret: '' })
+  const ipv6 = session({}, 'https://dashboard.test/#/setup?https=1&hostname=::1&port=9090&secret=x')
+  assert.deepEqual(plain(ipv6.api.initialBackend()), { url: 'https://[::1]:9090', secret: 'x' })
+  const bracketed = session({}, 'https://dashboard.test/#/setup?http=1&hostname=[fd00::1]&port=9090')
+  assert.equal(bracketed.api.initialBackend().url, 'http://[fd00::1]:9090')
+})
+
 test('ошибка авторизации Core сохраняет рабочий профиль и последний успешный secret', async () => {
   const s = session({}, 'https://dashboard.test/', async () => new Response(
     JSON.stringify({ message: 'Unauthorized' }), { status: 401, statusText: 'Unauthorized' },

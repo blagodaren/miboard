@@ -98,13 +98,13 @@
   }
 
   function requestTun(value: boolean) {
-    if (!current() || busy.tun || !core.configs || value === !!core.configs.tun?.enable) return
+    if (embed.disableTunMode || !current() || busy.tun || !core.configs || value === !!core.configs.tun?.enable) return
     requestedTun = value
     confirmTun = true
   }
 
   function applyTun() {
-    if (!confirmTun || !current() || !core.configs || requestedTun === !!core.configs.tun?.enable) return
+    if (embed.disableTunMode || !confirmTun || !current() || !core.configs || requestedTun === !!core.configs.tun?.enable) return
     patch('tun', () => 'TUN', { tun: { enable: requestedTun } })
   }
 
@@ -199,10 +199,12 @@
               {@render row(t('mode.label'), t('settings.modeHint'), modeCtl)}
             {/if}
 
-            {#snippet tunCtl()}
-              <Toggle label="TUN" checked={!!cfg.tun?.enable} disabled={busy.tun} onchange={requestTun} />
-            {/snippet}
-            {@render row('TUN', t('settings.tunHint'), tunCtl)}
+            {#if !embed.disableTunMode}
+              {#snippet tunCtl()}
+                <Toggle label="TUN" checked={!!cfg.tun?.enable} disabled={busy.tun} onchange={requestTun} />
+              {/snippet}
+              {@render row('TUN', t('settings.tunHint'), tunCtl)}
+            {/if}
 
             {#snippet lanCtl()}
               <Toggle label={t('settings.allowLan')} checked={!!cfg['allow-lan']} disabled={busy.lan} onchange={(v) => patch('lan', () => t('settings.allowLan'), { 'allow-lan': v })} />

@@ -18,9 +18,26 @@ Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind th
 
 The `#/setup` page manages server names, API URLs and secrets. Saving a profile does not contact the server; **Connect** starts a connection. Editing a saved profile does not switch the active connection. The server link at the bottom of the sidebar and **Settings → Connection and core** open this page. Older saved connections are migrated automatically. Profiles and secrets stay in this browser's localStorage, separately for each site origin.
 
-Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname=...&port=...&secret=...` format. The dashboard removes credentials from its address after reading them. Treat such URLs as credentials and do not share or publish them.
+Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname=...&port=...&secret=...` format. Parameters are read from `?query` and from `#/...?query`; the `#` value wins when both are present.
 
-For embedding (for example in a router web UI iframe where the profile sets the mode), `hideMode=1` hides the rule / global / direct switch: `http://<host>:9090/ui/miboard/?hideMode=1#/setup?hostname=...`. It removes the switch from the sidebar, the mobile header and **Settings → Connection and core**. The flag is read on page load; put it in `?query` rather than only in `#/...?query` so it survives a reload inside the frame. It only hides the control: the core API still accepts mode changes.
+| Parameter | Effect |
+|---|---|
+| `hostname` | Core address. The other connection parameters apply only with it. IPv6 may be `::1` or `[::1]` |
+| `port` | `external-controller` port |
+| `secret` | Controller secret |
+| `protocol=http` / `protocol=https`, `http`, `https` | API protocol; the page protocol when omitted |
+| `secondaryPath` | API path behind a reverse proxy, for example `/api` |
+| `label` | Name for a new profile. A saved server keeps its name |
+| `hideMode=1` | Hide the rule / global / direct switch (see below) |
+| `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
+| `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
+
+The link selects the saved profile with the same API URL or, after a successful connection, saves a new one; the dashboard connects without manual input. The address, secret and `label` leave the address bar right after they are read; UI flags stay. Example for an app that runs and updates the core itself:
+`http://127.0.0.1:9090/ui/miboard/#/setup?http=true&hostname=127.0.0.1&port=9090&secret=xxx&disableUpgradeCore=1`.
+
+The dashboard removes credentials from its address after reading them. Treat such URLs as credentials and do not share or publish them.
+
+For embedding (for example in a router web UI iframe where the profile sets the mode), `hideMode=1` hides the rule / global / direct switch: `http://<host>:9090/ui/miboard/?hideMode=1#/setup?hostname=...`. It removes the switch from the sidebar, the mobile header and **Settings → Connection and core**. The flag is read on page load; put it in `?query` rather than only in `#/...?query` so it survives a reload inside the frame. It only hides the control: the core API still accepts mode changes. `disableUpgradeCore` and `disableTunMode` work the same way: they hide controls but do not block core updates or TUN changes through the API.
 
 Separate hosting needs CORS on the core. For a local development server:
 

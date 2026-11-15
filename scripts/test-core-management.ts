@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setImmediate as tick } from 'node:timers/promises'
-import { CoreManagementError, applyFleetAction, readCoreSnapshot, rebaseRuntimeDraft, runCoreFleet, runtimeDraft, runtimePatch, unsupportedCoreAction, upgradeCore, writeRuntimeSettings, type CoreRequest } from '../src/lib/core-management.ts'
+import { CoreManagementError, applyFleetAction, coreUpgrades, readCoreSnapshot, rebaseRuntimeDraft, runCoreFleet, runtimeDraft, runtimePatch, unsupportedCoreAction, upgradeCore, writeRuntimeSettings, type CoreRequest } from '../src/lib/core-management.ts'
 import type { Backend, Configs, SavedBackend } from '../src/lib/api.ts'
 
 const core: Backend = { url: 'http://core.test:9090', secret: 'original-secret' }
@@ -112,6 +112,12 @@ test('lost upgrade response with unchanged version remains unconfirmed', async (
   }
   const result = await upgradeCore(send, core, 'core', new AbortController().signal, async () => {})
   assert.equal(result.outcome, 'unconfirmed'); assert.equal(writes, 1)
+})
+
+test('disableUpgradeCore hides only the core binary update', () => {
+  assert.deepEqual(coreUpgrades(), ['core', 'ui', 'geo'])
+  assert.deepEqual(coreUpgrades({ disableUpgradeCore: false }), ['core', 'ui', 'geo'])
+  assert.deepEqual(coreUpgrades({ disableUpgradeCore: true }), ['ui', 'geo'])
 })
 
 test('UI and Geo upgrades use distinct endpoints; unsupported actions do not poll or retry', async () => {
