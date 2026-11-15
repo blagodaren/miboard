@@ -5,7 +5,7 @@
 
   let draft = $state(customCss.value)
   let status = $state<'' | 'saved' | 'memory' | 'size'>('')
-  const placeholder = ':root {\n  --accent: light-dark(#2563eb, #60a5fa);\n  --accent-ink: light-dark(#1d4ed8, #93c5fd);\n  --page: light-dark(#f8fafc, #0b1220);\n  --card: light-dark(#ffffff, #111a2e);\n}'
+  const placeholder = ':root {\n  --accent: light-dark(royalblue, cornflowerblue);\n  --accent-ink: light-dark(mediumblue, lightskyblue);\n  --page: light-dark(ghostwhite, midnightblue);\n}'
   function save(css: string) { status = customCss.save(css); if (status !== 'size') draft = customCss.value }
 </script>
 
