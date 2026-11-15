@@ -69,6 +69,29 @@ Categories appear in a sidebar on wide screens and a select control on narrow sc
 
 Telemetry reconnects after 15 seconds without data or 10 seconds without completing a connection. The last snapshot remains visible while reconnecting. Quiet logs are not treated as stalled telemetry. Connection speeds use the actual interval between snapshots; the first frame after a gap establishes a new baseline.
 
+## Custom CSS and client colors
+
+Settings → Appearance → Custom CSS applies CSS on top of MIBoard styles in this browser (localStorage, up to 64 KB). The style is attached before the first frame, so after a reload the dashboard opens in its own colors right away.
+
+To match an app or a router UI, override the palette variables. `light-dark(light, dark)` sets both themes at once:
+
+```css
+:root {
+  --accent: light-dark(#2563eb, #60a5fa);      /* accent, indicators, download charts */
+  --accent-ink: light-dark(#1d4ed8, #93c5fd);  /* accent-colored text and icons */
+  --deep: light-dark(#e2e8f0, #070b14);        /* sidebar and bottom bar */
+  --page: light-dark(#f1f5f9, #0b1220);        /* page background */
+  --card: light-dark(#ffffff, #111a2e);        /* cards and tables */
+  --raised: light-dark(#e2e8f0, #1a2540);      /* raised controls, toggles */
+  --text: light-dark(#0f172a, #e2e8f0);
+  --line: light-dark(#cbd5e1, rgb(226 232 240 / 0.1));
+  --selected: light-dark(#dbeafe, #1e2a4a);
+  --selected-border: light-dark(#2563eb, #60a5fa);
+}
+```
+
+The full variable list is at the top of `src/app.css`. Reset removes the custom CSS.
+
 ## App installation and updates
 
 **Settings → App and maintenance** shows the MIBoard version, update state and offline readiness. The same controls are available on the server setup screen. Use the install button when offered by the browser, or its **Install app / Add to Home Screen** menu. On iPhone and iPad, installation uses the Share menu.
