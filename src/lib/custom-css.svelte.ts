@@ -2,10 +2,12 @@ export const CUSTOM_CSS_KEY = 'miboard.custom-css'
 export const MAX_CUSTOM_CSS = 64 * 1024
 const STYLE_ID = 'miboard-custom-css'
 
-/** One <style> per source, appended after the app stylesheet so equal selectors win. */
+/**
+ * One <style> per source, appended after the app stylesheet so equal selectors win.
+ * Empty elements stay in place: the creation order (link theme, then custom CSS) is the cascade order.
+ */
 export function applyStyle(id: string, css: string) {
   let element = document.getElementById(id)
-  if (!css) return element?.remove()
   if (!element) {
     element = document.createElement('style')
     element.id = id

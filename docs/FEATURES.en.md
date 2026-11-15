@@ -31,6 +31,7 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 | `hideMode=1` | Hide the rule / global / direct switch (see below) |
 | `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
 | `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
+| `theme=<url>` | CSS theme from the app or provider (see [Theme from a link](#theme-from-a-link)); `theme=off` removes it |
 
 The link selects the saved profile with the same API URL or, after a successful connection, saves a new one; the dashboard connects without manual input. The address, secret and `label` leave the address bar right after they are read. UI flags remain active until the page reloads, even when navigation removes them from `#`; put them in `?query` before `#` to preserve them across reloads. Example for an app that runs and updates the core itself:
 `http://127.0.0.1:9090/ui/miboard/#/setup?http=true&hostname=127.0.0.1&port=9090&secret=xxx&disableUpgradeCore=1`.
@@ -91,6 +92,23 @@ To match an app or a router UI, override the palette variables. `light-dark(ligh
 ```
 
 The full variable list is at the top of `src/app.css`. Reset removes the custom CSS.
+
+### Theme from a link
+
+MIBoard talks only to the mihomo API, and mihomo passes on nothing from the subscription response except `subscription-userinfo`. So a provider's theme reaches the dashboard through the app that downloads the subscription and opens MIBoard:
+
+1. The provider adds a header to the subscription response, for example `miboard-theme: https://provider.example/miboard.css`. It is a URL rather than the CSS itself, because headers are small and a URL can change its content without a new subscription.
+2. The app passes that URL, or its own CSS if it already has a color scheme (for example `http://127.0.0.1:<port>/theme.css` served by the app), in the link: `#/setup?hostname=…&secret=…&theme=<url-encoded URL>`.
+3. MIBoard saves the URL and the downloaded CSS in localStorage and applies the saved copy before the first frame. On every start it checks the URL again (`cache: no-cache`, so an unchanged file costs a 304). When the provider changes the file, the next start picks it up. If the check fails, the saved copy stays in use.
+
+Rules:
+
+- HTTPS anywhere. Plain HTTP only from the dashboard's own origin or loopback (`127.0.0.1`, `localhost`, `[::1]`). The server must allow CORS (`Access-Control-Allow-Origin: *`); the request is sent without cookies. Limit: 64 KB.
+- A new URL in the link replaces the old one, `theme=off` removes it, and a link without `theme` keeps what is saved.
+- **Settings → Appearance → Theme from link** shows the URL and the last update, turns the theme off (the choice survives later links), checks for changes now and removes it.
+- Custom CSS applies on top of the link theme, so the user's changes always win.
+- The CSS can only change the look: the page's CSP blocks scripts and external stylesheets from it. Images in `url()` can load from any HTTPS host, so a theme can tell its author that the dashboard was opened.
+
 
 ## App installation and updates
 
