@@ -16,3 +16,10 @@ export function readConnectionColumns(): ConnectionColumn[] {
   } catch { /* Column preferences are optional. */ }
   return [...DEFAULT_CONNECTION_COLUMNS]
 }
+
+export const CONNECTION_LAYOUT_KEY = 'miboard.connection-layout'
+export type ConnectionLayout = 'cards' | 'table'
+
+export function readConnectionLayout(): ConnectionLayout {
+  try { return localStorage.getItem(CONNECTION_LAYOUT_KEY) === 'table' ? 'table' : 'cards' } catch { return 'cards' }
+}

@@ -62,6 +62,7 @@ async function open(locale = 'en', theme = 'light') {
     sessionStorage.setItem('transfer-fixture-seeded', '1')
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
+    localStorage.setItem('miboard.connection-layout', 'table')
     localStorage.setItem('miboard.backend', JSON.stringify({ url: origin, secret: 'test', name: 'Current mock' }))
     localStorage.setItem('miboard.backends', JSON.stringify([
       { url: origin, secret: 'test', name: 'Current mock' },

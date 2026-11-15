@@ -44,6 +44,7 @@ try {
   await stubAppUpdates(context)
   await context.addInitScript(({ origin, second }) => {
     if (!localStorage.getItem('miboard.locale')) localStorage.setItem('miboard.locale', 'en')
+    localStorage.setItem('miboard.connection-layout', 'table')
     localStorage.setItem('miboard.backends', JSON.stringify([{ url: origin, secret: 'test', name: 'Fixture A' }, { url: second, secret: 'test', name: 'Fixture B' }]))
     window.__notices = []
     class FixtureNotification {
