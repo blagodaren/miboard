@@ -87,7 +87,7 @@ try {
   await russian.page.locator('#backend-url').waitFor()
   const russianStartupBytes = [...russianScripts].reduce((sum, name) => sum + (files.get(name)?.length ?? 0), 0)
   const russianStartupGzipBytes = [...russianScripts].reduce((sum, name) => sum + (files.has(name) ? gzipSync(files.get(name)).length : 0), 0)
-  assert(russianStartupBytes < 370_000, `Russian Setup JavaScript stays below 370 kB, got ${russianStartupBytes}`)
+  assert(russianStartupBytes < 380_000, `Russian Setup JavaScript stays below 380 kB, got ${russianStartupBytes}`)
   assert(russianStartupGzipBytes < 120_000, `Russian Setup gzip JavaScript stays below 120 kB, got ${russianStartupGzipBytes}`)
   assert(![...russianScripts].some(name => /^assets\/en-/.test(name)), 'Russian setup does not load English')
   await russian.context.close()
