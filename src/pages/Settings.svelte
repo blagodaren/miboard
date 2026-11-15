@@ -30,6 +30,10 @@
   import { notifications } from '../lib/notifications.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import type { ProxyCardSize, ProxyGroupHeight } from '../lib/appearance'
+  import { DEFAULT_MOBILE_NAV, MOBILE_NAV_SLOTS, moveMobileNav } from '../lib/mobile-nav'
+  import { NAV_ICONS } from '../lib/icons'
+  import IconUp from '@lucide/svelte/icons/chevron-up'
+  import IconDown from '@lucide/svelte/icons/chevron-down'
 
   const categories = [
     { value: 'appearance', label: 'settings.appearance', hint: 'settings.category.appearanceHint', icon: IconPaintbrush },
@@ -74,6 +78,8 @@
     { value: 'compact' as const, label: t('settings.proxyCards.compact') },
   ])
   function changeCardSize(value: ProxyCardSize) { cardSizeSaved = appearance.setProxyCardSize(value) }
+  let mobileNavSaved = $state(true)
+  function moveSection(index: number, delta: -1 | 1) { mobileNavSaved = appearance.setMobileNav(moveMobileNav(appearance.mobileNav, index, delta)) }
   onDestroy(() => { active = false })
   const current = () => active && core.backend.url === backend.url && core.backend.secret === backend.secret
 
@@ -265,7 +271,7 @@
       </section>
     </Tabs.Content>
 
-    <Tabs.Content value="appearance" data-testid="settings-category-panel-appearance" class="min-w-0 data-[state=inactive]:hidden">
+    <Tabs.Content value="appearance" data-testid="settings-category-panel-appearance" class="flex min-w-0 flex-col gap-6 data-[state=inactive]:hidden">
       <div class="rounded-panel border border-line bg-card">
         {#snippet themeCtl()}
           <Segmented full label={t('settings.theme')} value={theme.value} options={themes} onchange={(value) => theme.set(value)} />
@@ -292,6 +298,29 @@
           <LanguageSelect full />
         </div>
       </div>
+      <section data-testid="mobile-nav-order">
+        <div class="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
+          <div>
+            <h2 class="text-[13px] text-fg-2">{t('settings.mobileNav')}</h2>
+            <p class="mt-0.5 text-[13px] text-fg-3">{t('settings.mobileNavHint')}</p>
+          </div>
+          <Button size="sm" variant="ghost" onclick={() => (mobileNavSaved = appearance.setMobileNav(DEFAULT_MOBILE_NAV))}>{t('settings.mobileNavReset')}</Button>
+        </div>
+        <ol class="rounded-panel border border-line bg-card">
+          {#each appearance.mobileNav as route, index (route)}
+            {@const Icon = NAV_ICONS[route]}
+            {#if index === MOBILE_NAV_SLOTS}<li class="border-t border-line bg-raised px-4 py-1.5 text-xs text-fg-3 sm:px-5" aria-hidden="true">{t('settings.mobileNavOverflow')}</li>{/if}
+            <li class="flex items-center gap-3 border-t border-line px-4 py-1.5 first:border-t-0 sm:px-5" data-route={route}>
+              <span class="num w-4 text-right font-mono text-xs text-fg-3">{index < MOBILE_NAV_SLOTS ? index + 1 : '⋯'}</span>
+              <Icon class="size-4 shrink-0 text-fg-3" strokeWidth={1.5} aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate text-[13px]">{t(`nav.${route}`)}</span>
+              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" disabled={index === 0} aria-label={t('settings.mobileNavUp', { section: t(`nav.${route}`) })} onclick={() => moveSection(index, -1)}><IconUp class="size-4" strokeWidth={1.5} aria-hidden="true" /></Button>
+              <Button size="sm" variant="ghost" class="w-11 !px-0 sm:w-8" disabled={index === appearance.mobileNav.length - 1} aria-label={t('settings.mobileNavDown', { section: t(`nav.${route}`) })} onclick={() => moveSection(index, 1)}><IconDown class="size-4" strokeWidth={1.5} aria-hidden="true" /></Button>
+            </li>
+          {/each}
+        </ol>
+        {#if !mobileNavSaved}<p class="mt-2 px-1 text-xs text-warning" role="status">{t('settings.mobileNavMemory')}</p>{/if}
+      </section>
     </Tabs.Content>
   </div>
 </Tabs.Root>
