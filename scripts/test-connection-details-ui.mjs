@@ -183,9 +183,11 @@ try {
   assert.deepEqual(hosts, [...hosts].sort((a, b) => a.localeCompare(b, 'en')), 'Cards sort by host')
   await page.reload()
   await poll(cardsShown, 'cards layout survives reload')
+  assert.equal(await page.getByTestId('connection-card-sort').inputValue(), 'host', 'Sort survives reload')
+  assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('miboard.connection-sort.v1'))).active, { key: 'host', direction: 'asc' })
   await layoutButtons.nth(1).click()
   await poll(async () => await activeRows(page).first().evaluate(node => node.tagName) === 'TR', 'table layout restored')
-  console.log('PASS: cards layout, persisted layout choice')
+  console.log('PASS: cards layout, persisted layout and sort')
 
   const opener = richRow(page).getByRole('button', { name: 'Connection details for raw.fixture.example', exact: true }).first()
   await opener.click()
