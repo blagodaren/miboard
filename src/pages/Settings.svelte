@@ -27,6 +27,7 @@
   import SettingsSync from '../components/SettingsSync.svelte'
   import ProviderAlertSettings from '../components/ProviderAlertSettings.svelte'
   import LiveUpdateSettings from '../components/LiveUpdateSettings.svelte'
+  import CustomCssSettings from '../components/CustomCssSettings.svelte'
   import { notifications } from '../lib/notifications.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import type { ProxyCardSize, ProxyGroupHeight } from '../lib/appearance'
@@ -265,7 +266,7 @@
       </section>
     </Tabs.Content>
 
-    <Tabs.Content value="appearance" data-testid="settings-category-panel-appearance" class="min-w-0 data-[state=inactive]:hidden">
+    <Tabs.Content value="appearance" data-testid="settings-category-panel-appearance" class="flex min-w-0 flex-col gap-6 data-[state=inactive]:hidden">
       <div class="rounded-panel border border-line bg-card">
         {#snippet themeCtl()}
           <Segmented full label={t('settings.theme')} value={theme.value} options={themes} onchange={(value) => theme.set(value)} />
@@ -292,6 +293,7 @@
           <LanguageSelect full />
         </div>
       </div>
+      <CustomCssSettings />
     </Tabs.Content>
   </div>
 </Tabs.Root>
