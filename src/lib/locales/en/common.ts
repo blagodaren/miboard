@@ -11,6 +11,8 @@ export const en = {
   'nav.settings': 'Settings',
   'nav.sections': 'Sections',
   'nav.more': 'More',
+  'nav.collapse': 'Collapse sidebar',
+  'nav.expand': 'Expand sidebar',
   'common.cancel': 'Cancel',
   'common.search': 'Search',
   'common.done': 'Done',
