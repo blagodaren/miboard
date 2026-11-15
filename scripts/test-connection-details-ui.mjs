@@ -116,7 +116,6 @@ try {
     await context.addInitScript(({ locale, theme, origin }) => {
       localStorage.setItem('miboard.locale', locale)
       localStorage.setItem('miboard.theme', theme)
-      if (!localStorage.getItem('miboard.connection-layout')) localStorage.setItem('miboard.connection-layout', 'table')
       localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.214': 'Fixture laptop' }))
       window.__copiedConnection = null
       window.__clipboardShouldFail = false
@@ -172,22 +171,28 @@ try {
   await page.getByTestId('connection-columns-toggle').click()
   console.log('PASS: expanded source/destination/inbound columns, field search, persisted columns and reset')
 
-  const layoutButtons = page.getByTestId('connection-layout').locator('button')
   const cardsShown = async () => await activeRows(page).count() > 0 && await activeRows(page).first().evaluate(node => node.tagName) === 'ARTICLE'
-  await layoutButtons.nth(0).click()
-  await poll(cardsShown, 'cards layout')
+  const tableShown = async () => await activeRows(page).count() > 0 && await activeRows(page).first().evaluate(node => node.tagName) === 'TR'
+  const header = name => page.getByRole('columnheader', { name, exact: true })
+  await header('Rule').getByRole('button').click()
+  assert.equal(await header('Rule').getAttribute('aria-sort'), 'ascending', 'Every column header sorts the table')
+  await header('Rule').getByRole('button').click()
+  assert.equal(await header('Rule').getAttribute('aria-sort'), 'descending')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await poll(cardsShown, 'phones get cards')
   assert.equal(await page.getByTestId('connection-columns-toggle').count(), 0, 'Column picker belongs to the table layout')
-  assert.match(await richRow(page).innerText(), /raw\.fixture\.example/)
+  assert.equal(await page.getByTestId('connection-card-sort').inputValue(), 'rule', 'Cards share the table sort')
   await page.getByTestId('connection-card-sort').selectOption('host')
   const hosts = await activeRows(page).locator('.card-host').allInnerTexts()
-  assert.deepEqual(hosts, [...hosts].sort((a, b) => a.localeCompare(b, 'en')), 'Cards sort by host')
+  assert.deepEqual(hosts, [...hosts].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })), 'Cards sort by host')
   await page.reload()
-  await poll(cardsShown, 'cards layout survives reload')
+  await poll(cardsShown, 'cards after reload')
   assert.equal(await page.getByTestId('connection-card-sort').inputValue(), 'host', 'Sort survives reload')
   assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('miboard.connection-sort.v1'))).active, { key: 'host', direction: 'asc' })
-  await layoutButtons.nth(1).click()
-  await poll(async () => await activeRows(page).first().evaluate(node => node.tagName) === 'TR', 'table layout restored')
-  console.log('PASS: cards layout, persisted layout and sort')
+  await page.setViewportSize({ width: 1440, height: 1040 })
+  await poll(tableShown, 'desktop gets the table')
+  assert.equal(await header('Host').getAttribute('aria-sort'), 'ascending')
+  console.log('PASS: sortable columns, cards on phones and table on desktop, persisted sort')
 
   const opener = richRow(page).getByRole('button', { name: 'Connection details for raw.fixture.example', exact: true }).first()
   await opener.click()
@@ -256,9 +261,8 @@ try {
     const item = await session({ locale, theme, width })
     const page = item.page
     await assertPageFits(page, `${locale}/${theme}/${width} table`)
-    const tableScrolls = await page.getByTestId('connections-table').evaluate(node => ({ width: node.clientWidth, scroll: node.scrollWidth, overflow: getComputedStyle(node).overflowX }))
-    assert.equal(tableScrolls.overflow, 'auto', 'Wide table scrolls in its own container')
-    if (width < 768) assert(tableScrolls.scroll > tableScrolls.width, 'Narrow viewport keeps table columns in an internal scroller')
+    if (width < 768) assert.equal(await activeRows(page).first().evaluate(node => node.tagName), 'ARTICLE', 'Narrow viewport shows cards')
+    else assert.equal(await page.getByTestId('connections-table').evaluate(node => getComputedStyle(node).overflowX), 'auto', 'Wide table scrolls in its own container')
     if (locale === 'ru' && ((width === 1440 && theme === 'dark') || (width === 390 && theme === 'light'))) {
       await page.screenshot({ path: path.join(out, `connections-table-${locale}-${theme}-${width}.png`) })
     }

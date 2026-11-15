@@ -17,15 +17,8 @@ export function readConnectionColumns(): ConnectionColumn[] {
   return [...DEFAULT_CONNECTION_COLUMNS]
 }
 
-export const CONNECTION_LAYOUT_KEY = 'miboard.connection-layout'
-export type ConnectionLayout = 'cards' | 'table'
-
-export function readConnectionLayout(): ConnectionLayout {
-  try { return localStorage.getItem(CONNECTION_LAYOUT_KEY) === 'table' ? 'table' : 'cards' } catch { return 'cards' }
-}
-
 export const CONNECTION_SORT_KEY = 'miboard.connection-sort.v1'
-export const CONNECTION_SORT_KEYS = ['rate', 'total', 'start', 'host'] as const
+export const CONNECTION_SORT_KEYS = ['rate', 'total', 'start', 'host', 'type', 'process', 'sniffHost', 'source', 'destination', 'inbound', 'dnsMode', 'rule', 'chain', 'provider', 'peakSpeed'] as const
 export type ConnectionSortKey = typeof CONNECTION_SORT_KEYS[number]
 export type ConnectionSort = { key: ConnectionSortKey; direction: 'asc' | 'desc' }
 type SortView = 'active' | 'closed'

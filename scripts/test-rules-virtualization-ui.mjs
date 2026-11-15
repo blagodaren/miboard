@@ -45,7 +45,7 @@ try {
   assert(browser, 'Install a supported Playwright browser')
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block' })
   await stubAppUpdates(context)
-  await context.addInitScript(() => { localStorage.setItem('miboard.locale', 'en'); localStorage.setItem('miboard.connection-layout', 'table') })
+  await context.addInitScript(() => localStorage.setItem('miboard.locale', 'en'))
   const page = await context.newPage()
   page.setDefaultTimeout(15000)
   page.on('pageerror', error => errors.push(error.message))

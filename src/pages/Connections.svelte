@@ -17,7 +17,7 @@
   import ConnectionDetails from '../components/ConnectionDetails.svelte'
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
-  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
+  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
   import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
   import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
@@ -32,12 +32,15 @@
   let selectedSnapshot = $state.raw<DisplayRow | null>(null)
   let visibleColumns = $state<ColumnKey[]>(readConnectionColumns())
   let columnsOpen = $state(false)
-  let layout = $state<ConnectionLayout>(readConnectionLayout())
-  const layouts = $derived([{ value: 'cards' as const, label: t('connectionDetails.cards') }, { value: 'table' as const, label: t('connectionDetails.table') }])
-  function changeLayout(value: ConnectionLayout) {
-    layout = value
-    try { localStorage.setItem(CONNECTION_LAYOUT_KEY, value) } catch { /* Keep this session's layout. */ }
-  }
+  // Phones get cards, wider screens the table; the breakpoint matches the shell's md.
+  const narrowQuery = matchMedia('(max-width: 767px)')
+  let narrow = $state(narrowQuery.matches)
+  $effect(() => {
+    const change = (event: MediaQueryListEvent) => { narrow = event.matches }
+    narrowQuery.addEventListener('change', change)
+    return () => narrowQuery.removeEventListener('change', change)
+  })
+  const layout = $derived(narrow ? 'cards' : 'table')
   // Cards have a fixed height, so the virtual window works in whole grid rows.
   const CARD_ROW = 136, CARD_MIN_WIDTH = 360
   let listWidth = $state(1024)
@@ -160,16 +163,23 @@
     { value: 'total', label: t('connections.total') },
     { value: 'start', label: t(view === 'closed' ? 'journal.observedEnd' : 'connections.time') },
     { value: 'host', label: t('connections.host') },
+    { value: 'rule', label: t('connections.rule') },
+    { value: 'chain', label: t('connections.chain') },
+    { value: 'type', label: t('connectionDetails.type') },
+    { value: 'source', label: t('connectionDetails.source') },
   ])
   function changeSort(key: SortKey) {
     if (sort === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
     } else {
       sort = key
-      sortDirection = key === 'host' ? 'asc' : 'desc'
+      sortDirection = NUMERIC_SORTS.includes(key) ? 'desc' : 'asc'
     }
   }
 
+  const NUMERIC_SORTS: SortKey[] = ['rate', 'total', 'start', 'peakSpeed']
+  // numeric: true keeps ports and IP octets in number order (…:9 before …:10).
+  const text = (a: string, b: string) => a.localeCompare(b, i18n.intlLocale, { numeric: true })
   const rows = $derived.by(() => {
     const src = sourceRows.filter(c => matchesConnectionScope(c, scope, filterValue))
     const q = query.trim().toLowerCase()
@@ -181,7 +191,18 @@
       total: (a, b) => a.download + a.upload - (b.download + b.upload),
       // Ascending age means newer connections first, independently of ISO offsets.
       start: (a, b) => view === 'closed' ? a.journal!.closedAt - b.journal!.closedAt : Date.parse(b.start) - Date.parse(a.start),
-      host: (a, b) => host(a).localeCompare(host(b), i18n.intlLocale),
+      host: (a, b) => text(host(a), host(b)),
+      type: (a, b) => text(`${a.metadata.type} ${a.metadata.network}`, `${b.metadata.type} ${b.metadata.network}`),
+      process: (a, b) => text(a.metadata.process || a.metadata.processPath || '', b.metadata.process || b.metadata.processPath || ''),
+      sniffHost: (a, b) => text(a.metadata.sniffHost || '', b.metadata.sniffHost || ''),
+      source: (a, b) => text(connectionEndpoint(a.metadata.sourceIP, a.metadata.sourcePort), connectionEndpoint(b.metadata.sourceIP, b.metadata.sourcePort)),
+      destination: (a, b) => text(a.metadata.remoteDestination || connectionEndpoint(a.metadata.destinationIP, a.metadata.destinationPort), b.metadata.remoteDestination || connectionEndpoint(b.metadata.destinationIP, b.metadata.destinationPort)),
+      inbound: (a, b) => text(a.metadata.inboundName || '', b.metadata.inboundName || ''),
+      dnsMode: (a, b) => text(a.metadata.dnsMode || '', b.metadata.dnsMode || ''),
+      rule: (a, b) => text(`${a.rule} ${a.rulePayload}`, `${b.rule} ${b.rulePayload}`),
+      chain: (a, b) => text(chain(a), chain(b)),
+      provider: (a, b) => text(a.providerChains?.filter(Boolean).join(' / ') ?? '', b.providerChains?.filter(Boolean).join(' / ') ?? ''),
+      peakSpeed: (a, b) => (a.maxDownloadRate ?? 0) + (a.maxUploadRate ?? 0) - ((b.maxDownloadRate ?? 0) + (b.maxUploadRate ?? 0)),
     }
     return list.sort((a, b) => by[sort](a, b) * (sortDirection === 'desc' ? -1 : 1))
   })
@@ -351,7 +372,6 @@
 <div class="connections-toolbar">
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
   <div class="flex flex-wrap items-center gap-2">
-  <div data-testid="connection-layout"><Segmented value={layout} options={layouts} onchange={changeLayout} label={t('connectionDetails.layout')} /></div>
   {#if layout === 'cards'}
     <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('connections.sortBy')}
       <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">
@@ -402,19 +422,19 @@
     <thead>
       <tr>
         <th class="w-12 px-3"><span class="sr-only">{t('connectionDetails.details')}</span></th>
-        {#if visible('type')}<th class="{th} text-left">{t('connectionDetails.type')}</th>{/if}
-        {#if visible('process')}<th class="{th} text-left">{t('connectionDetails.process')}</th>{/if}
+        {#if visible('type')}{@render sortHead('type', t('connectionDetails.type'))}{/if}
+        {#if visible('process')}{@render sortHead('process', t('connectionDetails.process'))}{/if}
         {@render sortHead('host', t('connections.host'))}
-        {#if visible('sniffHost')}<th class="{th} text-left">{t('connectionDetails.sniffHost')}</th>{/if}
-        {#if visible('source')}<th class="{th} text-left">{t('connectionDetails.source')}</th>{/if}
-        {#if visible('destination')}<th class="{th} text-left">{columnLabel('destination')}</th>{/if}
-        {#if visible('inbound')}<th class="{th} text-left">{t('connectionDetails.inbound')}</th>{/if}
-        {#if visible('dnsMode')}<th class="{th} text-left">{t('connectionDetails.dnsMode')}</th>{/if}
-        <th class="{th} text-left">{t('connections.rule')}</th>
-        <th class="{th} text-left">{t('connections.chain')}</th>
-        {#if visible('provider')}<th class="{th} text-left">{t('connectionDetails.provider')}</th>{/if}
+        {#if visible('sniffHost')}{@render sortHead('sniffHost', t('connectionDetails.sniffHost'))}{/if}
+        {#if visible('source')}{@render sortHead('source', t('connectionDetails.source'))}{/if}
+        {#if visible('destination')}{@render sortHead('destination', columnLabel('destination'))}{/if}
+        {#if visible('inbound')}{@render sortHead('inbound', t('connectionDetails.inbound'))}{/if}
+        {#if visible('dnsMode')}{@render sortHead('dnsMode', t('connectionDetails.dnsMode'))}{/if}
+        {@render sortHead('rule', t('connections.rule'))}
+        {@render sortHead('chain', t('connections.chain'))}
+        {#if visible('provider')}{@render sortHead('provider', t('connectionDetails.provider'))}{/if}
         {@render sortHead('rate', t(view === 'closed' ? 'journal.lastSeen' : 'connections.speed'), true)}
-        {#if visible('peakSpeed')}<th class="{th} text-right">{t('connectionDetails.peakSpeed')}</th>{/if}
+        {#if visible('peakSpeed')}{@render sortHead('peakSpeed', t('connectionDetails.peakSpeed'), true)}{/if}
         {@render sortHead('total', t('connections.total'), true)}
         {@render sortHead('start', t(view === 'closed' ? 'journal.observedEnd' : 'connections.time'), true)}
         <th class={core.prizrak ? 'w-24' : 'w-12'}><span class="sr-only">{t('connections.close')}</span></th>
