@@ -18,6 +18,10 @@ test('theme link parameter accepts HTTPS, same-origin and loopback HTTP only', (
 test('theme link parameter accepts the page\'s own origin under an app scheme', () => {
   const app = 'miboard://app'
   assert.equal(parseThemeParam('miboard://app/prizrak-theme.css', app), 'miboard://app/prizrak-theme.css')
+  assert.equal(parseThemeParam('miboard://APP/theme.css', app), 'miboard://APP/theme.css')
+  assert.equal(parseThemeParam('/theme.css', app), 'miboard://app/theme.css')
+  assert.equal(parseThemeParam('miboard://app:9090/theme.css', app), undefined)
+  assert.equal(parseThemeParam('miboard://APP:9090/theme.css', 'miboard://app:9090'), 'miboard://APP:9090/theme.css')
   assert.equal(parseThemeParam('miboard://other/prizrak-theme.css', app), undefined)
   assert.equal(parseThemeParam('other://app/prizrak-theme.css', app), undefined)
   assert.equal(parseThemeParam('http://evil.example/theme.css', app), undefined)

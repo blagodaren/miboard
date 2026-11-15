@@ -16,7 +16,9 @@ export function parseThemeParam(value: string | null, pageOrigin: string): strin
     const url = new URL(value.trim(), pageOrigin)
     // The page's own origin under any scheme: an app may serve MIBoard under its own (miboard://app).
     // protocol + host rather than url.origin, which is "null" for such schemes in Node and Chromium.
-    if (url.protocol === 'https:' || `${url.protocol}//${url.host}` === pageOrigin || (url.protocol === 'http:' && LOOPBACK.has(url.hostname))) return url.href
+    // WebKit origins lowercase the host, including hosts under an app scheme.
+    const ownOrigin = `${url.protocol}//${url.host.toLowerCase()}` === pageOrigin
+    if (url.protocol === 'https:' || ownOrigin || (url.protocol === 'http:' && LOOPBACK.has(url.hostname))) return url.href
   } catch { /* An invalid URL is ignored like a missing parameter. */ }
   return undefined
 }
