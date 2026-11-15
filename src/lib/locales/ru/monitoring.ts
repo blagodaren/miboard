@@ -69,6 +69,8 @@ export const ru: Record<keyof typeof en, Message> = {
   'connections.closeAllError': 'Не удалось закрыть все соединения: {message}',
   'connections.activity': 'Активность',
   'connections.host': 'Хост',
+  'connections.sortBy': 'Сортировка',
+  'connections.sortAscending': 'По возрастанию',
   'connections.rule': 'Правило',
   'connections.chain': 'Цепочка',
   'connections.speed': 'Скорость',
