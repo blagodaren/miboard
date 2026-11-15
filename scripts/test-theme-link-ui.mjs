@@ -85,6 +85,28 @@ try {
   assert.equal(await page.evaluate(accent), '#00aa77')
   console.log('PASS: link theme applies, updates on start, survives failures and stays under custom CSS')
 
+  theme.status = 200
+  await page.goto(origin + '/ui/?theme=' + encodeURIComponent(THEME) + '&hideMode=1#/settings?marker=kept')
+  await chooseSettingsCategory(page, 'appearance')
+  await page.getByTestId('theme-source-settings').waitFor()
+  assert.equal(new URL(page.url()).searchParams.get('theme'), null, 'a theme-only link is consumed without connection parameters')
+  assert.equal(new URL(page.url()).searchParams.get('hideMode'), '1', 'unrelated query flags survive')
+  assert.equal(new URL(page.url()).hash, '#/settings?marker=kept', 'unrelated hash parameters survive')
+  await page.getByTestId('theme-source-settings').getByRole('button', { name: 'Remove', exact: true }).click()
+  assert.equal(await page.evaluate(stored), null)
+  await page.reload()
+  await chooseSettingsCategory(page, 'appearance')
+  await page.getByTestId('custom-css-settings').waitFor()
+  assert.equal(await page.evaluate(stored), null, 'Remove stays effective after reloading a theme-only link')
+  assert.equal(await page.getByTestId('theme-source-settings').count(), 0)
+
+  await page.goto(origin + '/ui/?theme=off&hideMode=1#/settings?theme=' + encodeURIComponent(THEME) + '&marker=kept')
+  await poll(async () => (await page.evaluate(stored))?.url === THEME, 'the hash theme takes precedence over the query')
+  assert.equal(new URL(page.url()).searchParams.get('theme'), null)
+  assert.equal(new URL(page.url()).hash, '#/settings?marker=kept', 'theme is removed from both URL locations')
+  assert.equal(new URL(page.url()).searchParams.get('hideMode'), '1')
+  console.log('PASS: theme-only URLs are consumed, removal survives reload, and other parameters are preserved')
+
   await page.goto(`${origin}/ui/?theme=off#/overview`)
   await poll(async () => await page.evaluate(stored) === null, 'theme=off clears the saved theme')
   assert.notEqual(await page.evaluate(accent), '#00aa77')
