@@ -5,7 +5,8 @@
   import { t, i18n, type MessageKey } from '../lib/i18n.svelte'
   import { SettingsTransferError } from '../lib/settings-transfer'
   import { prepareJournalPreferences, validJournalRetention } from '../lib/journal-preferences'
-  import { validConnectionColumns } from '../lib/connection-columns'
+  import { validConnectionColumns, validConnectionLayout, validConnectionSort } from '../lib/connection-columns'
+  import { validMobileNav } from '../lib/mobile-nav'
   import { SETTINGS_SYNC_KEY, applySyncPull, createSyncDocument, parseSyncDocument, previewSync, syncFingerprint, syncPreviewChanged, SettingsSyncError, type SyncChange, type SyncPreview } from '../lib/settings-sync'
   import Button from './Button.svelte'
 
@@ -43,6 +44,10 @@
     if (change.key === 'proxyTestSelection') return t('proxyTest.title')
     if (change.key === 'liveUpdateMode') return t('liveUpdates.mode')
     if (change.key === 'connectionColumns') return t('connectionDetails.columns')
+    if (change.key === 'connectionLayout') return t('connectionDetails.layout')
+    if (change.key === 'connectionSort.active' || change.key === 'connectionSort.closed') return `${t('connections.sortBy')} · ${t(change.key.endsWith('active') ? 'journal.active' : 'journal.closed')}`
+    if (change.key === 'mobileNav') return t('settings.mobileNav')
+    if (change.key === 'sidebarCollapsed') return t('sync.sidebarCollapsed')
     if (change.key === 'providerAlertsEnabled') return t('providerAlerts.title')
     if (change.key === 'journalRetention') return t('journal.retention')
     if (change.key.startsWith('latency.')) return t('sync.latency', { field: t(latencyLabels[change.key.slice(8)]) })
@@ -64,6 +69,13 @@
     if (change.key === 'liveUpdateMode' && (value === 'realtime' || value === 'eco')) return t(`liveUpdates.${value}`)
     if (change.key === 'journalRetention' && validJournalRetention(value)) return t(`journal.${value}`)
     if (change.key === 'connectionColumns' && validConnectionColumns(value)) return value.map(column => t(column === 'destination' ? 'journal.destination' : `connectionDetails.${column}`)).join(', ') || '—'
+    if (change.key === 'connectionLayout' && validConnectionLayout(value)) return t(`connectionDetails.${value}`)
+    if (change.key === 'mobileNav' && validMobileNav(value)) return value.map(route => t(`nav.${route}`)).join(' → ')
+    if (change.key.startsWith('connectionSort.') && validConnectionSort(value)) {
+      const closed = change.key === 'connectionSort.closed'
+      const field = { rate: closed ? 'journal.lastSeen' : 'connections.speed', total: 'connections.total', start: closed ? 'journal.observedEnd' : 'connections.time', host: 'connections.host' } as const
+      return `${t(field[value.key])} · ${t(value.direction === 'asc' ? 'proxies.sortAscending' : 'proxies.sortDescending')}`
+    }
     if (change.key === 'proxyTestSelection' && typeof value === 'object' && value !== null) {
       const selection = value as { mode: string; groups: string[] }
       return selection.mode === 'all' ? t('proxyTest.all') : `${t('proxyTest.selected')}: ${selection.groups.join(', ') || '—'}`

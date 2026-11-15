@@ -41,6 +41,16 @@ export function parseEmbed(search: string, hash: string): EmbedOptions {
   }
 }
 
+/** Copy only active UI flags, never arbitrary query parameters or controller credentials. */
+export function embedSearch(options: EmbedOptions): string {
+  const params = new URLSearchParams()
+  for (const key of ['hideMode', 'disableUpgradeCore', 'disableTunMode'] as const) {
+    if (options[key]) params.set(key, '1')
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
 export const embed: EmbedOptions = typeof location === 'undefined'
   ? { hideMode: false, disableUpgradeCore: false, disableTunMode: false }
   : parseEmbed(location.search, location.hash)

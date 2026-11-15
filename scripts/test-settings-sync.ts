@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'settings-sync']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'settings-sync']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -46,6 +46,46 @@ function session(seed: Record<string, unknown> = {}) {
 }
 const data = (extra: Record<string, unknown> = {}) => ({ deviceNames: {}, proxySort: [], preferences: {}, ...extra })
 const document = (extra: Record<string, unknown> = {}) => ({ format: 'miboard-sync', version: 1, revision: 'test-revision-0001', updatedAt: '2026-11-09T12:00:00.000Z', data: data(), ...extra })
+
+test('new navigation and connection preferences sync with readable per-view differences and preserve older copies', () => {
+  const source = session({
+    'miboard.connection-layout': 'table', 'miboard.connection-sort.v1': { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } },
+    'miboard.mobile-nav.v1': ['history', 'fleet', 'connections', 'settings'], 'miboard.sidebar-collapsed': '1',
+  })
+  const target = session()
+  const remote = target.sync.parseSyncDocument(source.sync.createSyncDocument(source.sync.localSyncData(url), url), otherUrl)
+  const preview = target.sync.previewSync('pull', remote, otherUrl)
+  for (const key of ['connectionLayout', 'connectionSort.active', 'connectionSort.closed', 'mobileNav', 'sidebarCollapsed']) {
+    assert.ok(preview.changes.some((change: { key: string }) => change.key === key), key)
+  }
+  target.sync.applySyncPull(preview, otherUrl)
+  assert.equal(target.store.get('miboard.connection-layout'), 'table')
+  assert.equal(target.store.get('miboard.sidebar-collapsed'), '1')
+  assert.deepEqual(JSON.parse(target.store.get('miboard.mobile-nav.v1')!).slice(0, 4), ['history', 'fleet', 'connections', 'settings'])
+  const before = target.snapshot()
+  target.sync.applySyncPull(target.sync.previewSync('pull', target.sync.parseSyncDocument(document(), otherUrl), otherUrl), otherUrl)
+  assert.deepEqual(target.snapshot(), before)
+  const partial = target.sync.parseSyncDocument(document({ data: data({ preferences: { connectionSort: { active: { key: 'total', direction: 'asc' } } } }) }), otherUrl)
+  const partialPreview = target.sync.previewSync('pull', partial, otherUrl)
+  assert.deepEqual(plain(partialPreview.changes).map((change: { key: string }) => change.key), ['connectionSort.active'])
+  target.sync.applySyncPull(partialPreview, otherUrl)
+  assert.deepEqual(JSON.parse(target.store.get('miboard.connection-sort.v1')!), { active: { key: 'total', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } })
+})
+
+test('sync never exports or accepts CSS or external-theme trust, even through a forged pull preview', () => {
+  const css = 'body { background: url("https://external.invalid/tracker"); }'
+  const s = session({ 'miboard.custom-css': css, 'miboard.theme-source.v1': { url: 'https://theme.invalid/style.css', trusted: true } })
+  const local = s.sync.localSyncData(url)
+  assert.ok(!Object.hasOwn(local.preferences, 'customCss'))
+  assert.ok(!JSON.stringify(local).includes('external.invalid') && !JSON.stringify(local).includes('theme.invalid'))
+  const before = s.snapshot()
+  for (const preferences of [{ customCss: css }, { customCss: '' }, { themeSource: { url: 'https://theme.invalid/style.css' } }]) {
+    const remote = document({ data: data({ preferences }) })
+    assert.throws(() => s.sync.parseSyncDocument(remote, url), { code: 'invalid' })
+    assert.throws(() => s.sync.applySyncPull({ direction: 'pull', remote, local }, url), { code: 'invalid' })
+  }
+  assert.deepEqual(s.snapshot(), before)
+})
 
 test('columns, alert opt-in and retention sync only the current core and survive older remote copies', () => {
   const alertKey = (backend: string) => 'miboard.provider-alerts:' + encodeURIComponent(backend)

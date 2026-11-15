@@ -1,5 +1,5 @@
-export const CUSTOM_CSS_KEY = 'miboard.custom-css'
-export const MAX_CUSTOM_CSS = 64 * 1024
+import { CUSTOM_CSS_KEY, MAX_CUSTOM_CSS } from './custom-css'
+export { CUSTOM_CSS_KEY, MAX_CUSTOM_CSS } from './custom-css'
 const STYLE_ID = 'miboard-custom-css'
 
 /**

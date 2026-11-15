@@ -32,7 +32,13 @@ async function launch() {
   }
   throw new Error('No browser available')
 }
-const copy = (revision, name = 'Remote laptop') => ({ format: 'miboard-sync', version: 1, revision, updatedAt: '2026-11-09T12:00:00Z', data: { deviceNames: { '192.168.1.10': name }, proxySort: [{ group: 'Main', key: 'latency', direction: 'desc' }], preferences: { theme: 'dark', groups: { Main: false }, connectionColumns: ['dnsMode', 'source'] }, providerAlertsEnabled: false, journalRetention: '1h' } })
+const remoteSort = { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } }
+const remoteNav = ['history', 'fleet', 'connections', 'settings']
+const copy = (revision, name = 'Remote laptop') => ({ format: 'miboard-sync', version: 1, revision, updatedAt: '2026-11-09T12:00:00Z', data: {
+  deviceNames: { '192.168.1.10': name }, proxySort: [{ group: 'Main', key: 'latency', direction: 'desc' }],
+  preferences: { theme: 'dark', groups: { Main: false }, connectionColumns: ['dnsMode', 'source'], connectionLayout: 'table', connectionSort: remoteSort, mobileNav: remoteNav, sidebarCollapsed: true },
+  providerAlertsEnabled: false, journalRetention: '1h',
+} })
 async function open(locale = 'en', theme = 'light') {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1050 }, colorScheme: theme, reducedMotion: 'reduce', serviceWorkers: 'block' })
   await stubAppUpdates(context)
@@ -125,6 +131,10 @@ try {
   await page.getByTestId('sync-preview').getByText('First remote', { exact: true }).waitFor()
   await page.getByTestId('sync-preview').getByText('Subscription alerts', { exact: true }).waitFor()
   await page.getByTestId('sync-preview').getByText('Keep completed connections', { exact: true }).waitFor()
+  for (const label of ['Connections layout', 'Sort by · Active', 'Sort by · Completed', 'Mobile bottom bar', 'Collapsed sidebar']) {
+    await page.getByTestId('sync-preview').getByText(label, { exact: true }).waitFor()
+  }
+  assert.ok(!(await page.getByTestId('sync-preview').textContent()).includes('[object Object]'), 'Structured preference values must be readable')
   assert.equal((await names(page))['192.168.1.10'], 'Local laptop')
   state.remote = copy('remote-revision-two', 'Latest remote')
   await page.getByTestId('sync-apply').click()
@@ -139,8 +149,12 @@ try {
     columns: JSON.parse(localStorage.getItem('miboard.connection-columns.v1')),
     alerts: JSON.parse(localStorage.getItem('miboard.provider-alerts:' + encodeURIComponent(origin))).enabled,
     retention: localStorage.getItem('miboard.journal-retention.v1.' + encodeURIComponent(origin)),
+    layout: localStorage.getItem('miboard.connection-layout'),
+    sort: JSON.parse(localStorage.getItem('miboard.connection-sort.v1')),
+    mobileNav: JSON.parse(localStorage.getItem('miboard.mobile-nav.v1')).slice(0, 4),
+    collapsed: localStorage.getItem('miboard.sidebar-collapsed'),
   }), origin)
-  assert.deepEqual(importedPreferences, { columns: ['dnsMode', 'source'], alerts: false, retention: '1h' })
+  assert.deepEqual(importedPreferences, { columns: ['dnsMode', 'source'], alerts: false, retention: '1h', layout: 'table', sort: remoteSort, mobileNav: remoteNav, collapsed: '1' })
   await page.evaluate(() => {
     const original = indexedDB.open.bind(indexedDB)
     indexedDB.open = () => { throw new DOMException('Blocked fixture', 'SecurityError') }
@@ -168,6 +182,11 @@ try {
   await page.getByTestId('sync-pull').click()
   await page.getByTestId('sync-error').filter({ hasText: 'unsupported format or invalid' }).waitFor()
   assert.equal(await credentials(page), originalCredentials)
+  state.remote = copy('css-injection-revision')
+  state.remote.data.preferences.customCss = 'body { --unexpected-sync-css: injected; }'
+  await page.getByTestId('sync-pull').click()
+  await page.getByTestId('sync-error').filter({ hasText: 'unsupported format or invalid' }).waitFor()
+  assert.equal(await page.evaluate(() => localStorage.getItem('miboard.custom-css')), null, 'Remote CSS never reaches browser storage')
   state.remote = null
   await page.getByTestId('sync-pull').click()
   await page.getByTestId('sync-error').filter({ hasText: 'no preferences saved' }).waitFor()

@@ -8,6 +8,7 @@
   import Button from './Button.svelte'
 
   let includeSecrets = $state(false)
+  let includeCustomCss = $state(false)
   let fileInput: HTMLInputElement
   let preview = $state.raw<SettingsImportPreview | null>(null)
   let fileName = $state('')
@@ -67,6 +68,7 @@
     if (!file || !current()) return
     const id = ++selection
     preview = null
+    includeCustomCss = false
     error = null
     saved = false
     journalWarning = false
@@ -92,7 +94,7 @@
     if (!preview?.document || preview.invalid || !current()) return
     error = null
     try {
-      applySettingsImport(preview)
+      applySettingsImport(preview, { includeCustomCss })
       preview = null
       saved = true
       notifications.show({ id: 'settings-transfer:import', tone: 'success', scope: backend.url,
@@ -134,6 +136,13 @@
           <p class="mt-4 text-[13px] text-fg-2">{t('transfer.existingServers', { count: preview.existingServers })}</p>
           <p class="mt-1 text-[13px] text-fg-2">{t('transfer.conflicts', { count: preview.conflicts })}</p>
           <p class="mt-2 text-xs text-fg-3">{t('transfer.mergeHint')}</p>
+          {#if preview.document?.preferences.customCss !== undefined}
+            <label class="mt-4 flex min-h-11 cursor-pointer items-center gap-3 text-[13px]">
+              <input type="checkbox" bind:checked={includeCustomCss} class="size-4 shrink-0 accent-[var(--accent)]" aria-describedby="{inputId}-css-hint" />
+              <span>{t('transfer.includeCustomCss')}</span>
+            </label>
+            <p id="{inputId}-css-hint" class="mt-1 text-xs leading-relaxed text-warning">{t('transfer.customCssHint')}</p>
+          {/if}
         {/if}
         <div class="mt-4 flex flex-wrap gap-3">
           <Button size="sm" variant="primary" disabled={!!preview.invalid} onclick={apply}>{t('transfer.apply')}</Button>

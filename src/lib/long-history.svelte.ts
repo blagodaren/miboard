@@ -6,6 +6,7 @@ class LongHistory {
   backendUrl = $state('')
   buckets = $state.raw<HistoryBucket[]>([])
   loading = $state(false)
+  clearing = $state(false)
   storageState = $state<'persistent' | 'memory'>('persistent')
   recording = $state<'paused' | 'recording' | 'otherTab'>('paused')
   collector = ''
@@ -16,6 +17,7 @@ class LongHistory {
   #activation = 0
   #busy = false
   #lastRead = 0
+  #channel: BroadcastChannel | null = null
   constructor() {
     try {
       const key = 'miboard.history.collector'
@@ -23,6 +25,18 @@ class LongHistory {
       this.collector = validHistoryCollector(saved) ? saved : historyRandomId()
       localStorage.setItem(key, this.collector)
     } catch { this.collector = historyRandomId() }
+    const refreshCleared = (value: unknown) => {
+      if (value && typeof value === 'object' && 'backend' in value
+        && value.backend === this.backendUrl && this.backendUrl) void this.activateBackend(this.backendUrl)
+    }
+    try {
+      this.#channel = new BroadcastChannel('miboard-long-history-cleared')
+      this.#channel.onmessage = event => refreshCleared(event.data)
+    } catch { /* Storage events cover browsers without BroadcastChannel. */ }
+    window.addEventListener('storage', event => {
+      if (event.key !== 'miboard.history.cleared' || !event.newValue) return
+      try { refreshCleared(JSON.parse(event.newValue)) } catch { /* Ignore unrelated values. */ }
+    })
     setInterval(() => {
       const now = Date.now()
       this.buckets = this.buckets.filter(row => row.hour >= now - HISTORY_RETENTION)
@@ -48,8 +62,30 @@ class LongHistory {
     this.#accumulator.reset(); this.recording = 'paused'
     void this.#db.release(this.backendUrl, this.#owner).catch(() => {})
   }
+  async clear(backend = this.backendUrl): Promise<boolean> {
+    if (!backend || backend !== this.backendUrl || this.loading || this.clearing) return false
+    this.clearing = true
+    this.pause()
+    const persistent = this.storageState === 'persistent'
+    try {
+      if (persistent) await this.#db.clear(backend)
+      if (backend === this.backendUrl) {
+        this.buckets = []
+        this.#accumulator.reset()
+        this.#lastRead = 0
+      }
+      if (persistent) {
+        const notification = { backend, revision: historyRandomId() }
+        try {
+          if (this.#channel) this.#channel.postMessage(notification)
+          else localStorage.setItem('miboard.history.cleared', JSON.stringify(notification))
+        } catch { /* Other tabs still reset their baseline through the cleared lease. */ }
+      }
+      return true
+    } finally { this.clearing = false }
+  }
   observe(connections: readonly Connection[], now = Date.now()) {
-    if (!this.backendUrl || this.loading || this.#busy) return
+    if (!this.backendUrl || this.loading || this.clearing || this.#busy) return
     const generation = this.#generation, url = this.backendUrl
     const current = () => generation === this.#generation && url === this.backendUrl
     const merge = (changed: HistoryBucket[]) => {

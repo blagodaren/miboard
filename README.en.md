@@ -44,9 +44,11 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 | **Proxies** | Node selection, providers and subscriptions, latency checks, per-URL histories and stability checks |
 | **Devices** | Device → proxy → destination flows, local names, processes and destinations |
 | **Connections** | Configurable columns, detailed metadata and JSON, a journal of closed connections |
+| **History** | Up to 30 days of observed traffic by device and destination, hourly totals and daily snapshots |
 | **IP & domains** | Traffic by domain, IP, application, ASN and inbound; DNS diagnostics and domain TXT export |
 | **Geography & rules** | A local country map, traffic distribution, routing chains and rule providers |
 | **Settings** | RU / EN, light and dark themes, card sizes, server profiles, settings transfer and sync |
+| **Controllers** | Saved controllers, availability checks and batch actions with results for each profile |
 | **Application** | PWA installation, an offline shell, update checks, stream recovery and an economy mode |
 
 > [!NOTE]

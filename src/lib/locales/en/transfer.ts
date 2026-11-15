@@ -4,6 +4,8 @@ export const en = {
   'transfer.title': 'Settings transfer',
   'transfer.description': 'Save this dashboard’s servers and preferences as JSON. Core configuration and connection history are not included',
   'transfer.includeSecrets': 'Include server secrets in the exported file',
+  'transfer.includeCustomCss': 'Import custom CSS from this file',
+  'transfer.customCssHint': 'CSS can hide controls and load external resources. Enable this only for a file you trust. Leave unchecked to keep your current CSS; reload after importing.',
   'transfer.secretsHint': 'The file will contain credentials that grant access to your servers',
   'transfer.export': 'Export JSON',
   'transfer.import': 'Choose JSON file',

@@ -487,6 +487,52 @@ test('label не переименовывает сохранённый проф�
   assert.equal(bracketed.api.initialBackend().url, 'http://[fd00::1]:9090')
 })
 
+test('label из ссылки ограничен длиной формы и не обрывает surrogate pair', () => {
+  const link = (label) => session({}, `https://dashboard.test/#/setup?${new URLSearchParams({ hostname: 'router.test', http: '1', label })}`)
+  const long = link('  ' + 'Дом'.repeat(1000) + '  ')
+  const backend = long.api.initialBackend()
+  assert.equal(backend.name, 'Дом'.repeat(1000).slice(0, 80))
+  long.api.saveBackend(backend)
+  assert.equal(long.api.savedBackends()[0].name.length, 80, 'the oversized link cannot persist an oversized profile label')
+  assert.equal(long.location.hash, '#/setup')
+  assert.equal(link('a'.repeat(79) + '😀').api.initialBackend().name, 'a'.repeat(79))
+  assert.equal(link('a'.repeat(78) + '😀').api.initialBackend().name, 'a'.repeat(78) + '😀')
+})
+
+test('hostname distinguishes host:port from IPv6 and explicit port overrides either authority', () => {
+  for (const [params, expected] of [
+    [{ hostname: 'router.test:9090' }, 'http://router.test:9090'],
+    [{ hostname: '127.0.0.1:9090', secondaryPath: '/api' }, 'http://127.0.0.1:9090/api'],
+    [{ hostname: 'router.test:9090', port: '80' }, 'http://router.test'],
+    [{ hostname: '[fd00::1]:9090', port: '8080' }, 'http://[fd00::1]:8080'],
+    [{ hostname: '[fd00::1]:9090', port: '80' }, 'http://[fd00::1]'],
+    [{ hostname: '::ffff:127.0.0.1', port: '9090' }, 'http://[::ffff:7f00:1]:9090'],
+    [{ hostname: '  ROUTER.TEST:9090  ', port: ' 8080 ' }, 'http://router.test:8080'],
+  ]) {
+    const query = new URLSearchParams({ http: '1', secret: 'canary', ...params })
+    const s = session({}, `https://dashboard.test/#/setup?${query}`)
+    assert.deepEqual(plain(s.api.initialBackend()), { url: expected, secret: 'canary' }, JSON.stringify(params))
+    assert.equal(s.location.hash, '#/setup')
+  }
+})
+
+test('invalid controller authorities do not make requests or fall back to a saved server', async () => {
+  const seed = { 'miboard.backend': { url: 'https://saved.test', secret: 'saved' } }
+  for (const params of [
+    { hostname: 'router.test:invalid' }, { hostname: '[::gg]' }, { hostname: 'router.test', port: '65536' },
+    { hostname: 'router.test', port: '90x' }, { hostname: 'user@router.test' }, { hostname: 'router.test/path' },
+    { hostname: 'router.test?target=other' }, { hostname: 'router.test', protocol: 'ftp' },
+  ]) {
+    const query = new URLSearchParams({ http: '1', secret: 'canary', label: 'Link', ...params })
+    const s = session(seed, `https://dashboard.test/#/setup?${query}`)
+    await s.core().boot()
+    assert.equal(s.core().status, 'setup', JSON.stringify(params))
+    assert.equal(s.requests.length, 0)
+    assert.equal(s.location.hash, '#/setup', 'invalid links also discard credentials')
+    assert.equal(JSON.parse(s.store.get('miboard.backend')).url, 'https://saved.test')
+  }
+})
+
 test('ошибка авторизации Core сохраняет рабочий профиль и последний успешный secret', async () => {
   const s = session({}, 'https://dashboard.test/', async () => new Response(
     JSON.stringify({ message: 'Unauthorized' }), { status: 401, statusText: 'Unauthorized' },

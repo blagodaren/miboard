@@ -94,6 +94,70 @@ try {
   }))
   await first.page.reload(); await first.page.getByTestId('long-history').waitFor()
   await poll(async () => (await read(first.page)).every(row => row.backend !== 'old-fixture'), 'global retention prune')
+
+  await first.page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('miboard-long-history', 1)
+    request.onsuccess = () => {
+      const db = request.result, tx = db.transaction('hours', 'readwrite')
+      const hour = Math.floor(Date.now() / 3600000) * 3600000
+      tx.objectStore('hours').put({ backend: 'other-controller', hour, down: 777, up: 0, observedMs: 0, gaps: 0, devices: [], domains: [] })
+      tx.oncomplete = () => { db.close(); resolve() }; tx.onerror = () => reject(tx.error)
+    }
+  }))
+  const beforeClear = await read(first.page)
+  const clearButton = first.page.getByRole('button', { name: 'Clear history', exact: true })
+  await clearButton.click()
+  const clearDialog = first.page.getByRole('alertdialog', { name: 'Clear history for this controller?' })
+  await clearDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.deepEqual(await read(first.page), beforeClear, 'cancelling does not delete history')
+
+  // Abort only the clear transaction; a failed deletion must keep the data and
+  // remain retryable instead of announcing success or clearing only the UI.
+  await first.page.evaluate(() => {
+    const transaction = IDBDatabase.prototype.transaction
+    IDBDatabase.prototype.transaction = function (...args) {
+      const tx = transaction.apply(this, args)
+      if (Array.isArray(args[0]) && args[0][0] === 'hours' && args[0][1] === 'leases' && args[1] === 'readwrite') {
+        IDBDatabase.prototype.transaction = transaction
+        queueMicrotask(() => tx.abort())
+      }
+      return tx
+    }
+  })
+  await clearButton.click()
+  await clearDialog.getByRole('button', { name: 'Clear history', exact: true }).click()
+  await first.page.getByText('Could not clear history. Saved data was not deleted; try again.', { exact: true }).waitFor()
+  assert.deepEqual(await read(first.page), beforeClear, 'aborted clear preserves all buckets')
+  await poll(async () => {
+    first.send(1300)
+    return (await first.page.getByText('Recording observed increments', { exact: true }).count()) === 1
+  }, 'recording after an aborted clear', 20000)
+
+  const clearingTab = await page(1300)
+  await clearingTab.page.getByText('Another tab is recording; these tabs share one history', { exact: true }).waitFor()
+  await clearingTab.page.getByRole('button', { name: 'Clear history', exact: true }).click()
+  // A snapshot from the writer can already be in flight when another tab clears.
+  const confirmedClear = clearingTab.page.getByRole('alertdialog').getByRole('button', { name: 'Clear history', exact: true }).click()
+  first.send(5000)
+  await confirmedClear
+  await clearingTab.page.getByText('History for this controller was cleared. New observations continue to be recorded.', { exact: true }).waitFor()
+  await poll(async () => (await read(first.page)).filter(row => row.backend === origin).length === 0, 'clear wins over an in-flight writer')
+  await first.page.getByText('No history yet. Keep the panel connected to observe traffic.', { exact: true }).waitFor()
+  await clearingTab.page.getByText('No history yet. Keep the panel connected to observe traffic.', { exact: true }).waitFor()
+  assert.deepEqual(await read(first.page), beforeClear.filter(row => row.backend === 'other-controller'), 'other controllers are preserved')
+  assert.equal(writes.length, 1, 'clearing browser history does not change shared snapshots')
+
+  first.send(100000)
+  await poll(async () => (await read(first.page)).filter(row => row.backend === origin).length === 1, 'fresh baseline after clear')
+  assert.equal((await read(first.page)).find(row => row.backend === origin).down, 0, 'old counters do not return after clear')
+  clearingTab.send(100000)
+  await delay(100)
+  first.send(100100); clearingTab.send(100100)
+  await poll(async () => (await read(first.page)).find(row => row.backend === origin)?.down === 100, 'only new increments are recorded after clear')
+  await clearingTab.page.close()
+  first.initial(100100)
+  await first.page.reload(); await first.page.getByTestId('long-history').waitFor()
+  assert.equal((await read(first.page)).find(row => row.backend === origin).down, 100, 'cleared history stays cleared after reload')
   await first.page.setViewportSize({ width: 375, height: 900 })
   await first.page.screenshot({ path: path.join(out, 'history-mobile.png'), fullPage: true })
   assert.equal(await first.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile does not overflow')
@@ -106,8 +170,31 @@ try {
   providerTime += 86400000; used = 200
   await first.page.reload()
   await first.page.getByTestId('subscription-forecast').getByText(/About .* days at/).waitFor()
+
+  await first.page.evaluate(() => { location.hash = '/settings?category=appearance' })
+  await first.page.getByRole('radio', { name: 'Dark', exact: true }).click()
+  await first.page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru')
+  await first.page.waitForFunction(() => document.documentElement.lang === 'ru')
+  await first.page.evaluate(() => { location.hash = '/history' })
+  await first.page.getByTestId('long-history').waitFor()
+  const beforeEscape = await read(first.page)
+  await first.page.getByRole('button', { name: 'Очистить историю', exact: true }).click()
+  const ruClear = first.page.getByRole('alertdialog', { name: 'Очистить историю этого ядра?' })
+  await ruClear.waitFor()
+  await poll(() => ruClear.evaluate(element => element.contains(document.activeElement)), 'focus enters clear confirmation')
+  if (await ruClear.evaluate(element => element === document.activeElement)) await first.page.keyboard.press('Tab')
+  assert.equal(await ruClear.getByRole('button', { name: 'Отмена', exact: true }).evaluate(element => element === document.activeElement), true, 'Cancel is the first keyboard action')
+  assert.equal(await first.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Russian clear dialog has no horizontal overflow')
+  const bounds = await ruClear.boundingBox()
+  assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 375 && bounds.y + bounds.height <= 900, 'Russian clear dialog fits mobile viewport')
+  await first.page.screenshot({ path: path.join(out, 'history-clear-ru-dark-375.png'), fullPage: true })
+  await first.page.keyboard.press('Escape')
+  await ruClear.waitFor({ state: 'hidden' })
+  const afterEscape = await read(first.page)
+  assert.equal(afterEscape.find(row => row.backend === origin)?.down, beforeEscape.find(row => row.backend === origin)?.down, 'Escape preserves controller history')
+  assert.deepEqual(afterEscape.filter(row => row.backend === 'other-controller'), beforeEscape.filter(row => row.backend === 'other-controller'))
   assert.deepEqual(errors, [])
-  console.log(`PASS: real IndexedDB, two tabs, reload baseline, retention, shared snapshot, mobile and subscription forecast. Screenshots: ${out}`)
+  console.log(`PASS: real IndexedDB, two tabs, reload baseline, retention, confirmed isolated clear, failed-clear recovery, shared snapshot, RU dark mobile confirmation/Cancel/Escape and subscription forecast. Screenshots: ${out}`)
   await context.close()
 } finally {
   await browser?.close()

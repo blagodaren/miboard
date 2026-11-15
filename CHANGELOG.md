@@ -1,5 +1,31 @@
 # Журнал изменений
 
+## [Unreleased]
+
+### Русский
+
+- Экспорт, импорт и синхронизация сохраняют вид и сортировку соединений, порядок
+  мобильной навигации и свёрнутую боковую панель. Свой CSS переносится через файл
+  с отдельным выбором при импорте; синхронизация через ядро CSS не передаёт.
+- В «Истории» можно удалить локальную почасовую историю выбранного ядра с подтверждением.
+  Данные других ядер и опубликованные суточные снимки сохраняются.
+- Ссылки подключения поддерживают `hostname` с портом и ограничивают длину `label`.
+  Скопированные ссылки на группы сохраняют флаги встраивания без secret и параметров темы.
+- Уточнены доверие к внешнему CSS и автоматическое подключение тем по ссылке.
+  В таблицу возможностей README добавлены «История» и «Ядра».
+
+### English
+
+- Export, import and sync preserve connection layout and sorting, mobile navigation
+  order and collapsed sidebar state. Custom CSS transfers through files with an explicit
+  import choice; core settings sync does not transfer CSS.
+- History can clear the selected core's local hourly history after confirmation.
+  Other cores' data and shared daily snapshots are preserved.
+- Connection links accept a port in `hostname` and limit `label` length.
+  Copied group links preserve embedding flags without secrets or theme parameters.
+- Documented trust in external CSS and automatic link-theme loading.
+  Added History and Controllers to the README feature table.
+
 ## [0.1.9] — 2026-11-15
 
 ### Русский
