@@ -1,5 +1,31 @@
 # Журнал изменений
 
+## [0.1.8] — 2026-11-15
+
+### Русский
+
+- Ссылки подключения поддерживают `label`: название для нового профиля без изменения
+  имени уже сохранённого сервера. Параметр удаляется из адресной строки вместе с secret.
+- `disableUpgradeCore=1` (или `=core`) скрывает обновление ядра, оставляя обновления UI
+  и geo-баз; `disableTunMode=1` (или `=tun`) скрывает переключатель TUN. Флаги действуют
+  до перезагрузки страницы; для сохранения после перезагрузки передавайте их перед `#`.
+  Они скрывают элементы интерфейса, но не ограничивают API ядра.
+- Адрес IPv6 в `hostname` поддерживается как со скобками (`[::1]`), так и без них (`::1`).
+
+Спасибо [@legiz-ru](https://github.com/legiz-ru) за [PR #2](https://github.com/blagodaren/miboard/pull/2).
+
+### English
+
+- Connection links support `label`: a name for a new profile without changing an existing
+  server's name. The parameter leaves the address bar together with the secret.
+- `disableUpgradeCore=1` (or `=core`) hides core updates while keeping UI and geodata
+  updates available; `disableTunMode=1` (or `=tun`) hides the TUN switch. Flags remain
+  active until the page reloads; put them before `#` to preserve them across reloads.
+  They hide interface controls without restricting the core API.
+- IPv6 addresses in `hostname` work both with brackets (`[::1]`) and without them (`::1`).
+
+Thanks to [@legiz-ru](https://github.com/legiz-ru) for [PR #2](https://github.com/blagodaren/miboard/pull/2).
+
 ## [0.1.7] — 2026-11-13
 
 ### Русский

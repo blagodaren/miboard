@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.7/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -22,7 +22,7 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 
 | Parameter | Effect |
 |---|---|
-| `hostname` | Core address. The other connection parameters apply only with it. IPv6 may be `::1` or `[::1]` |
+| `hostname` | Core address. `port`, protocol, `secondaryPath` and `label` apply only with it; `secret` also works on its own. IPv6 may be `::1` or `[::1]` |
 | `port` | `external-controller` port |
 | `secret` | Controller secret |
 | `protocol=http` / `protocol=https`, `http`, `https` | API protocol; the page protocol when omitted |
@@ -32,7 +32,7 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 | `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
 | `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
 
-The link selects the saved profile with the same API URL or, after a successful connection, saves a new one; the dashboard connects without manual input. The address, secret and `label` leave the address bar right after they are read; UI flags stay. Example for an app that runs and updates the core itself:
+The link selects the saved profile with the same API URL or, after a successful connection, saves a new one; the dashboard connects without manual input. The address, secret and `label` leave the address bar right after they are read. UI flags remain active until the page reloads, even when navigation removes them from `#`; put them in `?query` before `#` to preserve them across reloads. Example for an app that runs and updates the core itself:
 `http://127.0.0.1:9090/ui/miboard/#/setup?http=true&hostname=127.0.0.1&port=9090&secret=xxx&disableUpgradeCore=1`.
 
 The dashboard removes credentials from its address after reading them. Treat such URLs as credentials and do not share or publish them.
