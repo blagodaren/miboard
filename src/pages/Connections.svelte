@@ -190,15 +190,17 @@
   const renderedIndices = $derived(virtualized ? pinnedRuleIndices(windowRows.start, windowRows.end, rows.length, [rows.findIndex(row => rowKey(row) === focusedRow), rows.findIndex(row => rowKey(row) === selected)]) : [])
   const displayedRows = $derived(view === 'closed' ? rows.slice((currentPage - 1) * JOURNAL_PAGE_SIZE, currentPage * JOURNAL_PAGE_SIZE) : virtualized ? renderedIndices.map(index => rows[index]) : rows)
   const cardColumns = $derived(Math.max(1, Math.floor((listWidth + 8) / (CARD_MIN_WIDTH + 8))))
-  const cardGroups = $derived.by(() => {
-    if (!virtualized) return [{ row: 0, gap: 0, items: displayedRows }]
+  const renderedCardIndices = $derived.by(() => {
+    if (!virtualized) return []
     const total = Math.ceil(rows.length / cardColumns)
     const range = virtualRange(total, scrollTop, viewportHeight, CARD_ROW)
-    const pinned = [focusedRow, selected].map(key => rows.findIndex(row => rowKey(row) === key)).map(index => index < 0 ? -1 : Math.floor(index / cardColumns))
-    const indices = pinnedRuleIndices(range.start, range.end, total, pinned)
-    return indices.map((row, i) => ({ row, gap: (row - (i ? indices[i - 1] + 1 : 0)) * CARD_ROW, items: rows.slice(row * cardColumns, (row + 1) * cardColumns) }))
+    const pinned = [focusedRow, selected].map(key => rows.findIndex(row => rowKey(row) === key))
+    return pinnedRuleIndices(range.start * cardColumns, range.end * cardColumns, rows.length, pinned)
   })
-  const cardBottomGap = $derived(virtualized && cardGroups.length ? Math.max(0, Math.ceil(rows.length / cardColumns) - cardGroups[cardGroups.length - 1].row - 1) * CARD_ROW : 0)
+  // One keyed list preserves a focused card's DOM when sorting moves it to another grid row.
+  const displayedCards = $derived(virtualized
+    ? renderedCardIndices.map(index => ({ connection: rows[index], index }))
+    : displayedRows.map((connection, index) => ({ connection, index })))
   const bottomGap = $derived(virtualized && renderedIndices.length ? Math.max(0, rows.length - renderedIndices[renderedIndices.length - 1] - 1) * 64 : 0)
   function trackTableFocus(event: FocusEvent) {
     const row = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-connection-key]') : null
@@ -295,9 +297,9 @@
             {/if}
 {/snippet}
 
-{#snippet card(c: DisplayRow)}
+{#snippet card(c: DisplayRow, index: number)}
   {@const endpoint = connectionEndpoint(host(c), c.metadata.destinationPort)}
-  <article class="connection-card {detailsOpen && selected === rowKey(c) ? 'is-selected' : ''}" data-connection-key={rowKey(c)} data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
+  <article class="connection-card {detailsOpen && selected === rowKey(c) ? 'is-selected' : ''}" style:--card-column={index % cardColumns} style:top={virtualized ? Math.floor(index / cardColumns) * CARD_ROW + 'px' : undefined} data-connection-key={rowKey(c)} data-testid={c.journal ? 'journal-row' : 'active-connection-row'}>
     <div class="card-head">
       <button type="button" class="card-host" aria-haspopup="dialog" aria-label={t('journal.details', { host: host(c) })} title={endpoint} onclick={() => showDetails(c)}>{endpoint}</button>
       <span class="num card-time">{c.journal ? stamp(c.journal.closedAt) : since(c.start, now)}</span>
@@ -386,13 +388,9 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex (A scrollable region needs keyboard focus for arrow/PageDown scrolling.) -->
 <div class="connections-table relative {layout === 'table' ? 'overflow-x-auto rounded-panel border border-line bg-card' : 'connections-cards'}" class:virtual-table={virtualized} data-testid="connections-table" bind:this={tableContainer} bind:clientHeight={viewportHeight} onscroll={event => scrollTop = event.currentTarget.scrollTop} onfocusin={trackTableFocus} onfocusout={clearTableFocus} tabindex={virtualized ? 0 : undefined} role="region" aria-label={t('connections.title')}>
   {#if layout === 'cards'}
-    <div class="cards-grid" bind:clientWidth={listWidth} style:--card-columns={cardColumns}>
-      {#each cardGroups as group (group.row)}
-        {#if group.gap > 0}<div class="col-span-full" aria-hidden="true" style:height={group.gap + 'px'}></div>{/if}
-        {#each group.items as c (rowKey(c))}{@render card(c)}{/each}
-      {/each}
+    <div class="cards-grid" class:virtual-cards={virtualized} bind:clientWidth={listWidth} style:--card-columns={cardColumns} style:height={virtualized ? Math.ceil(rows.length / cardColumns) * CARD_ROW + 'px' : undefined}>
+      {#each displayedCards as item (rowKey(item.connection))}{@render card(item.connection, item.index)}{/each}
       {#if !rows.length}<p class="col-span-full rounded-panel border border-line bg-card px-4 py-8 text-center text-fg-3">{query ? t('connections.noResults') : view === 'closed' ? t('journal.empty') : t('connections.noConnections')}</p>{/if}
-      {#if cardBottomGap > 0}<div class="col-span-full" aria-hidden="true" style:height={cardBottomGap + 'px'}></div>{/if}
     </div>
   {:else}
   <table class="w-full min-w-[960px] text-[13px]" aria-rowcount={rows.length + 1}>
@@ -504,6 +502,8 @@
   .column-options input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
   .connections-table { max-width: 100%; }
   .cards-grid { display: grid; grid-template-columns: repeat(var(--card-columns), minmax(0, 1fr)); grid-auto-rows: 136px; column-gap: 8px; }
+  .cards-grid.virtual-cards { display: block; position: relative; }
+  .virtual-cards .connection-card { position: absolute; left: calc(var(--card-column) * (100% + 8px) / var(--card-columns)); width: calc((100% - (var(--card-columns) - 1) * 8px) / var(--card-columns)); }
   .connection-card { display: flex; height: 128px; min-width: 0; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); font-size: 13px; transition: background-color 150ms, border-color 150ms; }
   .connection-card:hover { background: var(--hover); }
   .connection-card.is-selected { border-color: var(--selected-border); background: var(--selected); }
