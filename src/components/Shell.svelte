@@ -129,7 +129,7 @@
 
     <!-- Нижняя панель: мобильный. Порядок задаётся в настройках, остальное — в ⋯ -->
     {#if moreOpen}<button type="button" class="more-backdrop md:hidden" tabindex="-1" aria-hidden="true" onclick={() => (moreOpen = false)}></button>{/if}
-    <nav class="mobile-sections md:hidden" aria-label={t('nav.sections')} style:--tab-count={bar.length + (more.length ? 1 : 0)} style:--tab-index={barIndex}>
+    <nav class="mobile-sections flex md:hidden" aria-label={t('nav.sections')} style:--tab-count={bar.length + (more.length ? 1 : 0)} style:--tab-index={barIndex}>
       {#if barIndex >= 0}<span class="tab-indicator" aria-hidden="true"></span>{/if}
       {#each bar as item (item.route)}
         {@const active = router.route === item.route}
@@ -165,9 +165,9 @@
   .sidebar-link[aria-current='page'] { box-shadow: inset 3px 0 var(--accent); }
   .mobile-sections {
     position: fixed; z-index: 20; left: 12px; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom));
-    display: flex; height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 9999px;
+    height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 9999px;
     background: color-mix(in oklab, var(--deep) 82%, transparent); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    box-shadow: var(--shadow-float);
   }
   .tab-indicator {
     position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--tab-count)); border-radius: 9999px;
@@ -182,7 +182,7 @@
   .tab-label { max-width: 100%; overflow: hidden; padding: 0 2px; text-overflow: ellipsis; white-space: nowrap; }
   .more-panel {
     position: absolute; right: 0; bottom: calc(100% + 8px); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px;
-    width: min(320px, 100%); padding: 6px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
+    width: min(320px, 100%); padding: 6px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: var(--shadow-float);
     transform-origin: bottom right; animation: more-in 0.18s ease-out;
   }
   .more-item { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 0 12px; border-radius: 14px; color: var(--text-2); font-size: 13px; }
