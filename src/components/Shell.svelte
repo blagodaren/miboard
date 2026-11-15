@@ -23,7 +23,12 @@
   const moreActive = $derived(more.some(item => item.route === router.route))
   const barIndex = $derived(moreActive ? bar.length : bar.findIndex(item => item.route === router.route))
   let moreOpen = $state(false)
+  let moreTrigger = $state<HTMLButtonElement>()
   $effect(() => { void router.route; moreOpen = false })
+  function closeMore() {
+    moreOpen = false
+    moreTrigger?.focus({ preventScroll: true })
+  }
 
   const modes: { value: Mode; label: string }[] = $derived([
     { value: 'rule', label: t('mode.rule') },
@@ -128,18 +133,18 @@
     </main>
 
     <!-- Нижняя панель: мобильный. Порядок задаётся в настройках, остальное — в ⋯ -->
-    {#if moreOpen}<button type="button" class="more-backdrop md:hidden" tabindex="-1" aria-hidden="true" onclick={() => (moreOpen = false)}></button>{/if}
+    {#if moreOpen}<button type="button" class="more-backdrop md:hidden" tabindex="-1" aria-hidden="true" onclick={closeMore}></button>{/if}
     <nav class="mobile-sections flex md:hidden" aria-label={t('nav.sections')} style:--tab-count={bar.length + (more.length ? 1 : 0)} style:--tab-index={barIndex}>
       {#if barIndex >= 0}<span class="tab-indicator" aria-hidden="true"></span>{/if}
       {#each bar as item (item.route)}
         {@const active = router.route === item.route}
-        <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="tab-item" class:active>
+        <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="tab-item" class:active onclick={() => (moreOpen = false)}>
           <item.icon class="size-[18px]" strokeWidth={1.5} />
           <span class="tab-label">{t(`nav.${item.route}`)}</span>
         </a>
       {/each}
       {#if more.length}
-        <button type="button" class="tab-item" class:active={moreActive} data-testid="mobile-nav-more" aria-expanded={moreOpen} aria-controls="mobile-nav-more" onclick={() => (moreOpen = !moreOpen)}>
+        <button bind:this={moreTrigger} type="button" class="tab-item" class:active={moreActive} data-testid="mobile-nav-more" aria-expanded={moreOpen} aria-controls="mobile-nav-more" onclick={() => (moreOpen = !moreOpen)}>
           <IconMore class="size-[18px]" strokeWidth={1.5} />
           <span class="tab-label">{t('nav.more')}</span>
         </button>
@@ -148,7 +153,7 @@
         <div id="mobile-nav-more" class="more-panel" data-testid="mobile-nav-more-panel">
           {#each more as item (item.route)}
             {@const active = router.route === item.route}
-            <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="more-item" class:active>
+            <a href="#/{item.route}" aria-current={active ? 'page' : undefined} class="more-item" class:active onclick={closeMore}>
               <item.icon class="size-[18px] shrink-0" strokeWidth={1.5} />
               <span class="min-w-0 truncate">{t(`nav.${item.route}`)}</span>
             </a>
@@ -159,7 +164,7 @@
   </div>
 </div>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && moreOpen) moreOpen = false }} />
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && moreOpen) { event.preventDefault(); closeMore() } }} />
 
 <style>
   .sidebar-link[aria-current='page'] { box-shadow: inset 3px 0 var(--accent); }
