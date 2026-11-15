@@ -52,12 +52,18 @@ async function open(context, route) {
   await page.goto(entry.href)
   await page.locator('main h1').waitFor()
   if (route === 'proxies') await page.locator('section button[aria-pressed]').first().waitFor()
-  if (route === 'connections' || route === 'rules') await page.locator('tbody tr').first().waitFor()
+  if (route === 'connections') await page.getByTestId('active-connection-row').first().waitFor()
+  if (route === 'rules') await page.locator('tbody tr').first().waitFor()
   if (route === 'geography') await page.getByTestId('region-card').first().waitFor()
   if (route === 'setup') await page.locator('#backend-url').waitFor()
   if (route === 'overview') await poll(async () => Number(await page.getByRole('slider').getAttribute('aria-valuemax')) > 0, 'traffic chart samples')
   await page.evaluate(() => document.fonts.ready)
   return page
+}
+
+async function chooseConnectionLayout(page, layout) {
+  await page.getByTestId('connection-layout').getByRole('radio', { name: layout === 'cards' ? 'Карточки' : 'Таблица', exact: true }).click()
+  await page.locator(`${layout === 'cards' ? 'article' : 'tr'}[data-testid="active-connection-row"]`).first().waitFor()
 }
 
 async function contextFor(width, theme, colorScheme = theme ?? 'light') {
@@ -182,14 +188,17 @@ async function checkInteractions(theme) {
 
   // Open and cancel the destructive confirmation; no delete/restart action is executed.
   const connections = await open(context, 'connections')
-  await connections.getByRole('button', { name: 'Закрыть все', exact: true }).click()
-  await connections.getByRole('alertdialog').waitFor()
-  const dialog = await inspect(connections, '[role="alertdialog"]')
-  record(dialog, `${theme} confirmation`)
-  report.states.push({ theme, state: 'confirmation', ...dialog })
-  await connections.screenshot({ path: path.join(out, `${prefix}-confirmation-${theme}-1440.png`), fullPage: true })
-  await connections.getByRole('alertdialog').getByRole('button', { name: 'Отмена', exact: true }).click()
-  await connections.getByRole('alertdialog').waitFor({ state: 'hidden' })
+  for (const layout of ['cards', 'table']) {
+    await chooseConnectionLayout(connections, layout)
+    await connections.getByRole('button', { name: 'Закрыть все', exact: true }).click()
+    await connections.getByRole('alertdialog').waitFor()
+    const dialog = await inspect(connections, '[role="alertdialog"]')
+    record(dialog, `${theme} ${layout} confirmation`)
+    report.states.push({ theme, layout, state: 'confirmation', ...dialog })
+    await connections.screenshot({ path: path.join(out, `${prefix}-confirmation-${layout}-${theme}-1440.png`), fullPage: true })
+    await connections.getByRole('alertdialog').getByRole('button', { name: 'Отмена', exact: true }).click()
+    await connections.getByRole('alertdialog').waitFor({ state: 'hidden' })
+  }
   const overview = await open(context, 'overview')
   await overview.getByRole('slider').focus()
   await overview.keyboard.press('End')
@@ -212,13 +221,17 @@ try {
       for (const route of routes) {
         const page = await open(context, route)
         const categories = route === 'settings' ? ['appearance', 'core', 'proxies', 'data', 'maintenance'] : [null]
+        const layouts = route === 'connections' ? ['cards', 'table'] : [null]
         for (const category of categories) {
           if (category) await chooseSettingsCategory(page, category)
-          const result = await inspect(page)
-          const screen = category ? `${route}-${category}` : route
-          report.pages.push({ route, category, width, theme, ...result })
-          record(result, `${theme} ${screen} ${width}`)
-          if (width !== 320) await page.screenshot({ path: path.join(out, `${prefix}-${screen}-${theme}-${width}.png`), fullPage: true })
+          for (const layout of layouts) {
+            if (layout) await chooseConnectionLayout(page, layout)
+            const result = await inspect(page)
+            const screen = [route, category, layout].filter(Boolean).join('-')
+            report.pages.push({ route, category, layout, width, theme, ...result })
+            record(result, `${theme} ${screen} ${width}`)
+            if (width !== 320) await page.screenshot({ path: path.join(out, `${prefix}-${screen}-${theme}-${width}.png`), fullPage: true })
+          }
         }
         await page.close()
       }
