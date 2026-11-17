@@ -134,10 +134,20 @@
 
   <div class="flex min-w-0 flex-1 flex-col">
     <!-- Верхняя строка: мобильный -->
-    <div class="sticky top-0 z-20 flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-line bg-deep px-4 py-2 max-[360px]:[&_button]:px-1.5 md:hidden">
+    <div class="sticky top-0 z-20 flex min-h-14 items-center justify-between gap-3 border-b border-line bg-deep px-4 py-2 md:hidden">
       {@render brand()}
       {#if core.configs && !embed.hideMode}
-        <Segmented label={t('mode.routing')} value={core.configs.mode} options={modes} onchange={(m) => core.setMode(m)} />
+        <!-- A compact select keeps the bar on one line at phone widths; fg-3 keeps the border at 3:1 on the deep bar. -->
+        <select
+          aria-label={t('mode.routing')}
+          value={core.configs.mode}
+          onchange={(event) => core.setMode(event.currentTarget.value as Mode)}
+          class="h-11 min-w-0 rounded-control border border-fg-3 bg-field px-3 text-[13px] text-fg transition-colors duration-150 ease-out hover:border-fg-2 focus-visible:border-accent-ink"
+        >
+          {#each modes as mode (mode.value)}
+            <option value={mode.value}>{mode.label}</option>
+          {/each}
+        </select>
       {/if}
     </div>
 

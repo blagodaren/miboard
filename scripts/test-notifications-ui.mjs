@@ -110,7 +110,9 @@ try {
     await page.evaluate(theme => { localStorage.setItem('miboard.theme', theme); document.documentElement.dataset.theme = theme }, theme)
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: width === 1440 ? 1050 : 844 })
-      await page.getByRole('radio', { name: 'Глобально', exact: true }).filter({ visible: true }).first().click()
+      // Phones pick the mode from the compact top-bar select; desktop keeps the sidebar buttons.
+      if (width < 768) await page.getByRole('combobox', { name: 'Режим маршрутизации', exact: true }).selectOption('global')
+      else await page.getByRole('radio', { name: 'Глобально', exact: true }).filter({ visible: true }).first().click()
       await toast('routing-mode').waitFor()
       const geometry = await toast('routing-mode').evaluate(element => {
         const rect = element.getBoundingClientRect()

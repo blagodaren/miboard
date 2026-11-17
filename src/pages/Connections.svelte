@@ -32,14 +32,23 @@
   let selectedSnapshot = $state.raw<DisplayRow | null>(null)
   let visibleColumns = $state<ColumnKey[]>(readConnectionColumns())
   let columnsOpen = $state(false)
-  let layout = $state<ConnectionLayout>(readConnectionLayout())
+  // Phones get cards, wider screens the table, until someone picks a layout; the breakpoint matches the shell's md.
+  const narrowQuery = matchMedia('(max-width: 767px)')
+  let narrow = $state(narrowQuery.matches)
+  $effect(() => {
+    const change = (event: MediaQueryListEvent) => { narrow = event.matches }
+    narrowQuery.addEventListener('change', change)
+    return () => narrowQuery.removeEventListener('change', change)
+  })
+  let savedLayout = $state<ConnectionLayout | null>(readConnectionLayout())
+  const layout = $derived<ConnectionLayout>(savedLayout ?? (narrow ? 'cards' : 'table'))
   const layouts = $derived([{ value: 'cards' as const, label: t('connectionDetails.cards') }, { value: 'table' as const, label: t('connectionDetails.table') }])
   function changeLayout(value: ConnectionLayout) {
-    layout = value
+    savedLayout = value
     try { localStorage.setItem(CONNECTION_LAYOUT_KEY, value) } catch { /* Keep this session's layout. */ }
   }
   // Cards have a fixed height, so the virtual window works in whole grid rows.
-  const CARD_ROW = 136, CARD_MIN_WIDTH = 360
+  const CARD_ROW = 136, CARD_MIN_WIDTH = 340
   let listWidth = $state(1024)
   const columnCount = $derived(8 + visibleColumns.length)
   const visible = (column: ColumnKey) => visibleColumns.includes(column)
@@ -160,16 +169,31 @@
     { value: 'total', label: t('connections.total') },
     { value: 'start', label: t(view === 'closed' ? 'journal.observedEnd' : 'connections.time') },
     { value: 'host', label: t('connections.host') },
+    { value: 'rule', label: t('connections.rule') },
+    { value: 'chain', label: t('connections.chain') },
+    { value: 'type', label: t('connectionDetails.type') },
+    { value: 'process', label: t('connectionDetails.process') },
+    { value: 'sniffHost', label: t('connectionDetails.sniffHost') },
+    { value: 'source', label: t('connectionDetails.source') },
+    { value: 'destination', label: columnLabel('destination') },
+    { value: 'inbound', label: t('connectionDetails.inbound') },
+    { value: 'dnsMode', label: t('connectionDetails.dnsMode') },
+    { value: 'provider', label: t('connectionDetails.provider') },
+    { value: 'peakSpeed', label: t('connectionDetails.peakSpeed') },
   ])
   function changeSort(key: SortKey) {
     if (sort === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'
     } else {
       sort = key
-      sortDirection = key === 'host' ? 'asc' : 'desc'
+      sortDirection = NUMERIC_SORTS.includes(key) ? 'desc' : 'asc'
     }
   }
 
+  const NUMERIC_SORTS: SortKey[] = ['rate', 'total', 'start', 'peakSpeed']
+  // numeric: true keeps ports and IP octets in number order (…:9 before …:10).
+  const collator = $derived(new Intl.Collator(i18n.intlLocale, { numeric: true }))
+  const text = (a: string, b: string) => collator.compare(a, b)
   const rows = $derived.by(() => {
     const src = sourceRows.filter(c => matchesConnectionScope(c, scope, filterValue))
     const q = query.trim().toLowerCase()
@@ -181,7 +205,18 @@
       total: (a, b) => a.download + a.upload - (b.download + b.upload),
       // Ascending age means newer connections first, independently of ISO offsets.
       start: (a, b) => view === 'closed' ? a.journal!.closedAt - b.journal!.closedAt : Date.parse(b.start) - Date.parse(a.start),
-      host: (a, b) => host(a).localeCompare(host(b), i18n.intlLocale),
+      host: (a, b) => text(host(a), host(b)),
+      type: (a, b) => text(`${a.metadata.type} ${a.metadata.network}`, `${b.metadata.type} ${b.metadata.network}`),
+      process: (a, b) => text(a.metadata.process || a.metadata.processPath || '', b.metadata.process || b.metadata.processPath || ''),
+      sniffHost: (a, b) => text(a.metadata.sniffHost || '', b.metadata.sniffHost || ''),
+      source: (a, b) => text(connectionEndpoint(a.metadata.sourceIP, a.metadata.sourcePort), connectionEndpoint(b.metadata.sourceIP, b.metadata.sourcePort)),
+      destination: (a, b) => text(a.metadata.remoteDestination || connectionEndpoint(a.metadata.destinationIP, a.metadata.destinationPort), b.metadata.remoteDestination || connectionEndpoint(b.metadata.destinationIP, b.metadata.destinationPort)),
+      inbound: (a, b) => text(a.metadata.inboundName || '', b.metadata.inboundName || ''),
+      dnsMode: (a, b) => text(a.metadata.dnsMode || '', b.metadata.dnsMode || ''),
+      rule: (a, b) => text(`${a.rule} ${a.rulePayload}`, `${b.rule} ${b.rulePayload}`),
+      chain: (a, b) => text(chain(a), chain(b)),
+      provider: (a, b) => text(a.providerChains?.filter(Boolean).join(' / ') ?? '', b.providerChains?.filter(Boolean).join(' / ') ?? ''),
+      peakSpeed: (a, b) => (a.maxDownloadRate ?? 0) + (a.maxUploadRate ?? 0) - ((b.maxDownloadRate ?? 0) + (b.maxUploadRate ?? 0)),
     }
     return list.sort((a, b) => by[sort](a, b) * (sortDirection === 'desc' ? -1 : 1))
   })
@@ -310,8 +345,8 @@
     </div>
     <div class="card-line font-mono">{c.metadata.type || '—'} · {c.metadata.network?.toUpperCase() || '—'} · {deviceName(c) || c.metadata.process || c.metadata.sourceIP || '—'}</div>
     <div class="card-line" title={[c.rule, c.rulePayload].filter(Boolean).join(': ') + ' → ' + chain(c)}>
-      <span class="text-fg">{c.rule || '—'}</span>{#if c.rulePayload}<span class="ml-1.5 font-mono text-fg-3">{c.rulePayload}</span>{/if}
-      <span class="mx-1.5 text-fg-3">→</span>{chain(c) || '—'}
+      <span class="text-fg">{c.rule || '—'}</span>{#if c.rulePayload}<span class="ml-2 font-mono text-fg-3">{c.rulePayload}</span>{/if}
+      <span class="mx-2 text-fg-3">→</span>{chain(c) || '—'}
     </div>
     <div class="card-stats num font-mono">
       {#if c.journal}
@@ -352,11 +387,11 @@
 
 <div class="connections-toolbar">
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="connection-view-tools">
   <div data-testid="connection-layout"><Segmented value={layout} options={layouts} onchange={changeLayout} label={t('connectionDetails.layout')} /></div>
   {#if layout === 'cards'}
-    <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('connections.sortBy')}
-      <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">
+    <label class="connection-sort text-[13px] text-fg-2">{t('connections.sortBy')}
+      <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 min-w-0 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">
         {#each sortOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
       </select>
     </label>
@@ -400,19 +435,19 @@
     <thead>
       <tr>
         <th class="w-12 px-3"><span class="sr-only">{t('connectionDetails.details')}</span></th>
-        {#if visible('type')}<th class="{th} text-left">{t('connectionDetails.type')}</th>{/if}
-        {#if visible('process')}<th class="{th} text-left">{t('connectionDetails.process')}</th>{/if}
+        {#if visible('type')}{@render sortHead('type', t('connectionDetails.type'))}{/if}
+        {#if visible('process')}{@render sortHead('process', t('connectionDetails.process'))}{/if}
         {@render sortHead('host', t('connections.host'))}
-        {#if visible('sniffHost')}<th class="{th} text-left">{t('connectionDetails.sniffHost')}</th>{/if}
-        {#if visible('source')}<th class="{th} text-left">{t('connectionDetails.source')}</th>{/if}
-        {#if visible('destination')}<th class="{th} text-left">{columnLabel('destination')}</th>{/if}
-        {#if visible('inbound')}<th class="{th} text-left">{t('connectionDetails.inbound')}</th>{/if}
-        {#if visible('dnsMode')}<th class="{th} text-left">{t('connectionDetails.dnsMode')}</th>{/if}
-        <th class="{th} text-left">{t('connections.rule')}</th>
-        <th class="{th} text-left">{t('connections.chain')}</th>
-        {#if visible('provider')}<th class="{th} text-left">{t('connectionDetails.provider')}</th>{/if}
+        {#if visible('sniffHost')}{@render sortHead('sniffHost', t('connectionDetails.sniffHost'))}{/if}
+        {#if visible('source')}{@render sortHead('source', t('connectionDetails.source'))}{/if}
+        {#if visible('destination')}{@render sortHead('destination', columnLabel('destination'))}{/if}
+        {#if visible('inbound')}{@render sortHead('inbound', t('connectionDetails.inbound'))}{/if}
+        {#if visible('dnsMode')}{@render sortHead('dnsMode', t('connectionDetails.dnsMode'))}{/if}
+        {@render sortHead('rule', t('connections.rule'))}
+        {@render sortHead('chain', t('connections.chain'))}
+        {#if visible('provider')}{@render sortHead('provider', t('connectionDetails.provider'))}{/if}
         {@render sortHead('rate', t(view === 'closed' ? 'journal.lastSeen' : 'connections.speed'), true)}
-        {#if visible('peakSpeed')}<th class="{th} text-right">{t('connectionDetails.peakSpeed')}</th>{/if}
+        {#if visible('peakSpeed')}{@render sortHead('peakSpeed', t('connectionDetails.peakSpeed'), true)}{/if}
         {@render sortHead('total', t('connections.total'), true)}
         {@render sortHead('start', t(view === 'closed' ? 'journal.observedEnd' : 'connections.time'), true)}
         <th class={core.prizrak ? 'w-24' : 'w-12'}><span class="sr-only">{t('connections.close')}</span></th>
@@ -499,15 +534,17 @@
 
 <style>
   .connections-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .connection-view-tools { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .connection-sort { display: flex; min-width: 0; align-items: center; gap: 8px; }
   .column-options { margin-bottom: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
   .column-options-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 16px; margin-bottom: 8px; }
-  .column-options label { display: flex; align-items: center; gap: 9px; min-height: 36px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+  .column-options label { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--text-2); font-size: 13px; cursor: pointer; }
   .column-options input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); }
   .connections-table { max-width: 100%; }
   .cards-grid { display: grid; grid-template-columns: repeat(var(--card-columns), minmax(0, 1fr)); grid-auto-rows: 136px; column-gap: 8px; }
   .cards-grid.virtual-cards { display: block; position: relative; }
   .virtual-cards .connection-card { position: absolute; left: calc(var(--card-column) * (100% + 8px) / var(--card-columns)); width: calc((100% - (var(--card-columns) - 1) * 8px) / var(--card-columns)); }
-  .connection-card { display: flex; height: 128px; min-width: 0; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); font-size: 13px; transition: background-color 150ms, border-color 150ms; }
+  .connection-card { display: flex; height: 128px; min-width: 0; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); font-size: 13px; transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out); }
   .connection-card:hover { background: var(--hover); }
   .connection-card.is-selected { border-color: var(--selected-border); background: var(--selected); }
   .card-head { display: flex; min-width: 0; align-items: center; gap: 8px; }
@@ -515,8 +552,8 @@
   .card-host:hover { color: var(--accent-ink); }
   .card-time { flex-shrink: 0; color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
   .card-actions { display: flex; flex-shrink: 0; margin: -12px -8px -12px 0; }
-  .card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; line-height: 18px; }
-  .card-stats { display: flex; align-items: center; gap: 10px; margin-top: auto; font-size: 12px; line-height: 16px; white-space: nowrap; }
+  .card-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; line-height: 20px; }
+  .card-stats { display: flex; align-items: center; gap: 8px; margin-top: auto; font-size: 12px; line-height: 16px; white-space: nowrap; }
   .card-total { margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
   .connections-cards.virtual-table { padding-right: 4px; }
   .virtual-table { max-height: 70dvh; overflow-y: auto; overflow-anchor: none; }
@@ -524,8 +561,12 @@
   .virtual-table tr[data-testid="active-connection-row"] { height: 64px; }
   @media (max-width: 639px) {
     .connections-toolbar { flex-wrap: wrap; gap: 8px; }
-    .column-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; }
-    .column-options { padding: 10px 12px; }
+    .connection-view-tools { width: 100%; }
+    .connection-view-tools :global([data-testid="connection-layout"]) { width: 100%; }
+    .connection-sort { flex: 1; }
+    .connection-sort select { flex: 1; width: 0; }
+    .column-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
+    .column-options { padding: 12px; }
     .column-options label { min-height: 44px; font-size: 12px; }
   }
 </style>

@@ -24,12 +24,16 @@ export function validConnectionLayout(value: unknown): value is ConnectionLayout
   return value === 'cards' || value === 'table'
 }
 
-export function readConnectionLayout(): ConnectionLayout {
-  try { return localStorage.getItem(CONNECTION_LAYOUT_KEY) === 'table' ? 'table' : 'cards' } catch { return 'cards' }
+/** null until someone picks a layout; the page then follows the screen width. */
+export function readConnectionLayout(): ConnectionLayout | null {
+  try {
+    const saved = localStorage.getItem(CONNECTION_LAYOUT_KEY)
+    return validConnectionLayout(saved) ? saved : null
+  } catch { return null }
 }
 
 export const CONNECTION_SORT_KEY = 'miboard.connection-sort.v1'
-export const CONNECTION_SORT_KEYS = ['rate', 'total', 'start', 'host'] as const
+export const CONNECTION_SORT_KEYS = ['rate', 'total', 'start', 'host', 'type', 'process', 'sniffHost', 'source', 'destination', 'inbound', 'dnsMode', 'rule', 'chain', 'provider', 'peakSpeed'] as const
 export type ConnectionSortKey = typeof CONNECTION_SORT_KEYS[number]
 export type ConnectionSort = { key: ConnectionSortKey; direction: 'asc' | 'desc' }
 export type SortView = 'active' | 'closed'

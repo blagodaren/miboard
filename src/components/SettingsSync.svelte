@@ -73,7 +73,12 @@
     if (change.key === 'mobileNav' && validMobileNav(value)) return value.map(route => t(`nav.${route}`)).join(' → ')
     if (change.key.startsWith('connectionSort.') && validConnectionSort(value)) {
       const closed = change.key === 'connectionSort.closed'
-      const field = { rate: closed ? 'journal.lastSeen' : 'connections.speed', total: 'connections.total', start: closed ? 'journal.observedEnd' : 'connections.time', host: 'connections.host' } as const
+      const field = {
+        rate: closed ? 'journal.lastSeen' : 'connections.speed', total: 'connections.total', start: closed ? 'journal.observedEnd' : 'connections.time', host: 'connections.host',
+        rule: 'connections.rule', chain: 'connections.chain', destination: 'journal.destination', type: 'connectionDetails.type', process: 'connectionDetails.process',
+        sniffHost: 'connectionDetails.sniffHost', source: 'connectionDetails.source', inbound: 'connectionDetails.inbound', dnsMode: 'connectionDetails.dnsMode',
+        provider: 'connectionDetails.provider', peakSpeed: 'connectionDetails.peakSpeed',
+      } as const
       return `${t(field[value.key])} · ${t(value.direction === 'asc' ? 'proxies.sortAscending' : 'proxies.sortDescending')}`
     }
     if (change.key === 'proxyTestSelection' && typeof value === 'object' && value !== null) {

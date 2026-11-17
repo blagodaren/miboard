@@ -158,7 +158,7 @@ function readLocal(): SettingsDocument {
         proxyGroupHeight: readProxyGroupHeight(),
         liveUpdateMode: readLiveUpdateMode(),
         connectionColumns: readConnectionColumns(),
-        connectionLayout: readConnectionLayout(),
+        connectionLayout: readConnectionLayout() ?? undefined,
         connectionSort: { active: readConnectionSort('active'), closed: readConnectionSort('closed') },
         mobileNav: readMobileNav(),
         sidebarCollapsed: readSidebarCollapsed(),
