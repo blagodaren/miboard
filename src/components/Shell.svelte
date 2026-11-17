@@ -130,9 +130,21 @@
 
   <div class="flex min-w-0 flex-1 flex-col">
     <!-- Верхняя строка: мобильный -->
-    <!-- Mode lives in Settings on phones so the bar stays one line. -->
-    <div class="sticky top-0 z-20 flex min-h-14 items-center border-b border-line bg-deep px-4 py-2 md:hidden">
+    <div class="sticky top-0 z-20 flex min-h-14 items-center justify-between gap-3 border-b border-line bg-deep px-4 py-2 md:hidden">
       {@render brand()}
+      {#if core.configs && !embed.hideMode}
+        <!-- A compact select keeps the bar on one line at phone widths. -->
+        <select
+          aria-label={t('mode.routing')}
+          value={core.configs.mode}
+          onchange={(event) => core.setMode(event.currentTarget.value as Mode)}
+          class="h-11 min-w-0 rounded-control border border-field-border bg-field px-2 text-[13px] text-fg transition-colors hover:border-fg-3 focus-visible:border-accent-ink"
+        >
+          {#each modes as mode (mode.value)}
+            <option value={mode.value}>{mode.label}</option>
+          {/each}
+        </select>
+      {/if}
     </div>
 
     <main class="mx-auto w-full flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-12 md:pt-8 {router.route === 'connections' || router.route === 'proxies' ? 'max-w-none' : 'max-w-[1440px]'}">
