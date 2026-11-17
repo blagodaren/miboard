@@ -1,4 +1,4 @@
-MIBoard 0.1.10 — MIT
+MIBoard 0.2.0 — MIT
 
 MIT License
 

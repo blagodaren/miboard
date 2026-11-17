@@ -1,5 +1,39 @@
 # Журнал изменений
 
+## [0.2.0] — 2026-11-17
+
+### Русский
+
+- Соединения автоматически показываются карточками на экранах уже 768px и таблицей
+  на более широких экранах. Ручной выбор вида сохраняется в браузере.
+- Все 15 полей соединений поддерживают сортировку. Выбранное поле и направление
+  сохраняются при переходе между таблицей и карточками, изменении ширины экрана
+  и перезагрузке; настройки переносятся через экспорт, импорт и синхронизацию.
+- Числа в адресах, портах и названиях процессов сортируются в естественном порядке.
+  Повторное использование правил сравнения ускоряет обновление больших списков.
+- В мобильной шапке режим маршрутизации выбирается в компактном списке.
+  В настольном меню и настройках остаются полные переключатели.
+- Выровнены отступы карточек и размеры элементов управления. Поле сортировки
+  помещается в ширину телефона, включая длинные названия.
+
+Спасибо [@prettyleaf](https://github.com/prettyleaf) за [PR #9](https://github.com/blagodaren/miboard/pull/9).
+
+### English
+
+- Connections automatically use cards below 768px and a table on wider screens.
+  An explicit layout choice remains saved in the browser.
+- All 15 connection fields support sorting. The field and direction persist across
+  table/card switches, viewport changes and reloads, and transfer through settings
+  export, import and synchronization.
+- Numbers in addresses, ports and process names sort naturally. Reusing comparison
+  rules speeds up live updates for large connection lists.
+- The mobile header uses a compact routing-mode dropdown. The desktop sidebar
+  and Settings retain their full switchers.
+- Card spacing and controls are aligned. The sort field fits phone widths,
+  including long field names.
+
+Thanks to [@prettyleaf](https://github.com/prettyleaf) for [PR #9](https://github.com/blagodaren/miboard/pull/9).
+
 ## [0.1.10] — 2026-11-16
 
 ### Русский
