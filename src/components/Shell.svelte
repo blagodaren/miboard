@@ -130,11 +130,9 @@
 
   <div class="flex min-w-0 flex-1 flex-col">
     <!-- Верхняя строка: мобильный -->
-    <div class="sticky top-0 z-20 flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-line bg-deep px-4 py-2 max-[360px]:[&_button]:px-1.5 md:hidden">
+    <!-- Mode lives in Settings on phones so the bar stays one line. -->
+    <div class="sticky top-0 z-20 flex min-h-14 items-center border-b border-line bg-deep px-4 py-2 md:hidden">
       {@render brand()}
-      {#if core.configs && !embed.hideMode}
-        <Segmented label={t('mode.routing')} value={core.configs.mode} options={modes} onchange={(m) => core.setMode(m)} />
-      {/if}
     </div>
 
     <main class="mx-auto w-full flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-12 md:pt-8 {router.route === 'connections' || router.route === 'proxies' ? 'max-w-none' : 'max-w-[1440px]'}">
