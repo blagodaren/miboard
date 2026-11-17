@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { stubAppUpdates } from './app-update-fixture.mjs'
+import { chooseSettingsCategory } from './settings-category-fixture.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = path.join(root, '.scenes-sites-check')
@@ -54,7 +55,7 @@ try {
     }
     return route.fallback()
   })
-  await page.goto(`${origin}/ui/#/proxies?${new URLSearchParams({ group: targetGroup })}`)
+  await page.goto(`${origin}/ui/#/proxies?${new URLSearchParams({ group: targetGroup, hideMode: '1', disableUpgradeCore: 'core', disableTunMode: 'tun' })}`)
   const linked = page.locator('section.proxy-group').filter({ has: page.getByTitle(targetGroup, { exact: true }) })
   await poll(async () => (await linked.locator('[data-proxy-node]').count()) === 2, 'Deep link did not open target group')
   const scenes = page.getByTestId('proxy-scenes'); await scenes.locator('summary').first().click()
@@ -90,13 +91,24 @@ try {
   assert.deepEqual([...new Set(checks.map(check => check.url))].sort(), ['https://example.com/', 'https://example.org/'])
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), true, 'Mobile page overflows horizontally')
   await mkdir(out, { recursive: true }); await page.screenshot({ path: path.join(out, 'matrix-mobile.png'), fullPage: true })
-  await page.evaluate(() => history.replaceState(null, '', location.pathname + '?secret=canary' + location.hash))
+  await page.evaluate((group) => history.replaceState(null, '', `${location.pathname}?secret=canary&hostname=other.test&theme=https://theme.test/x.css#/proxies?${new URLSearchParams({ group })}`), targetGroup)
   await linked.getByRole('button', { name: `Copy link to ${targetGroup}`, exact: true }).click()
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   const copiedUrl = new URL(copied)
-  assert.equal(copiedUrl.search, '')
+  assert.equal(copiedUrl.search, '?hideMode=1&disableUpgradeCore=1&disableTunMode=1', 'the initial session flags survive even after navigation removes them from the hash')
+  assert.ok(!copied.includes('canary') && !copied.includes('other.test') && !copied.includes('theme.test'), 'no credentials, controller address or theme URL enters the clipboard')
   assert.equal(new URLSearchParams(copiedUrl.hash.split('?')[1]).get('group'), targetGroup)
+  await page.goto(copied)
+  await poll(async () => (await linked.locator('[data-proxy-node]').count()) === 2, 'Copied link did not reopen target group')
+  await page.evaluate(() => { location.hash = '/settings' })
+  await chooseSettingsCategory(page, 'core')
+  await page.getByRole('switch', { name: 'Allow LAN' }).waitFor()
+  assert.equal(await page.getByRole('switch', { name: 'TUN', exact: true }).count(), 0, 'copied flag still hides TUN after reload')
+  await chooseSettingsCategory(page, 'maintenance')
+  await page.getByTestId('core-upgrade-geo').waitFor()
+  assert.equal(await page.getByTestId('core-upgrade-core').count(), 0, 'copied flag still hides core upgrades after reload')
+  assert.equal(await page.getByTestId('core-upgrade-ui').count(), 1, 'UI upgrades remain available')
   assert.deepEqual(errors, [])
   await context.close()
-  console.log('Scenes/sites UI: capture, preview, apply, auto restore, sync, provider matrix, deep link, clipboard privacy and mobile layout passed')
+  console.log('Scenes/sites UI: capture, preview, apply, auto restore, sync, provider matrix, deep link, private clipboard links with persistent embed flags and mobile layout passed')
 } finally { await browser?.close(); mock?.kill() }

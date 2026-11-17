@@ -62,6 +62,7 @@ async function open(locale = 'en', theme = 'light') {
     sessionStorage.setItem('transfer-fixture-seeded', '1')
     localStorage.setItem('miboard.locale', locale)
     localStorage.setItem('miboard.theme', theme)
+    localStorage.setItem('miboard.connection-layout', 'table')
     localStorage.setItem('miboard.backend', JSON.stringify({ url: origin, secret: 'test', name: 'Current mock' }))
     localStorage.setItem('miboard.backends', JSON.stringify([
       { url: origin, secret: 'test', name: 'Current mock' },
@@ -250,6 +251,50 @@ try {
   await context.close()
   console.log('PASS: invalid and oversized files never apply partial imports')
 
+  const cssState = await open()
+  const cssPage = cssState.page
+  const css = 'body { --transfer-css-proof: imported; }'
+  const preferences = {
+    connectionLayout: 'cards', connectionSort: { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } },
+    mobileNav: ['history', 'fleet', 'connections', 'settings'], sidebarCollapsed: true, customCss: css,
+  }
+  const cssPayload = documentFile({ preferences })
+  const cssPreview = cssPage.getByTestId('transfer-preview')
+  const cssOptIn = cssPreview.getByRole('checkbox', { name: 'Import custom CSS from this file', exact: true })
+  await file(cssPage, cssPayload)
+  await cssPreview.waitFor()
+  assert.equal(await cssOptIn.isChecked(), false, 'A file with CSS does not imply consent to apply it')
+  await cssPreview.getByRole('button', { name: 'Apply import', exact: true }).click()
+  await cssPage.getByTestId('transfer-saved').waitFor()
+  const transferred = await storage(cssPage)
+  assert.equal(transferred['miboard.custom-css'], undefined, 'Unchecked CSS is not persisted for the next launch')
+  assert.equal(transferred['miboard.connection-layout'], 'cards')
+  assert.deepEqual(JSON.parse(transferred['miboard.connection-sort.v1']), preferences.connectionSort)
+  assert.deepEqual(JSON.parse(transferred['miboard.mobile-nav.v1']).slice(0, 4), preferences.mobileNav)
+  assert.equal(transferred['miboard.sidebar-collapsed'], '1')
+  await cssPage.reload()
+  await cssPage.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+  await chooseSettingsCategory(cssPage, 'data')
+  assert.equal(await cssPage.evaluate(() => getComputedStyle(document.body).getPropertyValue('--transfer-css-proof').trim()), '')
+  assert.equal(await cssPage.getByTestId('sidebar-toggle').getAttribute('aria-expanded'), 'false')
+  await file(cssPage, cssPayload)
+  await cssOptIn.check()
+  await file(cssPage, cssPayload, 'another-file.json')
+  assert.equal(await cssOptIn.isChecked(), false, 'Choosing a new file requires a fresh CSS opt-in')
+  await cssOptIn.check()
+  await cssPreview.getByRole('button', { name: 'Apply import', exact: true }).click()
+  await cssPage.getByTestId('transfer-saved').waitFor()
+  assert.equal((await storage(cssPage))['miboard.custom-css'], css)
+  assert.equal(await cssPage.evaluate(() => getComputedStyle(document.body).getPropertyValue('--transfer-css-proof').trim()), '', 'Import does not restyle the open confirmation screen')
+  await cssPage.reload()
+  await cssPage.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+  assert.equal(await cssPage.evaluate(() => getComputedStyle(document.body).getPropertyValue('--transfer-css-proof').trim()), 'imported')
+  await cssPage.evaluate(() => { location.hash = '/connections' })
+  await cssPage.getByTestId('connections-table').waitFor()
+  assert.ok(await cssPage.getByTestId('connections-table').evaluate(node => node.classList.contains('connections-cards')))
+  await cssState.context.close()
+  console.log('PASS: new view/navigation preferences survive reload; CSS requires a separate per-file opt-in and an explicit reload')
+
   const legacy = await open()
   await legacy.page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
@@ -284,7 +329,7 @@ try {
 
   for (const [locale, theme] of [['ru', 'dark'], ['en', 'light']]) {
     const state = await open(locale, theme)
-    await file(state.page, documentFile({ servers: [{ url: 'https://offline.invalid', name: 'Offline' }], preferences: { theme: 'system' } }))
+    await file(state.page, documentFile({ servers: [{ url: 'https://offline.invalid', name: 'Offline' }], preferences: { theme: 'system', customCss: 'body { --test: imported; }' } }))
     await state.page.getByTestId('transfer-preview').waitFor()
     for (const width of [390, 320]) {
       await state.page.setViewportSize({ width, height: 844 })

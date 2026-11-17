@@ -60,7 +60,7 @@ type AlertPreferences = {
   setEnabled: (url: string, enabled: boolean) => void
   inspect: (url: string, providers: Record<string, ProxyProvider>, now: number) => unknown[]
 }
-const moduleSources = new Map(['api', 'devices', 'latency', 'appearance', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'provider-alerts.svelte'].map(file => [
+const moduleSources = new Map(['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'provider-alerts.svelte'].map(file => [
   './' + file,
   ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

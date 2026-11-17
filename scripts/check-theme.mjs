@@ -61,11 +61,8 @@ async function open(context, route) {
   return page
 }
 
-// The layout follows the md breakpoint: resize only when the current width shows the other one.
 async function chooseConnectionLayout(page, layout) {
-  const narrow = await page.evaluate(() => innerWidth < 768)
-  if (layout === 'cards' && !narrow) await page.setViewportSize({ width: 390, height: 844 })
-  if (layout === 'table' && narrow) await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.getByTestId('connection-layout').getByRole('radio', { name: layout === 'cards' ? 'Карточки' : 'Таблица', exact: true }).click()
   await page.locator(`${layout === 'cards' ? 'article' : 'tr'}[data-testid="active-connection-row"]`).first().waitFor()
 }
 
@@ -198,7 +195,7 @@ async function checkInteractions(theme) {
     const dialog = await inspect(connections, '[role="alertdialog"]')
     record(dialog, `${theme} ${layout} confirmation`)
     report.states.push({ theme, layout, state: 'confirmation', ...dialog })
-    await connections.screenshot({ path: path.join(out, `${prefix}-confirmation-${layout}-${theme}-${layout === 'cards' ? 390 : 1440}.png`), fullPage: true })
+    await connections.screenshot({ path: path.join(out, `${prefix}-confirmation-${layout}-${theme}-1440.png`), fullPage: true })
     await connections.getByRole('alertdialog').getByRole('button', { name: 'Отмена', exact: true }).click()
     await connections.getByRole('alertdialog').waitFor({ state: 'hidden' })
   }
@@ -224,7 +221,7 @@ try {
       for (const route of routes) {
         const page = await open(context, route)
         const categories = route === 'settings' ? ['appearance', 'core', 'proxies', 'data', 'maintenance'] : [null]
-        const layouts = route === 'connections' ? [width < 768 ? 'cards' : 'table'] : [null]
+        const layouts = route === 'connections' ? ['cards', 'table'] : [null]
         for (const category of categories) {
           if (category) await chooseSettingsCategory(page, category)
           for (const layout of layouts) {

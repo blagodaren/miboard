@@ -1,5 +1,83 @@
 # Журнал изменений
 
+## [0.1.10] — 2026-11-16
+
+### Русский
+
+- Экспорт, импорт и синхронизация сохраняют вид и сортировку соединений, порядок
+  мобильной навигации и свёрнутую боковую панель. Свой CSS переносится через файл
+  с отдельным выбором при импорте; синхронизация через ядро CSS не передаёт.
+- В «Истории» можно удалить локальную почасовую историю выбранного ядра с подтверждением.
+  Данные других ядер и опубликованные суточные снимки сохраняются.
+- Ссылки подключения поддерживают `hostname` с портом и ограничивают длину `label`.
+  Скопированные ссылки на группы сохраняют флаги встраивания без secret и параметров темы.
+- Темы по ссылке поддерживают собственную схему приложения при совпадении origin
+  с панелью, например `miboard://app/theme.css`. Исправлена проверка адресов
+  с прописными буквами в имени хоста; другая схема, хост или порт не считаются своим origin.
+- Уточнены доверие к внешнему CSS и автоматическое подключение тем по ссылке.
+  В таблицу возможностей README добавлены «История» и «Ядра».
+
+Спасибо [@legiz-ru](https://github.com/legiz-ru) за [PR #8](https://github.com/blagodaren/miboard/pull/8).
+
+### English
+
+- Export, import and sync preserve connection layout and sorting, mobile navigation
+  order and collapsed sidebar state. Custom CSS transfers through files with an explicit
+  import choice; core settings sync does not transfer CSS.
+- History can clear the selected core's local hourly history after confirmation.
+  Other cores' data and shared daily snapshots are preserved.
+- Connection links accept a port in `hostname` and limit `label` length.
+  Copied group links preserve embedding flags without secrets or theme parameters.
+- Link themes support an application's custom scheme when their origin matches
+  the dashboard, for example `miboard://app/theme.css`. Fixed validation of URLs
+  with uppercase host names; a different scheme, host or port is not treated as the same origin.
+- Documented trust in external CSS and automatic link-theme loading.
+  Added History and Controllers to the README feature table.
+
+Thanks to [@legiz-ru](https://github.com/legiz-ru) for [PR #8](https://github.com/blagodaren/miboard/pull/8).
+
+## [0.1.9] — 2026-11-15
+
+### Русский
+
+- Соединения показываются карточками или таблицей; выбор сохраняется в браузере.
+  Сортировка запоминается отдельно для активных и завершённых соединений.
+- Мобильная панель содержит четыре выбранных раздела и меню «Ещё».
+  Порядок разделов настраивается во «Внешнем виде»; боковая панель на компьютере
+  сворачивается до значков и сохраняет своё состояние.
+- Добавлены свой CSS и темы по ссылке `theme=<url>`. Сохранённая тема применяется
+  при запуске и проверяется на обновления; при ошибке загрузки остаётся кешированная
+  копия. Тему можно отключить, удалить или сбросить через `theme=off`.
+- Большие списки карточек сохраняют содержимое при прокрутке и клавиатурный фокус
+  при обновлениях. Меню «Ещё» корректно закрывается с возвратом фокуса.
+  Навигация загружается после подключения к контроллеру, уменьшая начальную загрузку.
+
+Спасибо [@prettyleaf](https://github.com/prettyleaf) за PR
+[#3](https://github.com/blagodaren/miboard/pull/3),
+[#4](https://github.com/blagodaren/miboard/pull/4),
+[#5](https://github.com/blagodaren/miboard/pull/5) и
+[#6](https://github.com/blagodaren/miboard/pull/6).
+
+### English
+
+- Connections can be displayed as cards or a table, with the choice saved in the
+  browser. Active and completed connections remember their sorting separately.
+- The mobile bar contains four selected sections and a More menu. Section order
+  is configurable under Appearance; the desktop sidebar can collapse to icons
+  and remembers its state.
+- Added custom CSS and themes passed through `theme=<url>`. Saved themes apply
+  at startup and check for updates; failed downloads retain the cached copy.
+  Themes can be disabled, removed, or cleared with `theme=off`.
+- Large card lists retain their content while scrolling and keyboard focus during
+  live updates. The More menu closes correctly and restores focus.
+  Navigation loads after connecting to a controller, reducing the initial load.
+
+Thanks to [@prettyleaf](https://github.com/prettyleaf) for PRs
+[#3](https://github.com/blagodaren/miboard/pull/3),
+[#4](https://github.com/blagodaren/miboard/pull/4),
+[#5](https://github.com/blagodaren/miboard/pull/5) and
+[#6](https://github.com/blagodaren/miboard/pull/6).
+
 ## [0.1.8] — 2026-11-15
 
 ### Русский

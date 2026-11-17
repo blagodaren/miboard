@@ -129,7 +129,7 @@ function urlParams(): URLSearchParams {
 function stripSecretFromUrl() {
   const clean = (q: string) => {
     const p = new URLSearchParams(q)
-    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath', 'label'].forEach((k) => p.delete(k))
+    ;['secret', 'hostname', 'port', 'protocol', 'http', 'https', 'secondaryPath', 'label', 'theme'].forEach((k) => p.delete(k))
     const s = p.toString()
     return s ? '?' + s : ''
   }
@@ -141,6 +141,32 @@ function stripSecretFromUrl() {
 /** Если страницу отдаёт сам mihomo (/ui/...), API живёт на том же origin */
 export function servedByCore(): boolean {
   return /\/ui(\/|$)/.test(location.pathname)
+}
+
+/** hostname accepts an authority (host[:port]); raw IPv6 must be bracketed before URL parsing. */
+function backendLinkUrl(params: URLSearchParams): string | null {
+  const protocol = params.get('protocol') ?? (params.has('https') ? 'https' : params.has('http') ? 'http' : location.protocol.replace(':', ''))
+  const host = params.get('hostname')!.trim()
+  const port = params.get('port')?.trim()
+  const path = params.get('secondaryPath') ?? ''
+  if (!/^https?$/i.test(protocol) || !host || /[\\/?#@\s]/.test(host)
+    || (path && !path.startsWith('/')) || /[?#]/.test(path)) return null
+  let authority = host
+  if (host.includes(':') && !host.startsWith('[')) {
+    try { new URL(`http://[${host}]`); authority = `[${host}]` } catch { /* host:port is parsed below. */ }
+  }
+  try {
+    const target = new URL(`${protocol}://${authority}`)
+    if (port) {
+      if (!/^\d+$/.test(port)) return null
+      // A separate port overrides the one in hostname; constructing a URL rejects out-of-range values.
+      target.port = new URL(`${protocol}://${target.hostname}:${port}`).port
+    }
+    target.pathname = path
+    return storedBackend({ url: target.href, secret: '' })?.url ?? null
+  } catch {
+    return null
+  }
 }
 
 export function initialBackend(): Backend | null {
@@ -155,18 +181,14 @@ export function initialBackend(): Backend | null {
   }
 
   if (p.has('hostname')) {
-    const proto = p.get('protocol') ?? (p.has('https') ? 'https' : p.has('http') ? 'http' : location.protocol.replace(':', ''))
-    const port = p.get('port') ? ':' + p.get('port') : ''
-    const path = p.get('secondaryPath') ?? ''
-    // IPv6 в ссылке может прийти без скобок (`hostname=::1`); в URL адрес пишется как [::1].
-    const host = p.get('hostname')!
-    const hostname = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
-    const url = normalizeUrl(`${proto}://${hostname}${port}${path}`)
+    const url = backendLinkUrl(p)
+    stripSecretFromUrl()
+    if (!url) return null
     const b = forUrl(url, p.get('secret'))
     // label называет только новый профиль: имя, которое пользователь уже дал серверу, не меняем.
-    const label = p.get('label')?.trim()
+    // Match the setup form's 80 UTF-16 units without leaving half of an emoji at the boundary.
+    const label = p.get('label')?.trim().slice(0, 80).replace(/[\uD800-\uDBFF]$/, '')
     if (label && !b.name) b.name = label
-    stripSecretFromUrl()
     return b
   }
 

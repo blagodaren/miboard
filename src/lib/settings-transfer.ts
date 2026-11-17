@@ -2,10 +2,12 @@ import { createSavedBackend, normalizeUrl, savedBackends, updateSavedBackend, ty
 import { normalizeDeviceIP } from './devices'
 import { DEFAULT_DELAY_SETTINGS, readDelaySettings, validDelaySettings, type DelaySettings } from './latency'
 import type { ProxySort } from './proxy-sort'
-import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight } from './appearance'
+import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight, SIDEBAR_COLLAPSED_KEY, readSidebarCollapsed } from './appearance'
 import { LIVE_UPDATE_MODE_KEY, readLiveUpdateMode, validLiveUpdateMode, type LiveUpdateMode } from './live-updates'
 import { PROXY_TEST_SELECTION_PREFIX, proxyTestSelectionKey, validProxyTestSelection, type ProxyTestSelection } from './proxy-test-selection'
-import { CONNECTION_COLUMNS_KEY, readConnectionColumns, validConnectionColumns, type ConnectionColumn } from './connection-columns'
+import { CONNECTION_COLUMNS_KEY, readConnectionColumns, validConnectionColumns, type ConnectionColumn, CONNECTION_LAYOUT_KEY, readConnectionLayout, validConnectionLayout, type ConnectionLayout, CONNECTION_SORT_KEY, readConnectionSort, validConnectionSort, type ConnectionSort, type SortView } from './connection-columns'
+import { MOBILE_NAV_KEY, normalizeMobileNav, readMobileNav, validMobileNav, type NavRoute } from './mobile-nav'
+import { CUSTOM_CSS_KEY, MAX_CUSTOM_CSS } from './custom-css'
 import { PROVIDER_ALERTS_PREFIX, PROVIDER_ALERT_PREFERENCES_CHANGED, providerAlertsKey, readProviderAlertState } from './provider-alerts'
 import { JOURNAL_RETENTION_PREFIX, journalRetentionKey, validJournalRetention, type JournalRetention } from './journal-preferences'
 
@@ -17,7 +19,12 @@ const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor'])
 type Server = { url: string; name?: string; secret?: string }
 type Aliases = { backendUrl: string; names: Record<string, string> }
 type Sort = ProxySort & { backendUrl: string; group: string }
-type Preferences = { theme?: 'system' | 'light' | 'dark'; locale?: 'en' | 'ru'; latency?: DelaySettings; groups?: Record<string, boolean>; proxyCardSize?: ProxyCardSize; proxyGroupHeight?: ProxyGroupHeight; liveUpdateMode?: LiveUpdateMode; connectionColumns?: ConnectionColumn[] }
+type Preferences = {
+  theme?: 'system' | 'light' | 'dark'; locale?: 'en' | 'ru'; latency?: DelaySettings; groups?: Record<string, boolean>
+  proxyCardSize?: ProxyCardSize; proxyGroupHeight?: ProxyGroupHeight; liveUpdateMode?: LiveUpdateMode; connectionColumns?: ConnectionColumn[]
+  connectionLayout?: ConnectionLayout; connectionSort?: Partial<Record<SortView, ConnectionSort>>
+  mobileNav?: NavRoute[]; sidebarCollapsed?: boolean; customCss?: string
+}
 export type SettingsDocument = {
   format: 'miboard-settings'
   version: 1
@@ -137,6 +144,7 @@ function readLocal(): SettingsDocument {
     const locale = localStorage.getItem('miboard.locale')
     const latency = readDelaySettings()
     const groups = json('miboard.groups')
+    const customCss = localStorage.getItem(CUSTOM_CSS_KEY)
     return {
       format: 'miboard-settings', version: 1, servers: localServers(), deviceAliases: aliases, proxySort: sorts,
       ...(testSelections.length ? { proxyTestSelections: testSelections } : {}),
@@ -150,6 +158,11 @@ function readLocal(): SettingsDocument {
         proxyGroupHeight: readProxyGroupHeight(),
         liveUpdateMode: readLiveUpdateMode(),
         connectionColumns: readConnectionColumns(),
+        connectionLayout: readConnectionLayout() ?? undefined,
+        connectionSort: { active: readConnectionSort('active'), closed: readConnectionSort('closed') },
+        mobileNav: readMobileNav(),
+        sidebarCollapsed: readSidebarCollapsed(),
+        ...(customCss?.trim() ? { customCss } : {}),
       },
     }
   } catch { throw new SettingsTransferError('storage') }
@@ -220,7 +233,7 @@ function validate(value: unknown): { document: SettingsDocument | null; issues: 
       else { seen.add(url); journalRetentions.push({ backendUrl: url, retention: entry.retention }) }
     })
   }
-  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode', 'connectionColumns'])) issues.push('preferences')
+  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode', 'connectionColumns', 'connectionLayout', 'connectionSort', 'mobileNav', 'sidebarCollapsed', 'customCss'])) issues.push('preferences')
   else {
     if (p.theme !== undefined) { if (p.theme === 'system' || p.theme === 'light' || p.theme === 'dark') preferences.theme = p.theme; else issues.push('preferences.theme') }
     if (p.locale !== undefined) { if (p.locale === 'en' || p.locale === 'ru') preferences.locale = p.locale; else issues.push('preferences.locale') }
@@ -230,6 +243,15 @@ function validate(value: unknown): { document: SettingsDocument | null; issues: 
     if (p.proxyGroupHeight !== undefined) { if (validProxyGroupHeight(p.proxyGroupHeight)) preferences.proxyGroupHeight = p.proxyGroupHeight; else issues.push('preferences.proxyGroupHeight') }
     if (p.liveUpdateMode !== undefined) { if (validLiveUpdateMode(p.liveUpdateMode)) preferences.liveUpdateMode = p.liveUpdateMode; else issues.push('preferences.liveUpdateMode') }
     if (p.connectionColumns !== undefined) { if (validConnectionColumns(p.connectionColumns)) preferences.connectionColumns = [...p.connectionColumns]; else issues.push('preferences.connectionColumns') }
+    if (p.connectionLayout !== undefined) { if (validConnectionLayout(p.connectionLayout)) preferences.connectionLayout = p.connectionLayout; else issues.push('preferences.connectionLayout') }
+    if (p.connectionSort !== undefined) {
+      if (record(p.connectionSort) && ownKeys(p.connectionSort, ['active', 'closed']) && Object.values(p.connectionSort).every(validConnectionSort)) {
+        preferences.connectionSort = Object.fromEntries(Object.entries(p.connectionSort).map(([view, sort]) => [view, { ...sort as ConnectionSort }]))
+      } else issues.push('preferences.connectionSort')
+    }
+    if (p.mobileNav !== undefined) { if (validMobileNav(p.mobileNav)) preferences.mobileNav = normalizeMobileNav(p.mobileNav); else issues.push('preferences.mobileNav') }
+    if (p.sidebarCollapsed !== undefined) { if (typeof p.sidebarCollapsed === 'boolean') preferences.sidebarCollapsed = p.sidebarCollapsed; else issues.push('preferences.sidebarCollapsed') }
+    if (p.customCss !== undefined) { if (text(p.customCss, MAX_CUSTOM_CSS)) preferences.customCss = p.customCss; else issues.push('preferences.customCss') }
   }
   return { document: issues.length ? null : { format: 'miboard-settings', version: 1, servers, deviceAliases, proxySort, preferences,
     ...(value.proxyTestSelections !== undefined ? { proxyTestSelections } : {}),
@@ -302,17 +324,24 @@ export function previewSettingsImport(input: string): SettingsImportPreview {
 }
 
 /** One outer transaction also covers migration and the nested profile writers. No network or controller changes. */
-export function applySettingsImport(input: SettingsImportPreview): void {
+export function applySettingsImport(input: SettingsImportPreview, { includeCustomCss = false }: { includeCustomCss?: boolean } = {}): void {
   const checked = validate(input.document)
   if (!checked.document) throw new SettingsTransferError('invalid')
   const document = checked.document
+  // Importing a JSON file or a remote copy is not consent to execute its CSS.
+  // The file-import UI supplies this opt-in only after a separate warning.
+  if (!includeCustomCss) delete document.preferences.customCss
   const keys = new Set(PROFILE_KEYS)
   document.deviceAliases.forEach((item) => keys.add(aliasKey(item.backendUrl)))
   document.proxySort.forEach((item) => keys.add(sortKey(item)))
   document.proxyTestSelections?.forEach((item) => keys.add(proxyTestSelectionKey(item.backendUrl)))
   document.providerAlerts?.forEach((item) => keys.add(providerAlertsKey(item.backendUrl)))
   document.journalRetentions?.forEach((item) => keys.add(journalRetentionKey(item.backendUrl)))
-  const preferenceKeys: Record<string, string> = { latency: 'miboard.latency.v1', proxyCardSize: PROXY_CARD_SIZE_KEY, proxyGroupHeight: PROXY_GROUP_HEIGHT_KEY, liveUpdateMode: LIVE_UPDATE_MODE_KEY, connectionColumns: CONNECTION_COLUMNS_KEY }
+  const preferenceKeys: Record<string, string> = {
+    latency: 'miboard.latency.v1', proxyCardSize: PROXY_CARD_SIZE_KEY, proxyGroupHeight: PROXY_GROUP_HEIGHT_KEY,
+    liveUpdateMode: LIVE_UPDATE_MODE_KEY, connectionColumns: CONNECTION_COLUMNS_KEY, connectionLayout: CONNECTION_LAYOUT_KEY,
+    connectionSort: CONNECTION_SORT_KEY, mobileNav: MOBILE_NAV_KEY, sidebarCollapsed: SIDEBAR_COLLAPSED_KEY, customCss: CUSTOM_CSS_KEY,
+  }
   Object.keys(document.preferences).forEach((key) => keys.add(preferenceKeys[key] ?? `miboard.${key}`))
   const original = new Map<string, string | null>()
   try { for (const key of keys) original.set(key, localStorage.getItem(key)) } catch { throw new SettingsTransferError('storage') }
@@ -344,6 +373,14 @@ export function applySettingsImport(input: SettingsImportPreview): void {
     if (p.proxyGroupHeight !== undefined) localStorage.setItem(PROXY_GROUP_HEIGHT_KEY, p.proxyGroupHeight)
     if (p.liveUpdateMode !== undefined) localStorage.setItem(LIVE_UPDATE_MODE_KEY, p.liveUpdateMode)
     if (p.connectionColumns !== undefined) localStorage.setItem(CONNECTION_COLUMNS_KEY, JSON.stringify(p.connectionColumns))
+    if (p.connectionLayout !== undefined) localStorage.setItem(CONNECTION_LAYOUT_KEY, p.connectionLayout)
+    if (p.connectionSort !== undefined) localStorage.setItem(CONNECTION_SORT_KEY, JSON.stringify({ ...current.preferences.connectionSort, ...p.connectionSort }))
+    if (p.mobileNav !== undefined) localStorage.setItem(MOBILE_NAV_KEY, JSON.stringify(p.mobileNav))
+    if (p.sidebarCollapsed !== undefined) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, p.sidebarCollapsed ? '1' : '0')
+    if (p.customCss !== undefined) {
+      if (p.customCss.trim()) localStorage.setItem(CUSTOM_CSS_KEY, p.customCss)
+      else localStorage.removeItem(CUSTOM_CSS_KEY)
+    }
     if (p.locale !== undefined) localStorage.setItem('miboard.locale', p.locale)
     if (p.theme === 'system') localStorage.removeItem('miboard.theme')
     else if (p.theme !== undefined) localStorage.setItem('miboard.theme', p.theme)

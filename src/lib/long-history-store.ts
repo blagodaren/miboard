@@ -68,6 +68,20 @@ export class HistoryDatabase {
       tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error)
     })
   }
+  async clear(backend: string): Promise<void> {
+    if (!backend) return
+    const db = await this.open()
+    return new Promise((resolve, reject) => {
+      // Delete the lease in the same transaction so every writer establishes a
+      // fresh baseline after the clear, including writers in another tab.
+      const tx = db.transaction(['hours', 'leases'], 'readwrite')
+      const hours = tx.objectStore('hours')
+      hours.delete(IDBKeyRange.bound([backend, 0], [backend, Number.MAX_SAFE_INTEGER]))
+      tx.objectStore('leases').delete(backend)
+      tx.oncomplete = () => resolve()
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('History clear failed'))
+    })
+  }
   async prune(now = Date.now()): Promise<void> {
     const db = await this.open()
     return new Promise((resolve, reject) => {

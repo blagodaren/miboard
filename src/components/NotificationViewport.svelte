@@ -29,5 +29,5 @@
 
 <style>
   .notification-viewport { --notification-bottom: max(24px, env(safe-area-inset-bottom)); --notification-max-height: min(60dvh, calc((100dvh - var(--notification-bottom) - 32px) / var(--notification-count) - 8px)); position: fixed; right: max(24px, env(safe-area-inset-right)); bottom: var(--notification-bottom); z-index: 30; display: flex; flex-direction: column; gap: 8px; width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - var(--notification-bottom) - 16px); pointer-events: none; }
-  @media (max-width: 767px) { .notification-viewport { --notification-bottom: calc(16px + env(safe-area-inset-bottom)); right: max(16px, env(safe-area-inset-right)); } .notification-viewport.with-navigation { --notification-bottom: calc(72px + env(safe-area-inset-bottom)); } }
+  @media (max-width: 767px) { .notification-viewport { --notification-bottom: calc(16px + env(safe-area-inset-bottom)); right: max(16px, env(safe-area-inset-right)); } .notification-viewport.with-navigation { --notification-bottom: calc(80px + env(safe-area-inset-bottom)); } }
 </style>

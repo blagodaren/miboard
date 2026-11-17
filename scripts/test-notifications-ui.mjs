@@ -122,7 +122,7 @@ try {
       })
       assert(geometry.left >= 0 && geometry.right <= geometry.width)
       assert(geometry.bottom <= geometry.navTop - (width < 768 ? 15 : 0), 'Toast clears the mobile navigation')
-      assert(geometry.height - geometry.bottom <= (width < 768 ? 74 : 26), 'Toast is at the bottom right')
+      assert(geometry.height - geometry.bottom <= (width < 768 ? 82 : 26), 'Toast is at the bottom right')
       assert.equal(geometry.opacity, '1', 'Only the background is translucent')
       assert.equal(geometry.animation, 'none', 'Reduced-motion preference is respected')
       assert.match(geometry.background, /0\.94/)

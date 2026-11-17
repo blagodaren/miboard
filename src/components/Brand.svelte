@@ -1,10 +1,11 @@
 <script lang="ts">
+  let { compact = false }: { compact?: boolean } = $props()
   const name = 'MIBoard'
 </script>
 
 <div class="brand">
   <img src="./favicon.svg" alt="" width="32" height="32" class="brand-icon" />
-  <span class="brand-name">{name}</span>
+  <span class="brand-name" class:sr-only={compact}>{name}</span>
 </div>
 
 <style>

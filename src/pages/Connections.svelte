@@ -17,7 +17,7 @@
   import ConnectionDetails from '../components/ConnectionDetails.svelte'
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
-  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
+  import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
   import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
   import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
@@ -32,7 +32,7 @@
   let selectedSnapshot = $state.raw<DisplayRow | null>(null)
   let visibleColumns = $state<ColumnKey[]>(readConnectionColumns())
   let columnsOpen = $state(false)
-  // Phones get cards, wider screens the table; the breakpoint matches the shell's md.
+  // Phones get cards, wider screens the table, until someone picks a layout; the breakpoint matches the shell's md.
   const narrowQuery = matchMedia('(max-width: 767px)')
   let narrow = $state(narrowQuery.matches)
   $effect(() => {
@@ -40,7 +40,13 @@
     narrowQuery.addEventListener('change', change)
     return () => narrowQuery.removeEventListener('change', change)
   })
-  const layout = $derived(narrow ? 'cards' : 'table')
+  let savedLayout = $state<ConnectionLayout | null>(readConnectionLayout())
+  const layout = $derived<ConnectionLayout>(savedLayout ?? (narrow ? 'cards' : 'table'))
+  const layouts = $derived([{ value: 'cards' as const, label: t('connectionDetails.cards') }, { value: 'table' as const, label: t('connectionDetails.table') }])
+  function changeLayout(value: ConnectionLayout) {
+    savedLayout = value
+    try { localStorage.setItem(CONNECTION_LAYOUT_KEY, value) } catch { /* Keep this session's layout. */ }
+  }
   // Cards have a fixed height, so the virtual window works in whole grid rows.
   const CARD_ROW = 136, CARD_MIN_WIDTH = 340
   let listWidth = $state(1024)
@@ -374,6 +380,7 @@
 <div class="connections-toolbar">
   <Segmented value={view} options={views} onchange={changeView} label={t('journal.view')} />
   <div class="flex flex-wrap items-center gap-2">
+  <div data-testid="connection-layout"><Segmented value={layout} options={layouts} onchange={changeLayout} label={t('connectionDetails.layout')} /></div>
   {#if layout === 'cards'}
     <label class="flex items-center gap-2 text-[13px] text-fg-2">{t('connections.sortBy')}
       <select value={sort} data-testid="connection-card-sort" onchange={event => changeSort(event.currentTarget.value as SortKey)} class="h-11 rounded-control border border-field-border bg-field px-3 text-fg sm:h-8">

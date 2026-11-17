@@ -10,7 +10,7 @@
   <a href="README.md">Русский</a> · <strong>English</strong>
 </p>
 <p align="center">
-  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.8"><img src="https://img.shields.io/badge/release-0.1.8-e8a33d?style=flat-square" alt="Release 0.1.8"></a>
+  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.10"><img src="https://img.shields.io/badge/release-0.1.10-e8a33d?style=flat-square" alt="Release 0.1.10"></a>
   <a href="https://github.com/blagodaren/miboard/releases"><img src="https://img.shields.io/github/downloads/blagodaren/miboard/total?style=flat-square&amp;color=e8a33d" alt="Total release asset downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="MIT license"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
@@ -44,9 +44,11 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 | **Proxies** | Node selection, providers and subscriptions, latency checks, per-URL histories and stability checks |
 | **Devices** | Device → proxy → destination flows, local names, processes and destinations |
 | **Connections** | Configurable columns, detailed metadata and JSON, a journal of closed connections |
+| **History** | Up to 30 days of observed traffic by device and destination, hourly totals and daily snapshots |
 | **IP & domains** | Traffic by domain, IP, application, ASN and inbound; DNS diagnostics and domain TXT export |
 | **Geography & rules** | A local country map, traffic distribution, routing chains and rule providers |
 | **Settings** | RU / EN, light and dark themes, card sizes, server profiles, settings transfer and sync |
+| **Controllers** | Saved controllers, availability checks and batch actions with results for each profile |
 | **Application** | PWA installation, an offline shell, update checks, stream recovery and an economy mode |
 
 > [!NOTE]
@@ -74,10 +76,10 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 
 ## Download
 
-| Version 0.1.8 | Choose this when | Verify |
+| Version 0.1.10 | Choose this when | Verify |
 | --- | --- | --- |
-| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip.sha256) |
-| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist-cdn-fonts.zip.sha256) |
+| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip.sha256) |
+| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist-cdn-fonts.zip.sha256) |
 
 Both archives have the same functionality. If the CDN is unavailable, the second build falls back to system fonts; color flags may be unavailable on Windows.
 
@@ -90,10 +92,10 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip"
 ```
 
-For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The URL pins version 0.1.8; `releases/latest/download/dist.zip` follows the latest stable release.
+For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The URL pins version 0.1.10; `releases/latest/download/dist.zip` follows the latest stable release.
 
 **2. Apply the configuration and open the dashboard.**
 

@@ -54,6 +54,7 @@ function importDocument(data: SyncData, backendUrl: string): SettingsDocument {
 function checkedData(value: unknown, backendUrl: string): { data: SyncData; preview: SettingsImportPreview } {
   if (!record(value) || !keys(value, ['deviceNames', 'proxySort', 'preferences', 'proxyTestSelection', 'providerAlertsEnabled', 'journalRetention']) || !record(value.deviceNames)
     || !Array.isArray(value.proxySort) || !record(value.preferences)
+    || Object.hasOwn(value.preferences, 'customCss')
     || value.proxySort.some(sort => !record(sort) || !keys(sort, ['group', 'key', 'direction']))
     || (value.proxyTestSelection !== undefined && (!record(value.proxyTestSelection) || !keys(value.proxyTestSelection, ['mode', 'groups']) || !validProxyTestSelection(value.proxyTestSelection)))) throw new SettingsSyncError('invalid')
   const preview = previewSettingsImport(JSON.stringify(importDocument(value as SyncData, backendUrl)))
@@ -75,6 +76,8 @@ function checkedData(value: unknown, backendUrl: string): { data: SyncData; prev
 /** Only preferences belonging to this core are portable; profiles, controller URLs and credentials never enter the wire schema. */
 export function localSyncData(backendUrl: string): SyncData {
   const local: SettingsDocument = JSON.parse(exportSettings())
+  // CSS is executable presentation: it travels only in an explicitly accepted file import.
+  delete local.preferences.customCss
   const testSelection = local.proxyTestSelections?.find(item => item.backendUrl === backendUrl)
   return checkedData({
     deviceNames: local.deviceAliases.find(item => item.backendUrl === backendUrl)?.names ?? {},
@@ -110,7 +113,7 @@ function flatten(data: SyncData): Map<string, { section: SyncChange['section']; 
   for (const [key, value] of Object.entries(data.deviceNames)) values.set('devices:' + key, { section: 'devices', key, value })
   for (const sort of data.proxySort) values.set('sorts:' + sort.group, { section: 'sorts', key: sort.group, value: { key: sort.key, direction: sort.direction } })
   for (const [name, value] of Object.entries(data.preferences)) {
-    if ((name === 'latency' || name === 'groups') && record(value)) {
+    if ((name === 'latency' || name === 'groups' || name === 'connectionSort') && record(value)) {
       for (const [key, item] of Object.entries(value)) values.set('preferences:' + name + '.' + key, { section: 'preferences', key: name + '.' + key, value: item })
     } else values.set('preferences:' + name, { section: 'preferences', key: name, value })
   }
@@ -127,6 +130,7 @@ function mergedData(local: SyncData, remote: SyncData): SyncData {
     deviceNames: { ...local.deviceNames, ...remote.deviceNames }, proxySort: [...sorts.values()],
     preferences: { ...local.preferences, ...remote.preferences,
       ...(remote.preferences.groups !== undefined ? { groups: { ...local.preferences.groups, ...remote.preferences.groups } } : {}),
+      ...(remote.preferences.connectionSort !== undefined ? { connectionSort: { ...local.preferences.connectionSort, ...remote.preferences.connectionSort } } : {}),
     },
     ...(remote.proxyTestSelection ?? local.proxyTestSelection ? { proxyTestSelection: remote.proxyTestSelection ?? local.proxyTestSelection } : {}),
     ...(remote.providerAlertsEnabled !== undefined || local.providerAlertsEnabled !== undefined ? { providerAlertsEnabled: remote.providerAlertsEnabled ?? local.providerAlertsEnabled } : {}),

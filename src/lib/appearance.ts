@@ -2,6 +2,11 @@ export const PROXY_CARD_SIZE_KEY = 'miboard.proxy-card-size'
 export type ProxyCardSize = 'large' | 'compact'
 export const PROXY_GROUP_HEIGHT_KEY = 'miboard.proxy-group-height'
 export type ProxyGroupHeight = 'compact' | 'large' | 'full'
+export const SIDEBAR_COLLAPSED_KEY = 'miboard.sidebar-collapsed'
+
+export function readSidebarCollapsed(): boolean {
+  try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1' } catch { return false }
+}
 
 export function validProxyGroupHeight(value: unknown): value is ProxyGroupHeight {
   return value === 'compact' || value === 'large' || value === 'full'

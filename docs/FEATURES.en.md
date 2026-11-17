@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -22,15 +22,16 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 
 | Parameter | Effect |
 |---|---|
-| `hostname` | Core address. `port`, protocol, `secondaryPath` and `label` apply only with it; `secret` also works on its own. IPv6 may be `::1` or `[::1]` |
-| `port` | `external-controller` port |
+| `hostname` | Core address, including `router.local:9090` or `127.0.0.1:9090`. IPv6 may be `::1`, `[::1]` or `[::1]:9090`. `port`, protocol, `secondaryPath` and `label` apply only with it; `secret` also works on its own |
+| `port` | `external-controller` port; an explicit value overrides the port in `hostname` |
 | `secret` | Controller secret |
 | `protocol=http` / `protocol=https`, `http`, `https` | API protocol; the page protocol when omitted |
 | `secondaryPath` | API path behind a reverse proxy, for example `/api` |
-| `label` | Name for a new profile. A saved server keeps its name |
+| `label` | Name for a new profile, limited to the input field's length (80 UTF-16 units without splitting an emoji). A saved server keeps its name |
 | `hideMode=1` | Hide the rule / global / direct switch (see below) |
 | `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
 | `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
+| `theme=<url>` | CSS theme from the app or provider (see [Theme from a link](#theme-from-a-link)); `theme=off` removes it |
 
 The link selects the saved profile with the same API URL or, after a successful connection, saves a new one; the dashboard connects without manual input. The address, secret and `label` leave the address bar right after they are read. UI flags remain active until the page reloads, even when navigation removes them from `#`; put them in `?query` before `#` to preserve them across reloads. Example for an app that runs and updates the core itself:
 `http://127.0.0.1:9090/ui/miboard/#/setup?http=true&hostname=127.0.0.1&port=9090&secret=xxx&disableUpgradeCore=1`.
@@ -51,13 +52,21 @@ external-controller-cors:
 
 For [GitHub Pages](https://blagodaren.github.io/miboard/), allow `https://blagodaren.github.io` instead. The hosted page serves only the interface; it does not relay API requests. HTTPS pages should connect to an HTTPS API with a trusted certificate, using WSS for WebSocket streams. CORS does not bypass mixed-content restrictions. Browser permission may also be required to access a local network. If HTTPS is unavailable, open the core's own `/ui/` directly. The [GitHub Pages guide](../GITHUB_PAGES.md) is currently in Russian.
 
+## Navigation
+
+On desktop, the button at the bottom of the sidebar collapses it to icons; its state
+is saved in this browser. On narrow screens, the bottom bar shows four sections and
+keeps the rest in **More**. Change their order under **Settings → Appearance → Mobile
+bottom bar**: the first four appear on the bar. The order is saved in the browser and
+can be reset to its default.
+
 ## Settings and data capture
 
 Settings are split into five categories:
 
 | Category | Controls |
 | --- | --- |
-| Appearance | Theme, language, proxy card size and group height |
+| Appearance | Theme, language, proxy card size and group height, mobile navigation order, custom CSS and link theme |
 | Connection and core | Server, routing mode, TUN/LAN, ports, core status and Prizrak-Core |
 | Proxies | Latency settings and subscription warnings |
 | Data | Live updates, connection journal, settings sync, import and export |
@@ -68,6 +77,59 @@ Categories appear in a sidebar on wide screens and a select control on narrow sc
 **Data → Live updates** offers continuous capture, the default, or economy mode. Economy mode suspends traffic, connection and memory streams while the browser tab is hidden, then resumes them when it becomes visible. Navigating between MIBoard pages does not stop capture. A notice marks gaps: connections that existed entirely during a pause are unknown to the dashboard. Surviving connections may include bytes transferred during the gap.
 
 Telemetry reconnects after 15 seconds without data or 10 seconds without completing a connection. The last snapshot remains visible while reconnecting. Quiet logs are not treated as stalled telemetry. Connection speeds use the actual interval between snapshots; the first frame after a gap establishes a new baseline.
+
+## Custom CSS and client colors
+
+Settings → Appearance → Custom CSS applies CSS on top of MIBoard styles in this browser (localStorage, up to 64 KB). The style is attached before the first frame, so after a reload the dashboard opens in its own colors right away.
+
+To match an app or a router UI, override the palette variables. `light-dark(light, dark)` sets both themes at once:
+
+```css
+:root {
+  --accent: light-dark(#2563eb, #60a5fa);      /* accent, indicators, download charts */
+  --accent-ink: light-dark(#1d4ed8, #93c5fd);  /* accent-colored text and icons */
+  --deep: light-dark(#e2e8f0, #070b14);        /* sidebar and bottom bar */
+  --page: light-dark(#f1f5f9, #0b1220);        /* page background */
+  --card: light-dark(#ffffff, #111a2e);        /* cards and tables */
+  --raised: light-dark(#e2e8f0, #1a2540);      /* raised controls, toggles */
+  --text: light-dark(#0f172a, #e2e8f0);
+  --line: light-dark(#cbd5e1, rgb(226 232 240 / 0.1));
+  --selected: light-dark(#dbeafe, #1e2a4a);
+  --selected-border: light-dark(#2563eb, #60a5fa);
+}
+```
+
+The full variable list is at the top of `src/app.css`. Reset removes the custom CSS.
+
+### Theme from a link
+
+MIBoard talks only to the mihomo API, and mihomo passes on nothing from the subscription response except `subscription-userinfo`. So a provider's theme reaches the dashboard through the app that downloads the subscription and opens MIBoard:
+
+1. The provider adds a header to the subscription response, for example `miboard-theme: https://provider.example/miboard.css`. It is a URL rather than the CSS itself, because headers are small and a URL can change its content without a new subscription.
+2. The app passes that URL, or its own CSS if it already has a color scheme (for example `http://127.0.0.1:<port>/theme.css` served by the app), in the link: `#/setup?hostname=…&secret=…&theme=<url-encoded URL>`.
+3. MIBoard saves the URL and the downloaded CSS in localStorage and applies the saved copy before the first frame. On every start it checks the URL again (`cache: no-cache`, so an unchanged file costs a 304). When the provider changes the file, the next start picks it up. If the check fails, the saved copy stays in use.
+
+Rules:
+
+- HTTPS anywhere. Any scheme from the dashboard's own origin: an app that shows MIBoard under its own scheme serves its theme next to it, for example `miboard://app/theme.css`. Plain HTTP also from loopback (`127.0.0.1`, `localhost`, `[::1]`). For a cross-origin download, the server must allow CORS (`Access-Control-Allow-Origin: *`); the request is sent without cookies. Limit: 64 KB.
+- A new URL in the link replaces the old one, `theme=off` removes it, and a link without `theme` keeps what is saved.
+- **Settings → Appearance → Theme from link** shows the URL and the last update, turns the theme off (the choice survives later links), checks for changes now and removes it.
+- Custom CSS applies on top of the link theme, so the user's changes always win.
+
+**Trusting CSS.** Opening a link with `theme=` automatically saves the URL and loads the theme
+without a separate confirmation. The parameter leaves the address bar; its source remains
+visible in settings. The server owner sees CSS requests, including the user's IP address,
+and can change the theme's contents before the dashboard's next start.
+
+CSP restricts script execution, but CSS can still hide labels and controls, cover them or
+change their clickable area. External images in `url()` make network requests; attribute
+selectors can tie those requests to values in the markup, such as node and group names.
+CSS has no direct access to localStorage. Only load themes or paste CSS from sources you trust.
+
+Turning the theme off stops applying its CSS, but the saved URL is still checked at startup.
+To stop those requests, remove the theme in settings or open the dashboard with `theme=off`.
+These rules also apply to the public dashboard on GitHub Pages.
+
 
 ## App installation and updates
 
@@ -201,7 +263,7 @@ DNS types include A, AAAA, CNAME, MX, TXT, NS, SOA, PTR and CAA. A PTR input may
 
 ## Connections and journal
 
-**Connections** has active and closed views, with search across host, device, IP, port, process, inbound and proxy. **Columns** toggles type, process, Sniff Host, source/destination, inbound, DNS mode, providers and peak rates, with browser persistence.
+**Connections** has active and closed views, with search across host, device, IP, port, process, inbound and proxy. Connections appear as cards by default; a switch selects the table layout. The layout is saved in this browser, while the sort field and direction are remembered separately for active and closed connections. Cards use a sort selector and direction button; the table uses column headers. In table layout, **Columns** toggles type, process, Sniff Host, source/destination, inbound, DNS mode, providers and peak rates, with browser persistence.
 
 Click the host or info control to open details and copyable JSON: endpoints, routing/providers, rule, rates/volumes, process, GeoIP/ASN and other core metadata. Active JSON retains received fields; closed records show the saved known-field subset. Missing data is not reconstructed. If a connection disappears while open, its final snapshot remains with a status label. Tests: `npm run test:connections` and `npm run test:connections:ui`.
 
@@ -211,11 +273,15 @@ Closed records persist in IndexedDB separately for each server. **Settings → D
 
 ## Settings transfer and sync
 
-**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode, expanded groups, connection columns, subscription alerts and per-server journal retention. Secrets are excluded by default and require an explicit opt-in. Journal entries, alert acknowledgements and mihomo configuration are excluded.
+**Settings → Data → Settings transfer** exports server profiles, device names, group sorting, latency preferences, bulk-test selections, language, theme, card size, group height, capture mode, expanded groups, connection columns, connection layout and sorting, mobile navigation order, collapsed sidebar state, custom CSS, subscription alerts and per-server journal retention. Secrets are excluded by default and require an explicit opt-in. Journal entries, alert acknowledgements and mihomo configuration are excluded.
 
 Import validates first and previews replacements. Applying merges records; an absent or empty secret never erases the stored one. It does not switch the live connection. Reload is explicit for applying interface preferences. Test: `npm run test:settings-transfer`.
 
-Core sync stores device names, the current core's group sorting, subscription alert preference, journal retention and interface preferences at `/storage/miboard.settings.v1`. Server profiles, controller URLs, secrets and journal records are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
+Custom CSS is applied only when **Import custom CSS from this file** is checked in the preview.
+Otherwise the current CSS is kept. Only enable this for files you trust; CSS can hide controls
+and load external resources. Older backups without the new preferences leave their current values intact.
+
+Core sync stores device names, the current core's group sorting, subscription alert preference, journal retention and interface preferences at `/storage/miboard.settings.v1`, including connection layout and sorting, mobile navigation order and collapsed sidebar state. Server profiles, controller URLs, secrets, journal records, custom CSS and link themes are excluded. Save/load are explicit, with previews and conflict rechecks. A conflict requires a fresh preview. The API provides no atomic concurrent-write lock, so a save is verified by reading it back.
 
 ## Rules
 
@@ -291,8 +357,9 @@ The per-document limit does not reserve space. Cores without `/storage`
 can still use local scenes.
 
 The link button in a group header copies `#/proxies?group=<name>`, expanding that group
-and scrolling to it. The copied URL excludes connection parameters and secrets; it uses
-the recipient browser's connection. The dashboard's own address remains in the link.
+and scrolling to it. Active `hideMode`, `disableUpgradeCore` and `disableTunMode` flags
+are kept before `#` so they survive reloads. Connection parameters, secrets and themes
+are excluded; it uses the recipient browser's connection. The dashboard's own address remains in the link.
 
 **Check URLs through nodes** builds a matrix of up to five URLs and twenty nodes, including
 provider-only nodes. At most three requests run concurrently, the timeout is configurable
@@ -315,6 +382,11 @@ per processed snapshot. Smaller destinations are aggregated, so this is not a co
 record. One tab records for each core within a browser to avoid duplication. If IndexedDB is
 unavailable, the UI reports tab-memory-only storage. The browser may remove site data;
 requesting persistent storage is not a substitute for a backup.
+
+**Clear history** deletes all local hourly history for the selected core after confirmation,
+regardless of the displayed date range. Other cores and shared daily snapshots are kept.
+Open tabs refresh their view, and new observations start from a fresh baseline. If browser
+storage is unavailable, the action clears only this tab's temporary history.
 
 A **named daily snapshot** can be saved on the core and read in another browser using its
 collector code. Days use UTC and snapshots are limited to 128 KiB. Replacing a snapshot requires

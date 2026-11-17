@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseEmbed } from '../src/lib/embed.ts'
+import { embedSearch, parseEmbed } from '../src/lib/embed.ts'
 
 test('hideMode is read from the query and from the hash query', () => {
   assert.equal(parseEmbed('', '').hideMode, false)
@@ -21,4 +21,12 @@ test('disableUpgradeCore and disableTunMode accept flags and zashboard values', 
   }
   const link = parseEmbed('', '#/setup?http=true&hostname=127.0.0.1&port=9090&secret=x&disableUpgradeCore=1')
   assert.deepEqual(link, { hideMode: false, disableUpgradeCore: true, disableTunMode: false }, 'flags are independent')
+})
+
+test('copied navigation links preserve active embed flags without connection or theme parameters', () => {
+  const active = parseEmbed('?hideMode=1&secret=canary&theme=https://theme.test/x.css', '#/setup?disableUpgradeCore=core&disableTunMode=tun&hostname=router.test')
+  assert.equal(embedSearch(active), '?hideMode=1&disableUpgradeCore=1&disableTunMode=1')
+  assert.deepEqual(parseEmbed(embedSearch(active), '#/proxies?group=Proxy'), active, 'flags survive navigation and reloads in the top-level query')
+  assert.equal(embedSearch(parseEmbed('?hideMode=1', '#/setup?hideMode=0')), '', 'disabled flags do not need to be copied')
+  assert.equal(embedSearch(parseEmbed('', '')), '', 'ordinary links have no extra query')
 })

@@ -5,6 +5,8 @@ export const ru: Record<keyof typeof en, Message> = {
   'transfer.title': 'Перенос настроек',
   'transfer.description': 'Сохраните серверы и настройки панели в JSON. Конфигурация ядра и история соединений в файл не входят',
   'transfer.includeSecrets': 'Включить секреты серверов в экспортируемый файл',
+  'transfer.includeCustomCss': 'Импортировать свой CSS из файла',
+  'transfer.customCssHint': 'CSS может скрывать элементы управления и загружать внешние ресурсы. Включайте только для файла, которому доверяете. Без отметки текущий CSS сохранится; после импорта потребуется перезагрузка.',
   'transfer.secretsHint': 'Файл будет содержать данные, дающие доступ к вашим серверам',
   'transfer.export': 'Экспорт JSON',
   'transfer.import': 'Выбрать JSON-файл',

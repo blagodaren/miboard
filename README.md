@@ -10,7 +10,7 @@
   <strong>Русский</strong> · <a href="README.en.md">English</a>
 </p>
 <p align="center">
-  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.8"><img src="https://img.shields.io/badge/release-0.1.8-e8a33d?style=flat-square" alt="Релиз 0.1.8"></a>
+  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.1.10"><img src="https://img.shields.io/badge/release-0.1.10-e8a33d?style=flat-square" alt="Релиз 0.1.10"></a>
   <a href="https://github.com/blagodaren/miboard/releases"><img src="https://img.shields.io/github/downloads/blagodaren/miboard/total?style=flat-square&amp;color=e8a33d" alt="Общее число скачиваний файлов релизов"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="Лицензия MIT"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
@@ -44,9 +44,11 @@ MIBoard — статическая панель для существующег�
 | **Прокси** | Выбор нод, провайдеры и подписки, замеры задержки, история по URL, проверка стабильности |
 | **Устройства** | Потоки «устройство → прокси → назначение», локальные названия, процессы и направления |
 | **Соединения** | Настраиваемые столбцы, подробные метаданные и JSON, журнал завершённых соединений |
+| **История** | До 30 дней наблюдаемого трафика по устройствам и направлениям, почасовые итоги и суточные снимки |
 | **IP и домены** | Трафик по доменам, IP, приложениям, ASN и входам; DNS-диагностика и экспорт доменов в TXT |
 | **География и правила** | Локальная карта стран, распределение трафика, цепочки маршрутизации и провайдеры правил |
 | **Настройки** | RU / EN, светлая и тёмная темы, размеры карточек, профили серверов, перенос и синхронизация |
+| **Ядра** | Сохранённые контроллеры, проверка доступности и массовые действия с результатом по каждому профилю |
 | **Приложение** | Установка как PWA, офлайн-оболочка, проверка обновлений, восстановление потоков и экономный режим |
 
 > [!NOTE]
@@ -74,10 +76,10 @@ MIBoard — статическая панель для существующег�
 
 ## Скачать
 
-| Архив 0.1.8 | Когда выбирать | Проверка |
+| Архив 0.1.10 | Когда выбирать | Проверка |
 | --- | --- | --- |
-| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip) | Основной вариант: шрифты и GeoDB включены, внешний CDN не нужен | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip.sha256) |
-| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist-cdn-fonts.zip) | Меньший архив; шрифты загружаются с `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist-cdn-fonts.zip.sha256) |
+| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip) | Основной вариант: шрифты и GeoDB включены, внешний CDN не нужен | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip.sha256) |
+| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist-cdn-fonts.zip) | Меньший архив; шрифты загружаются с `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist-cdn-fonts.zip.sha256) |
 
 Функции в обоих архивах одинаковые. Если CDN недоступен, второй вариант использует системные шрифты; цветные флаги на Windows могут не отображаться.
 
@@ -90,10 +92,10 @@ external-controller: 127.0.0.1:9090
 secret: "замените-на-длинный-случайный-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.8/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.1.10/dist.zip"
 ```
 
-Если ядро работает на роутере, укажите его адрес в доверенной локальной сети вместо `127.0.0.1` и ограничьте доступ межсетевым экраном. `external-ui-url` закреплён на версии 0.1.8; для последнего обычного релиза можно использовать `releases/latest/download/dist.zip`.
+Если ядро работает на роутере, укажите его адрес в доверенной локальной сети вместо `127.0.0.1` и ограничьте доступ межсетевым экраном. `external-ui-url` закреплён на версии 0.1.10; для последнего обычного релиза можно использовать `releases/latest/download/dist.zip`.
 
 **2. Примените конфигурацию и откройте панель.**
 
