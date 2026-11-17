@@ -137,12 +137,12 @@
     <div class="sticky top-0 z-20 flex min-h-14 items-center justify-between gap-3 border-b border-line bg-deep px-4 py-2 md:hidden">
       {@render brand()}
       {#if core.configs && !embed.hideMode}
-        <!-- A compact select keeps the bar on one line at phone widths. -->
+        <!-- A compact select keeps the bar on one line at phone widths; fg-3 keeps the border at 3:1 on the deep bar. -->
         <select
           aria-label={t('mode.routing')}
           value={core.configs.mode}
           onchange={(event) => core.setMode(event.currentTarget.value as Mode)}
-          class="h-11 min-w-0 rounded-control border border-field-border bg-field px-2 text-[13px] text-fg transition-colors hover:border-fg-3 focus-visible:border-accent-ink"
+          class="h-11 min-w-0 rounded-control border border-fg-3 bg-field px-2 text-[13px] text-fg transition-colors hover:border-fg-2 focus-visible:border-accent-ink"
         >
           {#each modes as mode (mode.value)}
             <option value={mode.value}>{mode.label}</option>
