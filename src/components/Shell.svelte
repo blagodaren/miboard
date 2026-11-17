@@ -142,7 +142,7 @@
           aria-label={t('mode.routing')}
           value={core.configs.mode}
           onchange={(event) => core.setMode(event.currentTarget.value as Mode)}
-          class="h-11 min-w-0 rounded-control border border-fg-3 bg-field px-2 text-[13px] text-fg transition-colors hover:border-fg-2 focus-visible:border-accent-ink"
+          class="h-11 min-w-0 rounded-control border border-fg-3 bg-field px-3 text-[13px] text-fg transition-colors duration-150 ease-out hover:border-fg-2 focus-visible:border-accent-ink"
         >
           {#each modes as mode (mode.value)}
             <option value={mode.value}>{mode.label}</option>
