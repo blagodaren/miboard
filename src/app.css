@@ -167,6 +167,14 @@ body {
 html { font-size: 16px; }
 body { font-size: 14px; }
 
+/* Dense desktop: every spacing/size utility runs on a 3.5px step instead of 4px.
+   Mouse pointers only, so touch screens keep 44px targets. */
+@media (min-width: 1024px) and (pointer: fine) {
+  :root { --spacing: 0.21875rem; }
+  /* Unlayered, so it beats the min-h/py utilities that size collapsible rows for touch. */
+  summary[class*='min-h-'] { min-height: 32px; padding-block: 6px; }
+}
+
 @layer base {
   * { border-color: var(--line); }
 }

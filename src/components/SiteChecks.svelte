@@ -55,7 +55,7 @@
   onDestroy(() => { alive = false; controller?.abort(); onrunning(false) })
 </script>
 
-<details class="mb-4 min-w-0 rounded-panel border border-line bg-card" data-testid="site-checks">
+<details class="min-w-0 rounded-panel border border-line bg-card" data-testid="site-checks">
   <summary class="min-h-11 cursor-pointer px-4 py-3 text-[13px] font-medium">{t('sites.title')}</summary>
   <div class="space-y-4 border-t border-line p-4">
     <p class="text-xs leading-5 text-fg-3">{t('sites.hint')}</p>

@@ -192,7 +192,7 @@
   .pause-button[aria-pressed='true'] { border-color: var(--selected-border); background: var(--selected); color: var(--selected-text); }
   .pause-button:disabled { opacity: .5; }
   .analytics-grid { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.14fr) minmax(0, 1.24fr); gap: 16px; margin-bottom: 24px; }
-  .analytics-panel { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  .analytics-panel { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
   h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text); }
   .panel-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
   .panel-count { font-size: 12px; color: var(--text-3); font-family: var(--font-mono); }

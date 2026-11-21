@@ -133,7 +133,7 @@
 </div>
 
 <style>
-  .log-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; gap: 4px 16px; min-height: 44px; padding: 12px 16px; cursor: pointer; }
+  .log-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; align-content: center; gap: 4px 16px; min-height: 44px; padding: 12px 16px; cursor: pointer; }
   .log-message { grid-column: 1 / -1; }
   .log-disclosure { grid-column: 3; grid-row: 1; align-self: center; }
   .log-summary::marker, .log-summary::-webkit-details-marker { display: none; content: ''; }
@@ -148,5 +148,8 @@
     .log-message { grid-column: 3; }
     .log-disclosure { grid-column: 4; }
     .event-fields > div { grid-template-columns: minmax(120px, 200px) minmax(0, 1fr); gap: 16px; }
+  }
+  @media (min-width: 1024px) and (pointer: fine) {
+    .log-summary { min-height: 34px; padding-block: 7px; }
   }
 </style>

@@ -111,13 +111,14 @@
       <div class="summary-card" data-testid="overview-stat" data-stat={stat.id}>
         <dl>
           <dt>{stat.label}</dt>
-          <dd class="num">{stat.value}</dd>
+          <dd><span class="stat-value num">{stat.value}</span>
+            {#if stat.id === 'rules' && rulesError}
+              <button class="stat-caption retry" onclick={refreshRules} disabled={rulesLoading}>{t('overview.retryRules')}</button>
+            {:else}
+              <span class="stat-caption num">{stat.caption}</span>
+            {/if}
+          </dd>
         </dl>
-        {#if stat.id === 'rules' && rulesError}
-          <button class="stat-caption retry" onclick={refreshRules} disabled={rulesLoading}>{t('overview.retryRules')}</button>
-        {:else}
-          <p class="stat-caption num">{stat.caption}</p>
-        {/if}
       </div>
     {/each}
   </section>
@@ -138,7 +139,7 @@
       </div>
       <span class="trend-total">{t('overview.chartTotal')} <strong class="num">{bytes(history.download + history.upload)}</strong></span>
     </div>
-    <div class="chart-container"><TrafficChart height={260} {range} /></div>
+    <div class="chart-container"><TrafficChart height={200} {range} /></div>
     <div class="trend-footnote">
       <span>{t('overview.observedSince', { time: observedSince })}</span>
       <span class="current-speed num"><ArrowDown size={12} />{speed(core.down)}<ArrowUp size={12} />{speed(core.up)}</span>
@@ -161,14 +162,15 @@
 
 <style>
   .summary-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-  .summary-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
-  dt { color: var(--text-2); font-size: 12px; font-weight: 400; line-height: 20px; }
-  dd { margin-top: 8px; white-space: nowrap; font-size: 24px; line-height: 32px; font-weight: 500; }
-  .stat-caption { margin-top: 8px; color: var(--text-3); font-size: 12px; line-height: 20px; }
+  .summary-card { min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  dt { color: var(--text-2); font-size: 12px; font-weight: 400; line-height: 16px; }
+  dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-top: 2px; }
+  .stat-value { white-space: nowrap; font-size: 20px; line-height: 28px; font-weight: 500; }
+  .stat-caption { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; line-height: 16px; }
   .retry { text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .retry:hover { color: var(--text); }
   .live-state { display: inline-flex; align-items: center; gap: 8px; min-height: 24px; color: var(--text-3); font-size: 12px; }
-  .trend-card { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  .trend-card { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
   .trend-heading, .trend-details { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   h2 { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500; }
   .range-control { display: flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid var(--field-border); border-radius: var(--radius-control); background: var(--raised); }
@@ -176,7 +178,7 @@
   .range-control button:hover { color: var(--text); background: var(--hover); }
   .range-control button:active { transform: translateY(1px); }
   .range-control button[aria-pressed='true'] { border-color: var(--selected-border); background: var(--selected); color: var(--selected-text); }
-  .trend-details { margin-top: 16px; color: var(--text-3); font-size: 12px; }
+  .trend-details { margin-top: 12px; color: var(--text-3); font-size: 12px; }
   .traffic-legend { display: flex; flex-wrap: wrap; gap: 16px; }
   .legend-item { display: inline-flex; align-items: center; gap: 6px; }
   .legend-item strong { font-weight: 500; }
@@ -184,13 +186,13 @@
   .traffic-up { color: var(--traffic-up-ink); }
   .trend-total { white-space: nowrap; }
   .trend-total strong { margin-left: 4px; color: var(--text); font-weight: 500; }
-  .chart-container { margin: 24px 0 0; min-width: 0; }
+  .chart-container { margin: 12px 0 0; min-width: 0; }
   .trend-footnote { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; color: var(--text-3); font-size: 12px; }
   .current-speed { display: flex; align-items: center; gap: 4px; }
   .current-speed :global(svg:nth-of-type(2)) { margin-left: 8px; }
-  .rankings-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 24px 0 12px; color: var(--text-3); font-size: 12px; }
+  .rankings-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; color: var(--text-3); font-size: 12px; }
   .rankings-meta a { text-decoration: underline; text-underline-offset: 3px; }
-  .rankings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .rankings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .geo-note { margin-top: 12px; color: var(--text-3); font-size: 12px; }
   .geo-note button { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   @media (max-width: 1279px) {
@@ -200,9 +202,7 @@
   @media (min-width: 768px) and (max-width: 1099px) { .rankings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 767px) {
     .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .summary-card { padding: 16px; border-radius: var(--radius-card); }
-    dd { font-size: 20px; line-height: 28px; }
-    .stat-caption { font-size: 12px; line-height: 20px; }
+    .summary-card { padding: 10px 12px; border-radius: var(--radius-card); }
     .trend-card { margin-top: 24px; padding: 16px; }
     .trend-heading, .trend-details { align-items: flex-start; flex-wrap: wrap; }
     .trend-heading { gap: 16px; }
