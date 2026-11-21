@@ -603,11 +603,13 @@
 
 <PageHeader title={t('proxies.title')} meta={tab === 'groups' ? t('proxies.groups', { count: groups.length }) : t('providers.count', { count: providerCount })} />
 
+<div class="tool-row">
 <ProxyScenes {backend} disabled={stabilityBusy || providersBusy || sitesBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
   onrunning={value => scenesBusy = value} oncomplete={() => { if (currentBackend()) void load() }} />
 <SiteChecks {backend} targets={stabilityTargets} initialUrl={delaySettings.value.url}
   disabled={stabilityBusy || providersBusy || scenesBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
   onrunning={value => sitesBusy = value} oncomplete={() => { if (currentBackend()) void load() }} />
+</div>
 
 <Tabs.Root value={tab} onValueChange={changeTab} loop>
   <Tabs.List aria-label={t('providers.navLabel')} class="mb-5 flex gap-1 border-b border-line">
@@ -631,7 +633,8 @@
   </div>
 </div>
 
-<details class="group mb-4 rounded-panel border border-line bg-card" data-testid="proxy-test-selection">
+<div class="tool-row">
+<details class="group min-w-0 rounded-panel border border-line bg-card" data-testid="proxy-test-selection">
   <summary class="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 rounded-panel px-4 py-3 text-[13px] marker:content-none">
     <span class="flex min-w-0 items-center gap-2"><IconChevron class="size-4 shrink-0 -rotate-90 text-fg-3 transition-transform group-open:rotate-0" strokeWidth={1.5} aria-hidden="true" />{t('proxyTest.title')}</span>
     <span class="ml-auto text-xs text-fg-3">{t(testSelection.mode === 'all' ? 'proxyTest.summaryAll' : 'proxyTest.summarySelected', { count: selectedTestGroups.length })}</span>
@@ -658,8 +661,6 @@
     {#if !testSelectionSaved}<p class="mt-3 text-xs text-warning" role="status">{t('proxyTest.memory')}</p>{/if}
   </fieldset>
 </details>
-
-<div class="mb-4">
   <ProxyStability {backend} targets={stabilityTargets} settings={delaySettings.value}
     disabled={providersBusy || selectionBusy || nodesSelecting || loading || metadataLoading || groupsTesting || nodesTesting || !!batch?.running}
     onrunning={(running) => { stabilityBusy = running }} oncomplete={() => { if (currentBackend()) void load() }} />
@@ -689,9 +690,9 @@
       {@const order = sortingFor(g.name)}
       {#if !q || nodes.length}
         <section id={groupElementId(g.name)} class="proxy-group min-w-0 scroll-mt-20 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-card shadow-[var(--shadow-panel)]">
-          <div class="flex items-center gap-3 py-2 pl-2 pr-3">
+          <div class="flex items-center gap-2 py-1 pl-1 pr-2">
             <button
-              class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-hover"
+              class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
               aria-expanded={isOpen}
               onclick={() => toggle(g.name, isOpen)}
             >
@@ -700,9 +701,9 @@
                 strokeWidth={1.5}
               />
               <ProxyGroupIcon icon={g.icon} name={g.name} backendUrl={backend.url} />
-              <span class="min-w-0 flex-1">
-                <span class="flex items-baseline gap-2"><span class="truncate font-medium" title={g.name}>{g.name}</span><span class="proxy-group-kind shrink-0 font-mono text-xs text-fg-3">{g.type}</span></span>
-                {#if g.now}<span class="mt-0.5 block truncate text-xs text-fg-2" title={g.now}>{g.now}</span>{/if}
+              <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                <span class="truncate font-medium" title={g.name}>{g.name}</span><span class="proxy-group-kind shrink-0 font-mono text-xs text-fg-3">{g.type}</span>
+                {#if g.now}<span class="min-w-0 truncate text-xs text-fg-2" title={g.now}><span aria-hidden="true">→ </span>{g.now}</span>{/if}
               </span>
               <span class="proxy-group-count num shrink-0 font-mono text-xs text-fg-3">{count(g.all?.length ?? 0)}</span>
             </button>
@@ -811,6 +812,9 @@
 <NodeDiagnostics bind:open={diagnosticOpen} node={diagnosticNode} provider={diagnosticProvider} providerName={diagnosticProviderName} />
 
 <style>
+  /* Tool panels share a row and open in place, each within its own half. */
+  .tool-row { display: grid; align-items: start; gap: 12px; margin-bottom: 16px; }
+  @media (min-width: 768px) { .tool-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .compact .proxy-node { height: 72px; }
   .compact .proxy-node.with-ipv6 { height: 88px; }
   .compact .proxy-node-button { padding: 6px 8px; }
@@ -819,6 +823,11 @@
     .proxy-node-grid.compact { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
     .compact .proxy-node { height: 56px; }
     .compact .proxy-node.with-ipv6 { height: 72px; }
+  }
+  /* Dense desktop (see app.css): the default card drops to the compact card's mobile height. */
+  @media (min-width: 1024px) and (pointer: fine) {
+    .proxy-node { height: 60px; }
+    .proxy-node.with-ipv6 { height: 76px; }
   }
   @media (min-width: 1280px) {
     .proxy-node-grid[data-group-height='compact'] { max-height: min(320px, 45dvh); overflow-y: auto; overscroll-behavior: contain; }

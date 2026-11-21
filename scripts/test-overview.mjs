@@ -154,10 +154,10 @@ try {
     await page.goto(data.entry.href)
     const retry = page.getByRole('button', { name: 'Загрузить правила', exact: true })
     await retry.waitFor()
-    assert.equal((await page.locator('[data-stat=rules] dd').textContent()).trim(), '—')
+    assert.equal((await page.locator('[data-stat=rules] .stat-value').textContent()).trim(), '—')
     failRules = false
     await retry.click()
-    await poll(async () => (await page.locator('[data-stat=rules] dd').textContent()).trim() !== '—', 'rules retry success')
+    await poll(async () => (await page.locator('[data-stat=rules] .stat-value').textContent()).trim() !== '—', 'rules retry success')
     await context.close()
     console.log('PASS: unavailable rules shows dash and successful retry restores count')
   }
