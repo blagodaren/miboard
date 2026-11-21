@@ -120,6 +120,13 @@ try {
     assert.equal(await panel.locator('input[data-test-group="B"]').isChecked(), false)
     await panel.getByRole('button', { name: 'Clear selection', exact: true }).click()
     assert.equal(await page.getByRole('button', { name: 'Test all', exact: true }).isDisabled(), true)
+    assert.equal(await section(page, 'Hidden').count(), 0, 'Hidden groups stay hidden by default')
+    await page.getByRole('switch', { name: 'Show hidden groups' }).click()
+    await section(page, 'Hidden').waitFor()
+    await page.reload()
+    await section(page, 'Hidden').waitFor()
+    await page.getByRole('switch', { name: 'Show hidden groups' }).click()
+    await poll(async () => await section(page, 'Hidden').count() === 0, 'Hidden groups hide again')
     await context.close()
   }
   console.log('PASS: all/selected groups, hidden and unreferenced defaults, shared dedupe, empty selection, manual excluded groups and reload')

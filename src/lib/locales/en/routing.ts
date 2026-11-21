@@ -4,6 +4,7 @@ export const en = {
   'proxies.title': 'Proxies',
   'proxies.groups': { one: '{count} group', other: '{count} groups' },
   'proxies.search': 'Find a node',
+  'proxies.showHidden': 'Show hidden groups',
   'proxies.loading': 'Loading groups',
   'proxies.selectError': 'Could not select {name}: {message}',
   'proxies.noResponse': 'no response',
