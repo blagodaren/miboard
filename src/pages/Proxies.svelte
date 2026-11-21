@@ -14,7 +14,7 @@
   import { delaySettings } from '../lib/latency.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import { runProxyGroupBatch } from '../lib/proxy-batch'
-  import { PROXY_GROUPS_KEY, readProxyGroups } from '../lib/proxy-groups'
+  import { PROXY_GROUPS_KEY, SHOW_HIDDEN_GROUPS_KEY, readProxyGroups } from '../lib/proxy-groups'
   import { visibleProxyProviders } from '../lib/provider-tools'
   import { IconCheck, IconClose, IconChevron, IconZap, IconCopy } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
@@ -33,6 +33,7 @@
   import SiteChecks from '../components/SiteChecks.svelte'
   import IconLink from '@lucide/svelte/icons/link'
   import Segmented from '../components/Segmented.svelte'
+  import Toggle from '../components/Toggle.svelte'
   import IconInfo from '@lucide/svelte/icons/info'
 
   const SELECTABLE = SELECTABLE_PROXY_TYPES
@@ -112,6 +113,11 @@
   const groupsTesting = $derived(Object.keys(testing).length > 0)
   const nodesTesting = $derived(Object.keys(nodeTesting).length > 0)
   let open = $state.raw<Record<string, boolean>>(readProxyGroups())
+  let showHidden = $state((() => { try { return localStorage.getItem(SHOW_HIDDEN_GROUPS_KEY) === '1' } catch { return false } })())
+  function changeShowHidden(value: boolean) {
+    showHidden = value
+    try { localStorage.setItem(SHOW_HIDDEN_GROUPS_KEY, value ? '1' : '0') } catch { /* ок */ }
+  }
   let sorting = $state<Record<string, ProxySort>>({})
   let selecting = $state<Record<string, boolean>>({})
   const nodesSelecting = $derived(Object.keys(selecting).length > 0)
@@ -210,7 +216,7 @@
   let linkedGroup = ''
   async function revealLinkedGroup() {
     const name = new URLSearchParams(location.hash.split('?')[1] ?? '').get('group')
-    if (!name || name === linkedGroup || !proxies[name]?.all || proxies[name].hidden) return
+    if (!name || name === linkedGroup || !proxies[name]?.all || (proxies[name].hidden && !showHidden)) return
     linkedGroup = name
     query = ''; tab = 'groups'; open = { ...open, [name]: true }
     await tick()
@@ -306,7 +312,7 @@
 
   // Порядок групп — как в GLOBAL, то есть как в конфиге
   const groups = $derived.by(() => {
-    const all = Object.values(proxies).filter((p) => p.all && !p.hidden)
+    const all = Object.values(proxies).filter((p) => p.all && (showHidden || !p.hidden))
     const order = proxies.GLOBAL?.all ?? []
     const idx = (n: string) => {
       const i = order.indexOf(n)
@@ -627,6 +633,7 @@
 </p>
   <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
     <Button size="sm" onclick={testAll} disabled={toolsBusy || selectionBusy || loading || metadataLoading || !hasAllTestTargets || groupsTesting || nodesTesting || !!batch?.running} aria-label={t('proxies.testAll')}><IconZap strokeWidth={1.5} />{t(batch?.running ? 'proxies.testingAll' : 'proxies.testAll')}</Button>
+    <label class="flex min-h-11 items-center gap-2 text-[13px] text-fg-2" data-testid="proxy-show-hidden"><Toggle checked={showHidden} onchange={changeShowHidden} label={t('proxies.showHidden')} />{t('proxies.showHidden')}</label>
     <SearchInput bind:value={query} placeholder={t('proxies.search')} />
   </div>
 </div>
@@ -701,7 +708,7 @@
               />
               <ProxyGroupIcon icon={g.icon} name={g.name} backendUrl={backend.url} />
               <span class="min-w-0 flex-1">
-                <span class="flex items-baseline gap-2"><span class="truncate font-medium" title={g.name}>{g.name}</span><span class="proxy-group-kind shrink-0 font-mono text-xs text-fg-3">{g.type}</span></span>
+                <span class="flex items-baseline gap-2"><span class="truncate font-medium" title={g.name}>{g.name}</span><span class="proxy-group-kind shrink-0 font-mono text-xs text-fg-3">{g.type}</span>{#if g.hidden}<span class="shrink-0 text-xs text-fg-3">{t('proxyTest.hidden')}</span>{/if}</span>
                 {#if g.now}<span class="mt-0.5 block truncate text-xs text-fg-2" title={g.now}>{g.now}</span>{/if}
               </span>
               <span class="proxy-group-count num shrink-0 font-mono text-xs text-fg-3">{count(g.all?.length ?? 0)}</span>

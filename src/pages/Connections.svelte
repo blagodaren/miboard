@@ -156,6 +156,16 @@
   const sourceRows: DisplayRow[] = $derived(view === 'closed'
     ? archived.map(journal => ({ ...journal.connection, dl: 0, ul: 0, journal }))
     : paused ? frozen : core.conns)
+  // Suggestions for the exact-value filter, taken from what is in the table right now.
+  const filterOptions = $derived.by(() => {
+    const values = new Map<string, string>()
+    for (const c of sourceRows) {
+      if (scope === 'device') { const ip = c.metadata.sourceIP?.replace(/^::ffff:/, ''); if (ip) values.set(ip, deviceName(c)) }
+      else if (scope === 'domain') { for (const item of [c.metadata.host, c.metadata.sniffHost, c.metadata.destinationIP]) if (item) values.set(item, '') }
+      else if (scope === 'node') { for (const item of c.chains ?? []) values.set(item, '') }
+    }
+    return [...values].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+  })
   const selectedCurrent = $derived(sourceRows.find(row => rowKey(row) === selected && row.start === selectedSnapshot?.start))
   const detailConnection = $derived(selectedCurrent ?? selectedSnapshot)
   const detailStatus = $derived(detailConnection?.journal ? 'closed' : !selectedCurrent ? 'snapshot' : paused ? 'paused' : core.connectionsOnline ? 'live' : 'offline')
@@ -380,7 +390,7 @@
       {#each ['all', 'device', 'domain', 'node'] as kind}<option value={kind}>{t(`panelTools.${kind}` as 'panelTools.all')}</option>{/each}
     </select>
   </label>
-  {#if scope !== 'all'}<label class="min-w-0 flex-1 sm:max-w-sm"><span class="sr-only">{t('panelTools.value')}</span><input bind:value={filterValue} placeholder={t('panelTools.value')} class="min-h-11 w-full rounded-control border border-field-border bg-field px-3 text-[13px] text-fg" /></label>{/if}
+  {#if scope !== 'all'}<label class="min-w-0 flex-1 sm:max-w-sm"><span class="sr-only">{t('panelTools.value')}</span><input bind:value={filterValue} list="connection-filter-options" placeholder={t('panelTools.value')} class="min-h-11 w-full rounded-control border border-field-border bg-field px-3 text-[13px] text-fg" /><datalist id="connection-filter-options">{#each filterOptions as [value, label] (value)}<option {value}>{label}</option>{/each}</datalist></label>{/if}
   {#if batchBusy}<span class="text-xs text-fg-3" role="status">{t('panelTools.progress', { done: batchDone, total: batchTotal })}</span><Button size="sm" onclick={() => batchController?.abort()}>{t('panelTools.cancel')}</Button>{/if}
   {#if batchResult}<p class="w-full text-[13px] text-fg-2" role="status">{t('panelTools.batchResult', { success: batchResult.succeeded.length, failed: batchResult.failed.length, pending: batchResult.pending.length })}</p>{/if}
 </div>

@@ -10,6 +10,7 @@ export const ru: Record<keyof typeof en, Message> = {
     other: '{count} группы',
   },
   'proxies.search': 'Найти ноду',
+  'proxies.showHidden': 'Показывать скрытые группы',
   'proxies.loading': 'Загружаю группы',
   'proxies.selectError': 'Не удалось выбрать {name}: {message}',
   'proxies.noResponse': 'нет ответа',

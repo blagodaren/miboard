@@ -10,3 +10,5 @@ export function readProxyGroups(): Record<string, boolean> {
     return {}
   }
 }
+
+export const SHOW_HIDDEN_GROUPS_KEY = 'miboard.groups.show-hidden'
