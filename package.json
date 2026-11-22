@@ -1,6 +1,6 @@
 {
   "name": "miboard",
-  "version": "0.3.0",
+  "version": "0.2.1",
   "description": "A lightweight, self-hosted dashboard for mihomo",
   "engines": {
     "node": ">=24"
