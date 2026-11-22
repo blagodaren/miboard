@@ -45,6 +45,7 @@ try {
   await context.addInitScript(({ origin, second }) => {
     if (!localStorage.getItem('miboard.locale')) localStorage.setItem('miboard.locale', 'en')
     localStorage.setItem('miboard.connection-layout', 'table')
+    localStorage.setItem('miboard.device-names.' + encodeURIComponent(origin), JSON.stringify({ '192.168.1.2': 'Laptop' }))
     localStorage.setItem('miboard.backends', JSON.stringify([{ url: origin, secret: 'test', name: 'Fixture A' }, { url: second, secret: 'test', name: 'Fixture B' }]))
     window.__notices = []
     class FixtureNotification {
@@ -109,6 +110,9 @@ try {
     id: `fixture-${index}`, start: new Date(Date.now() - 60000).toISOString(), upload: index * 10, download: index * 100,
     metadata: { type: 'Tun', network: 'tcp', sourceIP: index < 320 ? '192.168.1.2' : '192.168.1.3', sourcePort: '1234', destinationIP: '192.0.2.1', destinationPort: '443', host: index === 0 ? '=malicious()' : `host${index}.example`, process: 'fixture' }, chains: ['Fixture node', 'Fixture group'], rule: 'MATCH', rulePayload: '',
   }))
+  connections[1].metadata.sourceIP = '::ffff:192.168.1.2'
+  connections[1].metadata.sniffHost = 'HOST2.EXAMPLE.'
+  connections[2].chains = [' Fixture node ', 'Fixture group']
   const closed = []
   await page.route(`${origin}/connections/**`, route => {
     const id = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1))
@@ -138,9 +142,23 @@ try {
   const csv = await readFile(await download.path(), 'utf8')
   assert.equal(csv.trim().split('\r\n').length, 361)
   assert(csv.includes("'=malicious()"))
-  await page.getByRole('combobox', { name: 'Filter by', exact: true }).selectOption('device')
-  assert.deepEqual(await page.locator('#connection-filter-options option').evaluateAll(options => options.map(option => option.value)), ['192.168.1.2', '192.168.1.3'], 'Device filter suggests source IPs from the table')
-  await page.getByRole('combobox', { name: 'Exact filter value', exact: true }).fill('192.168.1.2')
+  const filterScope = page.getByRole('combobox', { name: 'Filter by', exact: true })
+  const filterInput = page.getByRole('combobox', { name: 'Exact filter value', exact: true })
+  const options = page.locator('#connection-filter-options option')
+  await filterScope.selectOption('domain')
+  const domains = await options.evaluateAll(items => items.map(item => item.value))
+  assert.equal(domains.length, 361, 'Alternate spelling of a sniffed domain shares its suggestion')
+  assert(domains.indexOf('host2.example') < domains.indexOf('host10.example'))
+  await filterInput.fill('host2.example')
+  assert.equal(await page.locator('table').getAttribute('aria-rowcount'), '3')
+  await filterScope.selectOption('node')
+  await filterInput.fill(' Fixture node ')
+  assert.equal(await page.getByTestId('active-connection-row').getAttribute('data-connection-key'), 'fixture-2')
+  connections[2].chains = ['Fixture node', 'Fixture group']
+  await poll(async () => await page.getByTestId('active-connection-row').count() === 0, 'An absent node does not retarget the selection')
+  await filterScope.selectOption('device')
+  assert.deepEqual(await options.evaluateAll(items => items.map(item => [item.value, item.label])), [['192.168.1.2', 'Laptop'], ['192.168.1.3', '']], 'Mapped and plain IPs share one device suggestion')
+  await filterInput.fill('192.168.1.2')
   await page.getByRole('button', { name: 'Close filtered', exact: true }).click()
   await page.getByRole('alertdialog').waitFor()
   connections.push({ ...connections[0], id: 'late-connection', metadata: { ...connections[0].metadata, host: 'late.example' } })

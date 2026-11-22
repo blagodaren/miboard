@@ -41,6 +41,7 @@
     if (change.key === 'locale') return t('sync.locale')
     if (change.key === 'proxyCardSize') return t('settings.proxyCardSize')
     if (change.key === 'proxyGroupHeight') return t('settings.groupHeight')
+    if (change.key === 'showHiddenGroups') return t('proxies.showHidden')
     if (change.key === 'proxyTestSelection') return t('proxyTest.title')
     if (change.key === 'liveUpdateMode') return t('liveUpdates.mode')
     if (change.key === 'connectionColumns') return t('connectionDetails.columns')

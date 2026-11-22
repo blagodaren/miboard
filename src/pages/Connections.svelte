@@ -18,7 +18,7 @@
   import Info from '@lucide/svelte/icons/info'
   import Columns from '@lucide/svelte/icons/columns-3'
   import { CONNECTION_COLUMNS_KEY, CONNECTION_COLUMN_OPTIONS as columnOptions, DEFAULT_CONNECTION_COLUMNS as defaultColumns, readConnectionColumns, type ConnectionColumn as ColumnKey, CONNECTION_LAYOUT_KEY, readConnectionLayout, type ConnectionLayout, readConnectionSort, saveConnectionSort, type ConnectionSortKey } from '../lib/connection-columns'
-  import { matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
+  import { connectionScopeValues, matchesConnectionScope, closeConnectionBatch, connectionsCsv, downloadText, virtualRange, type ConnectionFilter } from '../lib/table-tools'
   import { pinnedRuleIndices } from '../lib/rules-virtualization'
 
   type SortKey = ConnectionSortKey
@@ -75,6 +75,7 @@
   let confirmFiltered = $state(false)
   let scope = $state<ConnectionFilter>('all')
   let filterValue = $state('')
+  let literalNode = $state('')
   let pendingIds = $state<string[]>([])
   let batchBusy = $state(false), batchDone = $state(0), batchTotal = $state(0)
   let batchResult = $state<{ succeeded: string[]; failed: string[]; pending: string[] } | null>(null)
@@ -156,16 +157,6 @@
   const sourceRows: DisplayRow[] = $derived(view === 'closed'
     ? archived.map(journal => ({ ...journal.connection, dl: 0, ul: 0, journal }))
     : paused ? frozen : core.conns)
-  // Suggestions for the exact-value filter, taken from what is in the table right now.
-  const filterOptions = $derived.by(() => {
-    const values = new Map<string, string>()
-    for (const c of sourceRows) {
-      if (scope === 'device') { const ip = c.metadata.sourceIP?.replace(/^::ffff:/, ''); if (ip) values.set(ip, deviceName(c)) }
-      else if (scope === 'domain') { for (const item of [c.metadata.host, c.metadata.sniffHost, c.metadata.destinationIP]) if (item) values.set(item, '') }
-      else if (scope === 'node') { for (const item of c.chains ?? []) values.set(item, '') }
-    }
-    return [...values].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-  })
   const selectedCurrent = $derived(sourceRows.find(row => rowKey(row) === selected && row.start === selectedSnapshot?.start))
   const detailConnection = $derived(selectedCurrent ?? selectedSnapshot)
   const detailStatus = $derived(detailConnection?.journal ? 'closed' : !selectedCurrent ? 'snapshot' : paused ? 'paused' : core.connectionsOnline ? 'live' : 'offline')
@@ -204,8 +195,25 @@
   // numeric: true keeps ports and IP octets in number order (…:9 before …:10).
   const collator = $derived(new Intl.Collator(i18n.intlLocale, { numeric: true }))
   const text = (a: string, b: string) => collator.compare(a, b)
+  const filterOptions = $derived.by(() => {
+    const options = new Map<string, string>()
+    if (scope === 'all') return []
+    for (const row of sourceRows) {
+      for (const value of connectionScopeValues(row, scope)) {
+        if (!value.trim() || options.has(value)) continue
+        options.set(value, scope === 'device' ? deviceNames[normalizeDeviceIP(value)] || deviceName(row) : '')
+      }
+    }
+    return [...options].sort(([a], [b]) => text(a, b))
+  })
+  function setFilterValue(value: string) {
+    filterValue = value
+    // Resolve once so a live update cannot redirect a selection to a different node.
+    literalNode = scope === 'node' && value !== value.trim() && filterOptions.some(([option]) => option === value) ? value : ''
+  }
   const rows = $derived.by(() => {
-    const src = sourceRows.filter(c => matchesConnectionScope(c, scope, filterValue))
+    const scopedValue = scope === 'node' && literalNode ? literalNode : filterValue.trim()
+    const src = sourceRows.filter(c => matchesConnectionScope(c, scope, scopedValue))
     const q = query.trim().toLowerCase()
     const list = q
       ? src.filter((c) => connectionSearchText(c, deviceName(c)).includes(q))
@@ -390,7 +398,15 @@
       {#each ['all', 'device', 'domain', 'node'] as kind}<option value={kind}>{t(`panelTools.${kind}` as 'panelTools.all')}</option>{/each}
     </select>
   </label>
-  {#if scope !== 'all'}<label class="min-w-0 flex-1 sm:max-w-sm"><span class="sr-only">{t('panelTools.value')}</span><input bind:value={filterValue} list="connection-filter-options" placeholder={t('panelTools.value')} class="min-h-11 w-full rounded-control border border-field-border bg-field px-3 text-[13px] text-fg" /><datalist id="connection-filter-options">{#each filterOptions as [value, label] (value)}<option {value}>{label}</option>{/each}</datalist></label>{/if}
+  {#if scope !== 'all'}
+    <label class="min-w-0 flex-1 sm:max-w-sm">
+      <span class="sr-only">{t('panelTools.value')}</span>
+      <input bind:value={() => filterValue, setFilterValue} list="connection-filter-options" placeholder={t('panelTools.value')} class="min-h-11 w-full rounded-control border border-field-border bg-field px-3 text-[13px] text-fg" />
+    </label>
+    <datalist id="connection-filter-options">
+      {#each filterOptions as [value, label] (value)}<option {value}>{label}</option>{/each}
+    </datalist>
+  {/if}
   {#if batchBusy}<span class="text-xs text-fg-3" role="status">{t('panelTools.progress', { done: batchDone, total: batchTotal })}</span><Button size="sm" onclick={() => batchController?.abort()}>{t('panelTools.cancel')}</Button>{/if}
   {#if batchResult}<p class="w-full text-[13px] text-fg-2" role="status">{t('panelTools.batchResult', { success: batchResult.succeeded.length, failed: batchResult.failed.length, pending: batchResult.pending.length })}</p>{/if}
 </div>

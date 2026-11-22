@@ -14,7 +14,7 @@
   import { delaySettings } from '../lib/latency.svelte'
   import { appearance } from '../lib/appearance.svelte'
   import { runProxyGroupBatch } from '../lib/proxy-batch'
-  import { PROXY_GROUPS_KEY, SHOW_HIDDEN_GROUPS_KEY, readProxyGroups } from '../lib/proxy-groups'
+  import { PROXY_GROUPS_KEY, SHOW_HIDDEN_GROUPS_KEY, readProxyGroups, readShowHiddenGroups } from '../lib/proxy-groups'
   import { visibleProxyProviders } from '../lib/provider-tools'
   import { IconCheck, IconClose, IconChevron, IconZap, IconCopy } from '../lib/icons'
   import PageHeader from '../components/PageHeader.svelte'
@@ -113,10 +113,11 @@
   const groupsTesting = $derived(Object.keys(testing).length > 0)
   const nodesTesting = $derived(Object.keys(nodeTesting).length > 0)
   let open = $state.raw<Record<string, boolean>>(readProxyGroups())
-  let showHidden = $state((() => { try { return localStorage.getItem(SHOW_HIDDEN_GROUPS_KEY) === '1' } catch { return false } })())
+  let showHidden = $state(readShowHiddenGroups())
   function changeShowHidden(value: boolean) {
     showHidden = value
     try { localStorage.setItem(SHOW_HIDDEN_GROUPS_KEY, value ? '1' : '0') } catch { /* ок */ }
+    if (value) void revealLinkedGroup()
   }
   let sorting = $state<Record<string, ProxySort>>({})
   let selecting = $state<Record<string, boolean>>({})
@@ -699,7 +700,7 @@
         <section id={groupElementId(g.name)} class="proxy-group min-w-0 scroll-mt-20 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-card shadow-[var(--shadow-panel)]">
           <div class="flex items-center gap-2 py-1 pl-1 pr-2">
             <button
-              class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
+              class="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-hover"
               aria-expanded={isOpen}
               onclick={() => toggle(g.name, isOpen)}
             >

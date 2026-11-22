@@ -5,7 +5,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'proxy-groups', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -62,6 +62,7 @@ test('connection views, independent sorts and navigation round-trip while older 
   const sorts = { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } }
   const source = session({
     'miboard.connection-layout': 'table', 'miboard.connection-sort.v1': sorts,
+    'miboard.groups.show-hidden': '1',
     'miboard.mobile-nav.v1': ['history', 'fleet', 'connections', 'settings'], 'miboard.sidebar-collapsed': '1',
   })
   const target = session()
@@ -70,6 +71,7 @@ test('connection views, independent sorts and navigation round-trip while older 
   assert.equal(exported.connectionLayout, 'table')
   assert.deepEqual(exported.connectionSort, sorts)
   assert.deepEqual(exported.mobileNav.slice(0, 4), ['history', 'fleet', 'connections', 'settings'])
+  assert.equal(exported.showHiddenGroups, true)
   assert.equal(exported.sidebarCollapsed, true)
   const preview = target.transfer.previewSettingsImport(output)
   assert.equal(preview.invalid, 0)
@@ -78,6 +80,7 @@ test('connection views, independent sorts and navigation round-trip while older 
   assert.equal(target.store.get('miboard.connection-layout'), 'table')
   assert.deepEqual(JSON.parse(target.store.get('miboard.connection-sort.v1')!), sorts)
   assert.deepEqual(JSON.parse(target.store.get('miboard.mobile-nav.v1')!), exported.mobileNav)
+  assert.equal(target.store.get('miboard.groups.show-hidden'), '1')
   assert.equal(target.store.get('miboard.sidebar-collapsed'), '1')
   const before = target.snapshot()
   target.transfer.applySettingsImport(target.transfer.previewSettingsImport(JSON.stringify(base())))
@@ -118,7 +121,7 @@ test('malformed navigation, sort and CSS preferences invalidate the entire impor
     { connectionSort: { unknown: { key: 'host', direction: 'asc' } } },
     { connectionSort: [{ key: 'host', direction: 'asc' }] },
     { mobileNav: ['connections', 'connections'] }, { mobileNav: ['injected'] }, { mobileNav: 'connections' },
-    { sidebarCollapsed: '1' }, { customCss: { text: 'body {}' } }, { customCss: 'x'.repeat(64 * 1024 + 1) },
+    { showHiddenGroups: 'true' }, { sidebarCollapsed: '1' }, { customCss: { text: 'body {}' } }, { customCss: 'x'.repeat(64 * 1024 + 1) },
     { themeSource: { url: 'https://external.invalid/theme.css', enabled: true } },
   ]) {
     const preview = s.transfer.previewSettingsImport(JSON.stringify(base({ preferences })))
@@ -137,7 +140,7 @@ test('a late storage failure rolls back every new preference including explicitl
   const before = s.snapshot()
   const preview = s.transfer.previewSettingsImport(JSON.stringify(base({ preferences: {
     connectionLayout: 'cards', connectionSort: { closed: { key: 'total', direction: 'asc' } },
-    mobileNav: ['fleet'], sidebarCollapsed: false, customCss: 'body { color: red; }', theme: 'dark',
+    showHiddenGroups: true, mobileNav: ['fleet'], sidebarCollapsed: false, customCss: 'body { color: red; }', theme: 'dark',
   } })))
   s.failNext('miboard.theme')
   assert.throws(() => s.transfer.applySettingsImport(preview, { includeCustomCss: true }), { code: 'storage' })

@@ -5,7 +5,6 @@
   import ChartNoAxesColumn from '@lucide/svelte/icons/chart-no-axes-column'
   import Globe from '@lucide/svelte/icons/globe'
   import Link2 from '@lucide/svelte/icons/link-2'
-  import Network from '@lucide/svelte/icons/network'
   import { bytes, count } from '../lib/format'
   import { i18n, t } from '../lib/i18n.svelte'
 
@@ -67,7 +66,7 @@
       {/each}
     </ol>
   {:else}
-    <div class="empty-ranking"><Network size={24} strokeWidth={1.5} aria-hidden="true" /><p>{t('overview.noSessionData')}</p></div>
+    <p class="empty-ranking">{t('overview.noSessionData')}</p>
   {/if}
 </section>
 
@@ -85,8 +84,8 @@
   .metric-control button:hover { background: var(--hover); color: var(--text); }
   .metric-control button[aria-pressed='true'] { color: var(--selected-text); border-color: var(--selected-border); background: var(--selected); }
   .metric-control button:active { transform: translateY(1px); }
-  .ranking-list { display: flex; flex-direction: column; gap: 6px; }
-  .ranking-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
+  .ranking-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 8px 0; }
+  .ranking-row + .ranking-row { border-top: 1px solid var(--line); }
   .rank { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--text-3); font-size: 12px; font-weight: 400; }
   .row-content { flex: 1; min-width: 0; }
   .row-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; line-height: 20px; }
@@ -94,7 +93,7 @@
   .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .country-flag { flex-shrink: 0; font-size: 15px; }
   .row-value { flex-shrink: 0; font-size: 13px; font-weight: 500; white-space: nowrap; }
-  .traffic-bar { display: flex; margin: 6px 0; height: 4px; overflow: hidden; border-radius: 4px; background: var(--raised); }
+  .traffic-bar { display: flex; margin: 4px 0; height: 4px; overflow: hidden; border-radius: 4px; background: var(--raised); }
   .traffic-bar span { height: 100%; }
   .bar-down { background: var(--traffic-down-line); }
   .bar-up { background: var(--traffic-up-line); }
@@ -105,7 +104,7 @@
   .connections { min-width: 0; }
   .row-meta :global(svg) { flex-shrink: 0; }
   .row-meta > .share { margin-left: auto; }
-  .empty-ranking { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 132px; padding: 20px; border: 1px dashed var(--line); border-radius: var(--radius-card); color: var(--text-3); font-size: 12px; text-align: center; }
+  .empty-ranking { padding: 12px 0; color: var(--text-3); font-size: 12px; }
   @media (min-width: 1100px) and (max-width: 1279px) { .row-meta { flex-wrap: wrap; gap: 4px 8px; } .row-meta > .share { margin-left: 0; } }
   @media (max-width: 767px) { .ranking { padding: 16px; } .metric-control button { width: 44px; height: 44px; } .row-meta { gap: 8px; } }
   @media (prefers-reduced-motion: reduce) { .ranking-title, .ranking-title :global(.open-icon), .metric-control button { transition: none; } }

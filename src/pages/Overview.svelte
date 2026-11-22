@@ -106,21 +106,22 @@
     {/snippet}
   </PageHeader>
 
-  <section class="summary-grid" aria-label={t('overview.summary')}>
-    {#each stats as stat (stat.id)}
-      <div class="summary-card" data-testid="overview-stat" data-stat={stat.id}>
-        <dl>
+  <section aria-label={t('overview.summary')}>
+    <dl class="summary-grid">
+      {#each stats as stat (stat.id)}
+        <div class="summary-card" data-testid="overview-stat" data-stat={stat.id}>
           <dt>{stat.label}</dt>
-          <dd><span class="stat-value num">{stat.value}</span>
+          <dd>
+            <span class="stat-value num">{stat.value}</span>
             {#if stat.id === 'rules' && rulesError}
               <button class="stat-caption retry" onclick={refreshRules} disabled={rulesLoading}>{t('overview.retryRules')}</button>
             {:else}
               <span class="stat-caption num">{stat.caption}</span>
             {/if}
           </dd>
-        </dl>
-      </div>
-    {/each}
+        </div>
+      {/each}
+    </dl>
   </section>
 
   <section class="trend-card" aria-labelledby="traffic-title">
@@ -161,12 +162,12 @@
 </div>
 
 <style>
-  .summary-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-  .summary-card { min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  .summary-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--line); box-shadow: var(--shadow-panel); }
+  .summary-card { min-width: 0; padding: 12px 16px; background: var(--card); }
   dt { color: var(--text-2); font-size: 12px; font-weight: 400; line-height: 16px; }
-  dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-top: 2px; }
-  .stat-value { white-space: nowrap; font-size: 20px; line-height: 28px; font-weight: 500; }
-  .stat-caption { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; line-height: 16px; }
+  dd { display: grid; justify-items: start; margin-top: 4px; }
+  .stat-value { font-size: 20px; line-height: 24px; font-weight: 500; }
+  .stat-caption { color: var(--text-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
   .retry { text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .retry:hover { color: var(--text); }
   .live-state { display: inline-flex; align-items: center; gap: 8px; min-height: 24px; color: var(--text-3); font-size: 12px; }
@@ -197,13 +198,11 @@
   .geo-note button { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   @media (max-width: 1279px) {
     .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .rankings-grid { gap: 16px; }
   }
   @media (min-width: 768px) and (max-width: 1099px) { .rankings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 767px) {
-    .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .summary-card { padding: 10px 12px; border-radius: var(--radius-card); }
-    .trend-card { margin-top: 24px; padding: 16px; }
+    .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .summary-card { padding: 8px 12px; }
     .trend-heading, .trend-details { align-items: flex-start; flex-wrap: wrap; }
     .trend-heading { gap: 16px; }
     .range-control { width: 100%; }
@@ -214,6 +213,5 @@
     .rankings-meta { margin-top: 20px; }
     .current-speed { display: none; }
   }
-  @media (max-width: 359px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (prefers-reduced-motion: reduce) { .range-control button { transition: none; } }
 </style>

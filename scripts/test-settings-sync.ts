@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 const code = new Map<string, string>()
-for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'settings-sync']) {
+for (const file of ['api', 'devices', 'latency', 'appearance', 'mobile-nav', 'custom-css', 'live-updates', 'proxy-test-selection', 'proxy-groups', 'connection-columns', 'provider-alerts', 'journal-preferences', 'settings-transfer', 'settings-sync']) {
   code.set('./' + file, ts.transpileModule(readFileSync(new URL(`../src/lib/${file}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText)
@@ -50,16 +50,18 @@ const document = (extra: Record<string, unknown> = {}) => ({ format: 'miboard-sy
 test('new navigation and connection preferences sync with readable per-view differences and preserve older copies', () => {
   const source = session({
     'miboard.connection-layout': 'table', 'miboard.connection-sort.v1': { active: { key: 'host', direction: 'asc' }, closed: { key: 'total', direction: 'desc' } },
+    'miboard.groups.show-hidden': '1',
     'miboard.mobile-nav.v1': ['history', 'fleet', 'connections', 'settings'], 'miboard.sidebar-collapsed': '1',
   })
   const target = session()
   const remote = target.sync.parseSyncDocument(source.sync.createSyncDocument(source.sync.localSyncData(url), url), otherUrl)
   const preview = target.sync.previewSync('pull', remote, otherUrl)
-  for (const key of ['connectionLayout', 'connectionSort.active', 'connectionSort.closed', 'mobileNav', 'sidebarCollapsed']) {
+  for (const key of ['connectionLayout', 'connectionSort.active', 'connectionSort.closed', 'mobileNav', 'sidebarCollapsed', 'showHiddenGroups']) {
     assert.ok(preview.changes.some((change: { key: string }) => change.key === key), key)
   }
   target.sync.applySyncPull(preview, otherUrl)
   assert.equal(target.store.get('miboard.connection-layout'), 'table')
+  assert.equal(target.store.get('miboard.groups.show-hidden'), '1')
   assert.equal(target.store.get('miboard.sidebar-collapsed'), '1')
   assert.deepEqual(JSON.parse(target.store.get('miboard.mobile-nav.v1')!).slice(0, 4), ['history', 'fleet', 'connections', 'settings'])
   const before = target.snapshot()

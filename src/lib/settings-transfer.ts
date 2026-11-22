@@ -2,6 +2,7 @@ import { createSavedBackend, normalizeUrl, savedBackends, updateSavedBackend, ty
 import { normalizeDeviceIP } from './devices'
 import { DEFAULT_DELAY_SETTINGS, readDelaySettings, validDelaySettings, type DelaySettings } from './latency'
 import type { ProxySort } from './proxy-sort'
+import { SHOW_HIDDEN_GROUPS_KEY, readShowHiddenGroups } from './proxy-groups'
 import { PROXY_CARD_SIZE_KEY, readProxyCardSize, validProxyCardSize, type ProxyCardSize, PROXY_GROUP_HEIGHT_KEY, readProxyGroupHeight, validProxyGroupHeight, type ProxyGroupHeight, SIDEBAR_COLLAPSED_KEY, readSidebarCollapsed } from './appearance'
 import { LIVE_UPDATE_MODE_KEY, readLiveUpdateMode, validLiveUpdateMode, type LiveUpdateMode } from './live-updates'
 import { PROXY_TEST_SELECTION_PREFIX, proxyTestSelectionKey, validProxyTestSelection, type ProxyTestSelection } from './proxy-test-selection'
@@ -23,6 +24,7 @@ type Preferences = {
   theme?: 'system' | 'light' | 'dark'; locale?: 'en' | 'ru'; latency?: DelaySettings; groups?: Record<string, boolean>
   proxyCardSize?: ProxyCardSize; proxyGroupHeight?: ProxyGroupHeight; liveUpdateMode?: LiveUpdateMode; connectionColumns?: ConnectionColumn[]
   connectionLayout?: ConnectionLayout; connectionSort?: Partial<Record<SortView, ConnectionSort>>
+  showHiddenGroups?: boolean
   mobileNav?: NavRoute[]; sidebarCollapsed?: boolean; customCss?: string
 }
 export type SettingsDocument = {
@@ -154,6 +156,7 @@ function readLocal(): SettingsDocument {
         theme: theme === 'light' || theme === 'dark' ? theme : 'system', locale: locale === 'ru' ? 'ru' : 'en',
         latency: validDelaySettings(latency) ? Object.fromEntries(Object.keys(DEFAULT_DELAY_SETTINGS).map((key) => [key, latency[key as keyof DelaySettings]])) as DelaySettings : { ...DEFAULT_DELAY_SETTINGS },
         groups: validGroups(groups) ? groups : {},
+        showHiddenGroups: readShowHiddenGroups(),
         proxyCardSize: readProxyCardSize(),
         proxyGroupHeight: readProxyGroupHeight(),
         liveUpdateMode: readLiveUpdateMode(),
@@ -233,12 +236,16 @@ function validate(value: unknown): { document: SettingsDocument | null; issues: 
       else { seen.add(url); journalRetentions.push({ backendUrl: url, retention: entry.retention }) }
     })
   }
-  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode', 'connectionColumns', 'connectionLayout', 'connectionSort', 'mobileNav', 'sidebarCollapsed', 'customCss'])) issues.push('preferences')
+  if (!record(p) || !ownKeys(p, ['theme', 'locale', 'latency', 'groups', 'showHiddenGroups', 'proxyCardSize', 'proxyGroupHeight', 'liveUpdateMode', 'connectionColumns', 'connectionLayout', 'connectionSort', 'mobileNav', 'sidebarCollapsed', 'customCss'])) issues.push('preferences')
   else {
     if (p.theme !== undefined) { if (p.theme === 'system' || p.theme === 'light' || p.theme === 'dark') preferences.theme = p.theme; else issues.push('preferences.theme') }
     if (p.locale !== undefined) { if (p.locale === 'en' || p.locale === 'ru') preferences.locale = p.locale; else issues.push('preferences.locale') }
     if (p.latency !== undefined) { if (record(p.latency) && ownKeys(p.latency, Object.keys(DEFAULT_DELAY_SETTINGS)) && validDelaySettings(p.latency)) preferences.latency = { ...p.latency }; else issues.push('preferences.latency') }
     if (p.groups !== undefined) { if (validGroups(p.groups)) preferences.groups = { ...p.groups }; else issues.push('preferences.groups') }
+    if (p.showHiddenGroups !== undefined) {
+      if (typeof p.showHiddenGroups === 'boolean') preferences.showHiddenGroups = p.showHiddenGroups
+      else issues.push('preferences.showHiddenGroups')
+    }
     if (p.proxyCardSize !== undefined) { if (validProxyCardSize(p.proxyCardSize)) preferences.proxyCardSize = p.proxyCardSize; else issues.push('preferences.proxyCardSize') }
     if (p.proxyGroupHeight !== undefined) { if (validProxyGroupHeight(p.proxyGroupHeight)) preferences.proxyGroupHeight = p.proxyGroupHeight; else issues.push('preferences.proxyGroupHeight') }
     if (p.liveUpdateMode !== undefined) { if (validLiveUpdateMode(p.liveUpdateMode)) preferences.liveUpdateMode = p.liveUpdateMode; else issues.push('preferences.liveUpdateMode') }
@@ -338,6 +345,7 @@ export function applySettingsImport(input: SettingsImportPreview, { includeCusto
   document.providerAlerts?.forEach((item) => keys.add(providerAlertsKey(item.backendUrl)))
   document.journalRetentions?.forEach((item) => keys.add(journalRetentionKey(item.backendUrl)))
   const preferenceKeys: Record<string, string> = {
+    showHiddenGroups: SHOW_HIDDEN_GROUPS_KEY,
     latency: 'miboard.latency.v1', proxyCardSize: PROXY_CARD_SIZE_KEY, proxyGroupHeight: PROXY_GROUP_HEIGHT_KEY,
     liveUpdateMode: LIVE_UPDATE_MODE_KEY, connectionColumns: CONNECTION_COLUMNS_KEY, connectionLayout: CONNECTION_LAYOUT_KEY,
     connectionSort: CONNECTION_SORT_KEY, mobileNav: MOBILE_NAV_KEY, sidebarCollapsed: SIDEBAR_COLLAPSED_KEY, customCss: CUSTOM_CSS_KEY,
@@ -368,6 +376,7 @@ export function applySettingsImport(input: SettingsImportPreview, { includeCusto
     for (const item of document.journalRetentions ?? []) localStorage.setItem(journalRetentionKey(item.backendUrl), item.retention)
     const p = document.preferences
     if (p.groups !== undefined) localStorage.setItem('miboard.groups', JSON.stringify({ ...current.preferences.groups, ...p.groups }))
+    if (p.showHiddenGroups !== undefined) localStorage.setItem(SHOW_HIDDEN_GROUPS_KEY, p.showHiddenGroups ? '1' : '0')
     if (p.latency !== undefined) localStorage.setItem('miboard.latency.v1', JSON.stringify(p.latency))
     if (p.proxyCardSize !== undefined) localStorage.setItem(PROXY_CARD_SIZE_KEY, p.proxyCardSize)
     if (p.proxyGroupHeight !== undefined) localStorage.setItem(PROXY_GROUP_HEIGHT_KEY, p.proxyGroupHeight)

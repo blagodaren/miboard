@@ -2,11 +2,20 @@ import type { Connection } from './api'
 
 export type ConnectionFilter = 'all' | 'device' | 'domain' | 'node'
 const host = (value: string) => value.trim().toLowerCase().replace(/\.$/, '')
+const deviceIP = (value: string) => value.trim().replace(/^::ffff:/i, '')
+
+export function connectionScopeValues(connection: Connection, scope: Exclude<ConnectionFilter, 'all'>): string[] {
+  if (scope === 'node') return connection.chains ?? []
+  if (scope === 'device') return [deviceIP(connection.metadata.sourceIP ?? '')]
+  return [connection.metadata.host, connection.metadata.sniffHost, connection.metadata.destinationIP]
+    .filter((value): value is string => typeof value === 'string')
+    .map(host)
+}
+
 export function matchesConnectionScope(connection: Connection, scope: ConnectionFilter, value: string): boolean {
   if (scope === 'all' || !value.trim()) return true
-  if (scope === 'device') return connection.metadata.sourceIP?.replace(/^::ffff:/, '') === value.trim().replace(/^::ffff:/, '')
-  if (scope === 'node') return connection.chains?.includes(value.trim()) ?? false
-  return [connection.metadata.host, connection.metadata.sniffHost, connection.metadata.destinationIP].some(item => typeof item === 'string' && host(item) === host(value))
+  const key = scope === 'domain' ? host(value) : scope === 'device' ? deviceIP(value) : value
+  return !!key && connectionScopeValues(connection, scope).includes(key)
 }
 
 export type CloseBatchResult = { succeeded: string[]; failed: string[]; pending: string[] }
