@@ -229,12 +229,12 @@
 <style>
   .live-status { display: inline-flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 12px; }
   .device-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
-  .summary-item { min-width: 0; padding: 20px; }
+  .summary-item { min-width: 0; padding: 10px 14px; }
   .summary-item + .summary-item { border-left: 1px solid var(--line); }
   .summary-label { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
   .summary-label h2 { font-size: 12px; font-weight: 400; }
-  .summary-value { margin-top: 12px; font-size: 28px; line-height: 32px; font-weight: 500; }
-  .summary-caption { margin-top: 8px; overflow: hidden; color: var(--text-3); font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-value { margin-top: 2px; font-size: 20px; line-height: 28px; font-weight: 500; }
+  .summary-caption { margin-top: 0; overflow: hidden; color: var(--text-3); font-size: 12px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
   .stream-warning { margin-top: 16px; padding: 12px 16px; border: 1px solid var(--warning-border); border-radius: var(--radius-card); background: var(--warning-surface); color: var(--text-2); font-size: 13px; }
   .devices-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 16px; }
   .device-search { min-width: 0; flex: 1; }
@@ -306,10 +306,10 @@
   @media (max-width: 1099px) { .devices-layout { grid-template-columns: minmax(0, 1fr); } .device-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 360px; } }
   @media (max-width: 767px) {
     .device-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .summary-item { padding: 16px; }
+    .summary-item { padding: 10px 12px; }
     .summary-item:nth-child(3) { border-left: 0; }
     .summary-item:nth-child(n+3) { border-top: 1px solid var(--line); }
-    .summary-value { font-size: 24px; }
+    .summary-value { font-size: 20px; }
     .devices-toolbar { align-items: stretch; }
     .device-search { flex-basis: 100%; }
     .device-search :global(label) { max-width: none; }

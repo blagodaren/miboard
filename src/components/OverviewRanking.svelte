@@ -72,8 +72,8 @@
 </section>
 
 <style>
-  .ranking { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
-  .ranking-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .ranking { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); box-shadow: var(--shadow-panel); }
+  .ranking-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
   .ranking-title { display: flex; min-width: 0; align-items: center; gap: 8px; min-height: 36px; color: var(--text); transition: color 150ms; }
   .ranking-title:hover { color: var(--accent-ink); }
   h2 { font-size: 14px; line-height: 20px; font-weight: 500; }
@@ -85,8 +85,8 @@
   .metric-control button:hover { background: var(--hover); color: var(--text); }
   .metric-control button[aria-pressed='true'] { color: var(--selected-text); border-color: var(--selected-border); background: var(--selected); }
   .metric-control button:active { transform: translateY(1px); }
-  .ranking-list { display: flex; flex-direction: column; gap: 8px; }
-  .ranking-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
+  .ranking-list { display: flex; flex-direction: column; gap: 6px; }
+  .ranking-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
   .rank { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--text-3); font-size: 12px; font-weight: 400; }
   .row-content { flex: 1; min-width: 0; }
   .row-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; line-height: 20px; }
@@ -94,7 +94,7 @@
   .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .country-flag { flex-shrink: 0; font-size: 15px; }
   .row-value { flex-shrink: 0; font-size: 13px; font-weight: 500; white-space: nowrap; }
-  .traffic-bar { display: flex; margin: 8px 0; height: 4px; overflow: hidden; border-radius: 4px; background: var(--raised); }
+  .traffic-bar { display: flex; margin: 6px 0; height: 4px; overflow: hidden; border-radius: 4px; background: var(--raised); }
   .traffic-bar span { height: 100%; }
   .bar-down { background: var(--traffic-down-line); }
   .bar-up { background: var(--traffic-up-line); }

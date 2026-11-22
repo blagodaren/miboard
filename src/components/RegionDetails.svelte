@@ -147,7 +147,7 @@
 
 <style>
   .regions-panel { overflow-anchor: none; }
-  .regions-panel { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
+  .regions-panel { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--card); }
   .regions-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
   h2 { font-size: 14px; line-height: 20px; font-weight: 500; }
   .share-hint { margin-top: 4px; color: var(--text-3); font-size: 12px; line-height: 18px; }

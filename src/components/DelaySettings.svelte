@@ -176,7 +176,8 @@
         {#if formError}<p class="min-w-0 text-xs text-bad" role="alert">{t('latency.errorSettings')}</p>{/if}
         <div class="ml-auto flex items-center gap-2">
           <Button type="button" size="sm" variant="ghost" onclick={reset}>{t('latency.reset')}</Button>
-          <Button type="submit" size="sm">{t('latency.save')}</Button>
+          <!-- Keep focus in the field until click: a blur on mousedown shows errors, shifts the button and the click misses. -->
+          <Button type="submit" size="sm" onmousedown={(event: MouseEvent) => event.preventDefault()}>{t('latency.save')}</Button>
         </div>
       </div>
     </form>

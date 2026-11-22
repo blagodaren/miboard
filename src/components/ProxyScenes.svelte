@@ -136,7 +136,7 @@
   }
 </script>
 
-<details class="mb-4 min-w-0 rounded-panel border border-line bg-card" data-testid="proxy-scenes">
+<details class="min-w-0 rounded-panel border border-line bg-card" data-testid="proxy-scenes">
   <summary class="min-h-11 cursor-pointer px-4 py-3 text-[13px] font-medium">{t('scenes.title')} <span class="ml-2 font-mono text-xs text-fg-3">{document.scenes.length}/{SCENES_LIMIT}</span></summary>
   <div class="space-y-4 border-t border-line p-4">
     <p class="text-xs leading-5 text-fg-3">{t('scenes.hint')}</p>
