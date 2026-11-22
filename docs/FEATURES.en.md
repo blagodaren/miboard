@@ -11,7 +11,7 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.2.0/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.3.0/dist.zip"
 ```
 
 Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
@@ -171,6 +171,8 @@ Tests: `npm run test:devices`; with Vite running, `npm run test:devices:ui`.
 ## Proxies and providers
 
 `#/proxies` has **Groups** and **Providers** tabs. `#/proxies?tab=providers` opens providers directly; navigation preserves filters and open groups and supports browser history.
+
+**Show hidden groups** includes groups marked `hidden` by the core. The dashboard remembers your choice. When you follow a link to a hidden group, turn this option on to open it.
 
 Groups occupy two or three columns on wide screens. Node cards show protocol and latency, including provider nodes. **Settings → Appearance** offers large or compact cards and compact, tall or unlimited group lists. Long compact/tall lists scroll inside each group on wide screens; narrow screens keep natural height. Preferences apply immediately and persist in the browser.
 
@@ -418,8 +420,8 @@ as the subscription's complete usage.
 
 ## Filtered closing, exports and keyboard shortcuts
 
-**Connections** supports exact filtering by device IP, destination domain/IP or node/group
-and closing the matching connections. Confirmation captures the IDs at that moment; connections
+In **Connections**, the exact filter suggests device IPs, domains, destination IPs and nodes from the current list.
+Choose a suggestion or enter a value to see matching connections. You can close the matches. Confirmation captures the IDs at that moment; connections
 created later are excluded. Progress and partial failures are reported, and remaining commands
 can be stopped. Client applications may immediately reconnect.
 

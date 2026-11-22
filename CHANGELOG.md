@@ -1,5 +1,25 @@
 # Журнал изменений
 
+## [0.3.0] — 2026-11-22
+
+### Русский
+
+- В разделе «Прокси» переключатель «Показывать скрытые группы» открывает доступ к группам, которые ядро обычно скрывает. Выбор сохраняется в браузере и переносится при экспорте, импорте и синхронизации настроек.
+- В «Соединениях» точный фильтр предлагает IP устройств, домены, адреса назначения и узлы из текущего списка. Для известных устройств рядом с IP отображается имя. Значение по-прежнему можно ввести вручную.
+- В «Обзоре» шесть показателей собраны в одну сводку. Подписи переносятся на узких экранах, а строки рейтинга разделены линиями. График входящего и исходящего трафика остаётся в центре страницы.
+- Уплотнены списки прокси, устройств и журналов. На телефоне выбранный узел виден под именем группы, а на широком экране панели инструментов прокси занимают две колонки.
+
+Спасибо [@prettyleaf](https://github.com/prettyleaf) за [PR #11](https://github.com/blagodaren/miboard/pull/11) и [PR #12](https://github.com/blagodaren/miboard/pull/12).
+
+### English
+
+- In Proxies, **Show hidden groups** reveals groups normally hidden by the core. The preference persists in the browser and transfers through settings export, import and sync.
+- The exact filter in Connections suggests device IPs, domains, destination addresses and chain nodes from the current list. Known devices show their names alongside their IPs. Manual entry remains available.
+- Overview brings six metrics into one summary. Captions wrap on narrow screens and dividers separate ranking entries. The chart shows download and upload traffic together.
+- Proxy, device and log lists use less space. On phones the selected node appears below the group name. On wider screens proxy tools share two columns.
+
+Thanks to [@prettyleaf](https://github.com/prettyleaf) for [PR #11](https://github.com/blagodaren/miboard/pull/11) and [PR #12](https://github.com/blagodaren/miboard/pull/12).
+
 ## [0.2.0] — 2026-11-17
 
 ### Русский
