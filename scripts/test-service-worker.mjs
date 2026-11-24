@@ -48,7 +48,7 @@ function createWorker({ id = 'aaaaaaaaaaaaaaaa', scope = 'https://dashboard.test
     [`assets/app-${id[0]}.js`, Buffer.from(`console.log('${id[0]}')`)],
     ['manifest.webmanifest', Buffer.from('{}')],
   ])
-  const urls = new Map([...files].map(([name, bytes]) => [new URL(name, scope).href, bytes]))
+  const urls = new Map([...files].map(([name, bytes]) => [name === 'index.html' ? scope : new URL(name, scope).href, bytes]))
   const calls = []
   const handlers = new Map()
   let claimed = 0
@@ -124,6 +124,10 @@ test('install verifies static bytes and never activates an update without an exp
   await worker.lifecycle('install')
   assert.equal(worker.calls.length, 3)
   assert(worker.calls.every(call => call.method === 'GET' && !call.authorization))
+  const index = new URL('index.html', worker.scope).href
+  assert(worker.calls.some(call => call.url === worker.scope), 'Request the canonical directory URL')
+  assert(!worker.calls.some(call => call.url === index), 'Do not follow mihomo’s index.html redirect')
+  assert(worker.storage.puts.some(entry => entry.key === index), 'Preserve the canonical cache key for navigations')
   assert.equal(worker.claimed, 0)
   assert.equal(worker.skipped, 0, 'Installation must not call skipWaiting')
   assert.deepEqual(await worker.storage.keys(), [cacheName(worker.scope, worker.id)])
@@ -238,7 +242,7 @@ test('static cache hits work offline and network fallbacks never become runtime 
 })
 
 test('corrupt, redirected, missing and failed downloads remove only the failed install and preserve active A', async () => {
-  for (const failure of ['hash', 'redirect', 'missing', 'network']) {
+  for (const failure of ['hash', 'redirect', 'index redirect', 'missing', 'network']) {
     const storage = new MemoryCacheStorage()
     const a = createWorker({ storage })
     await a.lifecycle('install'); await a.lifecycle('activate')
@@ -251,7 +255,9 @@ test('corrupt, redirected, missing and failed downloads remove only the failed i
         if (failure === 'redirect') Object.defineProperty(response, 'redirected', { value: true })
         return response
       }
-      return new Response(files.get(url))
+      const response = new Response(files.get(url))
+      if (failure === 'index redirect' && url === a.scope) Object.defineProperty(response, 'redirected', { value: true })
+      return response
     } })
     await assert.rejects(update.lifecycle('install'), /cache|deployment|Fixture/)
     assert.deepEqual(new Set(await storage.keys()), before, failure)

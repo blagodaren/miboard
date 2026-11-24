@@ -4,15 +4,15 @@
 
 ### Русский
 
-- В «Настройки → Приложение и обслуживание → Приложение → Обновления» кнопка «Обновить MIBoard» загружает новый стабильный релиз через mihomo, которое обслуживает открытую панель. Ядро скачивает архив из `external-ui-url`. MIBoard проверяет версию по адресу панели и перезагружает вкладку.
+- В «Настройки → Приложение и обслуживание → Приложение → Обновления» кнопка «Обновить MIBoard» загружает новый стабильный релиз через ядро mihomo, которое обслуживает открытую панель. Ядро скачивает архив из `external-ui-url`. MIBoard проверяет версию по адресу панели и перезагружает вкладку.
 - В том же блоке можно включить фоновую загрузку для этой установки. Чтобы применить готовую сборку, нажмите «Обновить и перезагрузить».
-- В примере конфигурации `external-ui-url` указывает на последний стабильный архив. Для перехода со старой закреплённой версии обновите URL в конфигурации ядра один раз.
+- Для первого перехода с 0.2.1 укажите в `external-ui-url` [адрес последнего архива](https://github.com/blagodaren/miboard/releases/latest/download/dist.zip) и примените конфигурацию mihomo. В «Обновления ядра» нажмите «Обновить панель на ядре». После загрузки нажмите «Перезагрузить панель».
 
 ### English
 
 - In **Settings → App and maintenance → Application → Updates**, **Update MIBoard** downloads a newer stable release through the mihomo core that serves the open dashboard. The core downloads the archive from `external-ui-url`. MIBoard verifies the version at the dashboard URL and reloads the tab.
 - You can enable background downloads for this installation in the same section. Select **Update and reload** to apply the prepared build.
-- The configuration example now uses the latest stable archive for `external-ui-url`. When upgrading from a pinned older version, update the URL in the core configuration once.
+- To upgrade from 0.2.1, set `external-ui-url` to the [latest archive](https://github.com/blagodaren/miboard/releases/latest/download/dist.zip) and apply the mihomo configuration. Under **Core updates**, select **Update hosted dashboard**. Select **Reload dashboard** when the download finishes.
 
 ## [0.2.1] — 2026-11-22
 

@@ -15,7 +15,9 @@ self.addEventListener('install', event => {
       for (let offset = 0; offset < STATIC_FILES.length; offset += 4) {
         const results = await Promise.allSettled(STATIC_FILES.slice(offset, offset + 4).map(async file => {
           const url = new URL(file.path, BASE).href
-          const response = await fetch(new Request(url, { cache: 'reload', credentials: 'same-origin' }))
+          // mihomo redirects index.html to the scope root, which serves the same file.
+          const source = url === INDEX ? BASE.href : url
+          const response = await fetch(new Request(source, { cache: 'reload', credentials: 'same-origin' }))
           if (!response.ok || response.redirected) throw new Error(`Cannot cache ${file.path}`)
           const bytes = await response.clone().arrayBuffer()
           const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]

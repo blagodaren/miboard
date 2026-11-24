@@ -57,6 +57,8 @@ const server = http.createServer(async (req, res) => {
   const { pathname, search } = new URL(req.url, 'http://localhost')
   const prefix = [scope, '/miboard/'].find(value => pathname.startsWith(value))
   if (prefix) {
+    // Match the directory index redirect of mihomo's Go file server.
+    if (pathname === `${scope}index.html`) return res.writeHead(301, { Location: './' }).end()
     const name = pathname.slice(prefix.length) || 'index.html'
     if (prefix === scope && name === 'version.json' && upgradeMode === 'hold' && posts.length >= 2 && !published) {
       staleReadsAfterPost++

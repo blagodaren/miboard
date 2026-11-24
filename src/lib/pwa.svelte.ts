@@ -1,7 +1,6 @@
 import { version } from '../../package.json'
 import { ApiError, request } from './api'
 import { core } from './core.svelte'
-import { CORE_UPGRADE_PATHS, CoreManagementError, unsupportedCoreAction, withUiUpgradeLock } from './core-management'
 import { t, type MessageKey } from './i18n.svelte'
 import { notifications } from './notifications.svelte'
 import { connectionJournal } from './connection-journal.svelte'
@@ -333,6 +332,7 @@ class Pwa {
     this.#hostedError = null
     let failure: MessageKey = 'pwa.hostedDownloadFailed'
     try {
+      const { CORE_UPGRADE_PATHS, CoreManagementError, unsupportedCoreAction, withUiUpgradeLock } = await import('./core-management')
       const deployment = await withUiUpgradeLock(backend.url, async () => {
         let deployed = await this.#hostedDeployment(target, signal)
         if (!deployed) {
@@ -348,17 +348,19 @@ class Pwa {
           if (!deployed) throw new Error('Release not deployed')
         }
         return deployed
+      }).catch(error => {
+        if (error instanceof CoreManagementError && error.code === 'upgradeBusy') failure = 'coreManagement.upgradeBusy'
+        else if (unsupportedCoreAction(error)) failure = 'coreManagement.unsupported'
+        throw error
       })
       if (!deployment || !sameController()) return
       failure = 'pwa.updateFailed'
       await this.#prepareHostedUpdate(deployment, generation, signal)
       if (manual && sameController()) await this.applyUpdate(deployment)
-    } catch (error) {
+    } catch {
       if (!this.#current(generation) || !sameController()) return
-      const key = error instanceof CoreManagementError && error.code === 'upgradeBusy' ? 'coreManagement.upgradeBusy'
-        : unsupportedCoreAction(error) ? 'coreManagement.unsupported' : failure
-      this.#hostedError = { scope, key }
-      if (!manual) notifications.show({ id: 'pwa:hosted-error', tone: 'error', message: () => t(key),
+      this.#hostedError = { scope, key: failure }
+      if (!manual) notifications.show({ id: 'pwa:hosted-error', tone: 'error', message: () => t(failure),
         action: { label: () => t('pwa.openUpdate'), href: '#/settings?category=maintenance' } })
     } finally {
       if (this.#current(generation)) this.hostedUpdating = false
