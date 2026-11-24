@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import ts from 'typescript'
 import * as versions from '../src/lib/app-version.ts'
+import * as coreManagement from '../src/lib/core-management.ts'
 
 const release = (tag = 'v1.0.0', extra = {}) => ({ tag_name: tag, html_url: `https://github.com/blagodaren/miboard/releases/tag/${tag}`, draft: false, prerelease: false, ...extra })
 
@@ -50,6 +51,14 @@ test('deployment changes support same-version builds without offering a downgrad
   const now = versions.RELEASE_CACHE_MS + 100
   assert.equal(versions.parseReleaseCache({ checkedAt: now - 1, release: release() }, now)?.version, '1.0.0')
   for (const value of [{ checkedAt: 100, release: release() }, { checkedAt: now + 1, release: release() }, { checkedAt: NaN, release: release() }, { checkedAt: now, release: release('v1.0') }, null]) assert.equal(versions.parseReleaseCache(value, now), null)
+})
+
+test('hosted dashboard updates require the selected controller origin and its UI path', () => {
+  assert.equal(versions.hostedDashboardPath('https://router.test/ui/miboard/', 'https://router.test'), '/ui/miboard/')
+  assert.equal(versions.hostedDashboardPath('https://router.test/controller/ui/miboard/index.html', 'https://router.test/controller/'), '/controller/ui/miboard/')
+  assert.equal(versions.hostedDashboardPath('https://router.test/controller/ui/miboard/', 'https://other.test/controller/'), null)
+  assert.equal(versions.hostedDashboardPath('https://router.test/controller/ui/miboard/', 'https://router.test/other/'), null)
+  assert.equal(versions.hostedDashboardPath('https://router.test/controller/ui-preview/miboard/', 'https://router.test/controller/'), null)
 })
 
 test('metadata fetch bypasses caches and rejects HTTP errors, malformed JSON, timeout and abort', async () => {
@@ -176,6 +185,9 @@ function runtime(production = true) {
   }
   const require = (name: string) => {
     if (name === '../../package.json') return { version: '1.0.0' }
+    if (name === './api') return { ApiError: Error, request: () => assert.fail('Unexpected controller request from a separately hosted dashboard') }
+    if (name === './core.svelte') return { core: { backend: { url: 'https://board.example' }, status: 'ok' } }
+    if (name === './core-management') return coreManagement
     if (name === './app-version') return helpers
     if (name === './i18n.svelte') return { t: (key: string, params?: object) => `${key}${params ? JSON.stringify(params) : ''}` }
     if (name === './notifications.svelte') return { notifications: { show: (notice: any) => { notices.push(notice) } } }
@@ -184,7 +196,8 @@ function runtime(production = true) {
   }
   const exports: any = {}
   const execute = new Function('require', 'exports', '$state', '__APP_BUILD_ID__', 'window', 'document', 'navigator', 'sessionStorage', 'Date', 'setTimeout', 'setInterval', 'clearInterval', production ? runtimeCode : devRuntimeCode)
-  execute(require, exports, (value: unknown) => value, 'build-current', window, document, navigator,
+  const state = (value: unknown) => value
+  execute(require, exports, Object.assign(state, { raw: state }), 'build-current', window, document, navigator,
     { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
     class extends Date { static now() { return clock } },
     (callback: () => void, milliseconds: number) => setTimeout(callback, Math.min(milliseconds, 100)),

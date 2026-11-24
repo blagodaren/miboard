@@ -1,13 +1,14 @@
 <script lang="ts">
   import { Switch } from 'bits-ui'
 
-  type Props = { checked: boolean; onchange: (v: boolean) => void; label: string; disabled?: boolean }
-  let { checked, onchange, label, disabled = false }: Props = $props()
+  type Props = { checked: boolean; onchange: (v: boolean) => void; label: string; disabled?: boolean; testId?: string }
+  let { checked, onchange, label, disabled = false, testId }: Props = $props()
 </script>
 
 <Switch.Root
   bind:checked={() => checked, onchange}
   {disabled}
+  data-testid={testId}
   aria-label={label}
   class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-field-border bg-hover p-0.5
     before:absolute before:left-1/2 before:top-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-['']

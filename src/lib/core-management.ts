@@ -13,7 +13,7 @@ export type CoreRequest = <T = unknown>(path: string, options: {
 }, backend: Backend) => Promise<T>
 
 export class CoreManagementError extends Error {
-  code: 'invalid' | 'unsupported' | 'verify' | 'unreachable' | 'invalidResponse' | 'restricted'
+  code: 'invalid' | 'unsupported' | 'verify' | 'unreachable' | 'invalidResponse' | 'restricted' | 'upgradeBusy'
   observed?: Configs
   constructor(code: CoreManagementError['code'], observed?: Configs) { super(code); this.name = 'CoreManagementError'; this.code = code; this.observed = observed }
 }
@@ -101,6 +101,23 @@ export function coreUpgrades(options: { disableUpgradeCore?: boolean } = {}): Co
 }
 export type UpgradeResult = { previousVersion: string; version: string; outcome: 'accepted' | 'versionChanged' | 'unconfirmed' }
 
+const uiUpgrades = new Set<string>()
+
+export async function withUiUpgradeLock<T>(url: string, upgrade: () => Promise<T>): Promise<T> {
+  if (uiUpgrades.has(url)) throw new CoreManagementError('upgradeBusy')
+  uiUpgrades.add(url)
+  try {
+    const locks = globalThis.navigator?.locks
+    if (!locks) return await upgrade()
+    return await locks.request(`miboard.upgrade-ui:${url}`, { ifAvailable: true }, lock => {
+      if (!lock) throw new CoreManagementError('upgradeBusy')
+      return upgrade()
+    })
+  } finally {
+    uiUpgrades.delete(url)
+  }
+}
+
 const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   signal.throwIfAborted()
   const finish = () => { signal.removeEventListener('abort', cancel); resolve() }
@@ -122,7 +139,9 @@ export async function upgradeCore(send: CoreRequest, backend: Backend, action: C
   const previousVersion = versionValue(await send('/version', { signal, timeout: 5000 }, captured))
   let accepted = false
   try {
-    await send(CORE_UPGRADE_PATHS[action], { method: 'POST', signal, timeout: 120000 }, captured)
+    const post = () => send(CORE_UPGRADE_PATHS[action], { method: 'POST', signal, timeout: 120000 }, captured)
+    if (action === 'ui') await withUiUpgradeLock(captured.url, post)
+    else await post()
     accepted = true
   } catch (error) {
     signal.throwIfAborted()

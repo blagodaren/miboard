@@ -1,5 +1,19 @@
 # Журнал изменений
 
+## [0.2.2] — 2026-11-24
+
+### Русский
+
+- В «Настройки → Приложение и обслуживание → Приложение → Обновления» кнопка «Обновить MIBoard» загружает новый стабильный релиз через mihomo, которое обслуживает открытую панель. Ядро скачивает архив из `external-ui-url`. MIBoard проверяет версию по адресу панели и перезагружает вкладку.
+- В том же блоке можно включить фоновую загрузку для этой установки. Чтобы применить готовую сборку, нажмите «Обновить и перезагрузить».
+- В примере конфигурации `external-ui-url` указывает на последний стабильный архив. Для перехода со старой закреплённой версии обновите URL в конфигурации ядра один раз.
+
+### English
+
+- In **Settings → App and maintenance → Application → Updates**, **Update MIBoard** downloads a newer stable release through the mihomo core that serves the open dashboard. The core downloads the archive from `external-ui-url`. MIBoard verifies the version at the dashboard URL and reloads the tab.
+- You can enable background downloads for this installation in the same section. Select **Update and reload** to apply the prepared build.
+- The configuration example now uses the latest stable archive for `external-ui-url`. When upgrading from a pinned older version, update the URL in the core configuration once.
+
 ## [0.2.1] — 2026-11-22
 
 ### Русский

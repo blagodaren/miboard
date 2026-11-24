@@ -1,5 +1,6 @@
 <script lang="ts">
   import { version as appVersion } from '../../package.json'
+  import { LATEST_DASHBOARD_URL } from '../lib/app-version'
   import { onMount, onDestroy, tick, untrack } from 'svelte'
   import { core, router, theme, type Theme } from '../lib/core.svelte'
   import { normalizeUrl, completeBackendUrl, servedByCore, savedBackends, createSavedBackend, updateSavedBackend, removeSavedBackend, BackendProfileError, type Backend, type SavedBackend } from '../lib/api'
@@ -309,7 +310,8 @@
               <pre class="mt-3 overflow-x-auto rounded-lg border border-line bg-page p-3 font-mono text-xs leading-5">external-controller: 0.0.0.0:9090
 secret: "{t('setup.exampleSecret')}"
 external-ui: ui
-external-ui-name: miboard</pre>
+external-ui-name: miboard
+external-ui-url: "{LATEST_DASHBOARD_URL}"</pre>
               <p class="mt-3">{t('backends.helpNetwork')}</p>
             </div>
           </details>

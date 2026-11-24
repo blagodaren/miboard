@@ -11,14 +11,14 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/latest/download/dist.zip"
 ```
 
-Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. A versioned URL pins a release; `/releases/latest/download/dist.zip` follows the latest stable version.
+Open `http://127.0.0.1:9090/ui/miboard/`. For access from other devices, bind the controller to its trusted LAN interface and restrict access with a firewall. Replace the archive name with `dist-cdn-fonts.zip` for the CDN-font build. The example URL follows the latest stable release. A versioned URL pins the build.
 
 The `#/setup` page manages server names, API URLs and secrets. Saving a profile does not contact the server; **Connect** starts a connection. Editing a saved profile does not switch the active connection. The server link at the bottom of the sidebar and **Settings → Connection and core** open this page. Older saved connections are migrated automatically. Profiles and secrets stay in this browser's localStorage, separately for each site origin.
 
-Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname=...&port=...&secret=...` format. Parameters are read from `?query` and from `#/...?query`; the `#` value wins when both are present.
+Deep links accept `#/?secret=...` and `#/setup?hostname=...&port=...&secret=...`. MIBoard reads parameters from `?query` and from `#/...?query`. If both provide the same parameter, the value from `#` wins.
 
 | Parameter | Effect |
 |---|---|
@@ -29,7 +29,7 @@ Deep links accept `#/?secret=...` and the zashboard-compatible `#/setup?hostname
 | `secondaryPath` | API path behind a reverse proxy, for example `/api` |
 | `label` | Name for a new profile, limited to the input field's length (80 UTF-16 units without splitting an emoji). A saved server keeps its name |
 | `hideMode=1` | Hide the rule / global / direct switch (see below) |
-| `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**; UI and geo database updates stay. `=core` also works, as in zashboard |
+| `disableUpgradeCore=1` | Hide the core update button in **Settings → App and maintenance**. UI and geodata updates remain available. `=core` also works |
 | `disableTunMode=1` | Hide the TUN switch in **Settings → Connection and core**. `=tun` also works |
 | `theme=<url>` | CSS theme from the app or provider (see [Theme from a link](#theme-from-a-link)); `theme=off` removes it |
 
@@ -144,11 +144,17 @@ Update checks compare two independent sources:
 - `version.json` at the current dashboard URL, for a newer deployment build;
 - the latest stable `blagodaren/miboard` release through the public GitHub API.
 
-Automatic checks run on startup, return to the tab, network recovery and hourly while visible and online. They are limited to one per hour; successful GitHub results are cached for up to six hours. **Check for updates** requests fresh data manually. Core API data and secrets are not sent to either update service.
+Automatic checks run on startup, return to the tab, network recovery and hourly while visible and online. They are limited to one per hour. Successful GitHub results are cached for up to six hours. **Check for updates** requests fresh data manually. The GitHub request omits the controller address and secret.
 
-A new deployment build is downloaded and verified before it is offered. **Update and reload** applies it explicitly. After every tab closes, the browser may activate a prepared worker for the next launch. A broken or partially deployed build does not replace the working cache. The current and previous static generations are retained to support already open tabs.
+Use **Update and reload** to apply the new build when it is ready. With a service worker, the browser downloads and verifies the whole build first. After every tab closes, the browser may activate a prepared worker for the next launch. A broken or partially deployed build leaves the working cache intact. The current and previous static generations are retained to support already open tabs.
 
-A release notification does not update your own mihomo UI files. Replace them with the new archive or refresh the configured `external-ui-url`. Once your dashboard URL serves the new build, the app can apply it. Packaging validates relative manifest paths, PNG dimensions and integrity, worker/version consistency and every precache file hash in both archives.
+### Download a release through mihomo
+
+When a newer stable release is found, a dashboard served from the selected core's `/ui/` can download it under **Application → Updates**. Set `external-ui-url` to the latest MIBoard archive shown above. If you already use a URL pinned to an older version, update the core configuration once. For the CDN-font build, use `dist-cdn-fonts.zip` in the same URL.
+
+Select **Update MIBoard** and confirm the URL setting. The core downloads and replaces the files. MIBoard checks `version.json` at the current dashboard URL and reloads the tab. You can opt in to automatic release downloads in the same section. The browser saves your choice for this installation. Background downloads wait for you to apply the update.
+
+For a separately hosted dashboard, replace the files on the host first. Once the dashboard URL serves the new build, the app can apply it. Packaging validates relative manifest paths, PNG dimensions and integrity, worker/version consistency and every precache file hash in both archives.
 
 ## Overview
 
@@ -206,7 +212,7 @@ Panel mode deduplicates the same node/URL/timeout within a bulk run, including I
 
 **IPv6 test** tries `https://ipv6.google.com/generate_204` before the primary check. A panel queue slot performs both requests in sequence; the IPv6 leaf timeout is always 2000 ms. Core mode performs the IPv6 group request, then the primary group request, with the group timeout. IPv6 results are separate and never replace primary latency. Nested groups resolve to selected leaves; cycles and missing selections do not imply IPv6 success. Automatic group results reflect the core's own URL behavior.
 
-`unified-delay` comes from the core: enabled means a repeated check excludes the handshake; disabled includes connection establishment. The panel does not recalculate it. Missing status is shown as unknown. Scheduling behavior was cross-checked against [zashboard](https://github.com/Zephyruso/zashboard/blob/9e77e239b76a717a75ae73cd608f139a83f4c9f8/src/assembly/proxies/latency.ts).
+`unified-delay` comes from the core. With it enabled, a repeated check excludes the handshake. With it disabled, the check includes connection establishment. The panel shows the core's value and reports missing status as unknown.
 
 Tests: `npm run test:latency` and `npm run test:latency:ui`.
 

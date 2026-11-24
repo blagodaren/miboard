@@ -10,7 +10,7 @@
   <a href="README.md">Русский</a> · <strong>English</strong>
 </p>
 <p align="center">
-  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.2.1"><img src="https://img.shields.io/badge/release-0.2.1-e8a33d?style=flat-square" alt="Release 0.2.1"></a>
+  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.2.2"><img src="https://img.shields.io/badge/release-0.2.2-e8a33d?style=flat-square" alt="Release 0.2.2"></a>
   <a href="https://github.com/blagodaren/miboard/releases"><img src="https://img.shields.io/github/downloads/blagodaren/miboard/total?style=flat-square&amp;color=e8a33d" alt="Total release asset downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="MIT license"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
@@ -76,10 +76,10 @@ MIBoard is a static dashboard for an existing **mihomo** core. Serve it directly
 
 ## Download
 
-| Version 0.2.1 | Choose this when | Verify |
+| Version 0.2.2 | Choose this when | Verify |
 | --- | --- | --- |
-| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip.sha256) |
-| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist-cdn-fonts.zip.sha256) |
+| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist.zip) | Recommended: fonts and GeoDB are included, with no font CDN required | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist.zip.sha256) |
+| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist-cdn-fonts.zip) | A smaller archive that loads fonts from `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist-cdn-fonts.zip.sha256) |
 
 Both archives have the same functionality. If the CDN is unavailable, the second build falls back to system fonts; color flags may be unavailable on Windows.
 
@@ -92,10 +92,10 @@ external-controller: 127.0.0.1:9090
 secret: "replace-with-a-long-random-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/latest/download/dist.zip"
 ```
 
-For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The URL pins version 0.2.1; `releases/latest/download/dist.zip` follows the latest stable release.
+For a core running on a router, use its trusted LAN interface address instead of `127.0.0.1` and restrict access with a firewall. The `external-ui-url` above follows the latest stable release. If your configuration pins an older version, replace its URL with this one and apply the configuration. Use `dist-cdn-fonts.zip` in place of `dist.zip` for the CDN-font build.
 
 **2. Apply the configuration and open the dashboard.**
 
@@ -103,7 +103,7 @@ For a core running on a router, use its trusted LAN interface address instead of
 http://127.0.0.1:9090/ui/miboard/
 ```
 
-Replace the host with your router's address when appropriate. The dashboard asks for the `secret`. Server profiles are saved in this browser. A zashboard-style link (`#/setup?hostname=…&port=…&secret=…`) connects right away; see [link parameters](docs/FEATURES.en.md#connection-and-server-profiles).
+Replace the host with your router's address when appropriate. The dashboard asks for the `secret`. Server profiles are saved in this browser. A link such as `#/setup?hostname=…&port=…&secret=…` connects right away. [Link parameters](docs/FEATURES.en.md#connection-and-server-profiles).
 
 **3. Choose your appearance.** **Settings → Appearance** contains language, theme and card size controls. The interface defaults to English.
 
@@ -125,9 +125,9 @@ GitHub Pages serves only the interface; the API stays on your device. An HTTPS p
 
 ## App installation and updates
 
-**Settings → App and maintenance** shows the version, PWA installation and update controls. PWA installation and the offline shell need HTTPS or localhost. A downloaded build is applied explicitly; an open dashboard does not unexpectedly reload.
+Open **Settings → App and maintenance → Application → Updates**. When a newer stable release is available, select **Update MIBoard** in a dashboard served from the selected mihomo core's `/ui/`. Confirm that `external-ui-url` points to the latest MIBoard archive. The core downloads the files. MIBoard verifies the version at its URL and reloads the tab.
 
-A GitHub release notification does not replace files on your own deployment. Update the UI files from the new archive or your configured `external-ui-url`, then apply the downloaded build in the dashboard. [Read about updates and storage](docs/FEATURES.en.md#app-installation-and-updates).
+You can enable automatic release downloads in the same section. This browser remembers your choice for the installation. You choose when to reload the tab. For separate hosting, replace the files on the server, then apply the new build in the dashboard. PWA installation and the offline shell need HTTPS or localhost. [Read about updates and storage](docs/FEATURES.en.md#app-installation-and-updates).
 
 ## Documentation and development
 
@@ -151,4 +151,4 @@ For a local demo, run `npm run build`, then `npm run mock` in another terminal. 
 
 MIBoard is licensed under [MIT](LICENSE). Dependency, Geist and Twemoji notices are included in [`public/licenses/`](public/licenses/). DB-IP Country Lite uses [CC BY 4.0](public/geodb/NOTICE.md); Natural Earth map outlines are [public domain](src/lib/data/NOTICE.md).
 
-Traffic presentation and the structure of this page take inspiration from [Neko Master](https://github.com/foru17/neko-master); proxy checking behavior was cross-checked against [zashboard](https://github.com/Zephyruso/zashboard). All screenshots show MIBoard's own interface.
+Neko Master inspired the traffic presentation and the structure of this page. All screenshots show MIBoard's own interface. [Neko Master](https://github.com/foru17/neko-master).

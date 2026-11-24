@@ -35,6 +35,7 @@ export const en = {
   'coreManagement.upgradesHint': 'The core downloads updates using its configured sources. Availability depends on the core build and filesystem permissions.',
   'coreManagement.upgrade.core': 'Update core',
   'coreManagement.upgrade.ui': 'Update hosted dashboard',
+  'coreManagement.upgradeBusy': 'This controller is already updating the dashboard. Wait for it to finish.',
   'coreManagement.upgrade.geo': 'Update GeoIP / GeoSite',
   'coreManagement.upgradeDescription.core': 'Update the binary on {name}. The core may restart and interrupt connections. Its version will be checked afterwards.',
   'coreManagement.upgradeDescription.ui': 'Replace the dashboard files hosted by {name} with the core’s configured UI download. This may install a different dashboard. Reload only after the update finishes.',

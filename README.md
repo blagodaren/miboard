@@ -10,7 +10,7 @@
   <strong>Русский</strong> · <a href="README.en.md">English</a>
 </p>
 <p align="center">
-  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.2.1"><img src="https://img.shields.io/badge/release-0.2.1-e8a33d?style=flat-square" alt="Релиз 0.2.1"></a>
+  <a href="https://github.com/blagodaren/miboard/releases/tag/v0.2.2"><img src="https://img.shields.io/badge/release-0.2.2-e8a33d?style=flat-square" alt="Релиз 0.2.2"></a>
   <a href="https://github.com/blagodaren/miboard/releases"><img src="https://img.shields.io/github/downloads/blagodaren/miboard/total?style=flat-square&amp;color=e8a33d" alt="Общее число скачиваний файлов релизов"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b?style=flat-square" alt="Лицензия MIT"></a>
   <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-64748b?style=flat-square" alt="Svelte 5"></a>
@@ -49,7 +49,7 @@ MIBoard — статическая панель для существующег�
 | **География и правила** | Локальная карта стран, распределение трафика, цепочки маршрутизации и провайдеры правил |
 | **Настройки** | RU / EN, светлая и тёмная темы, размеры карточек, профили серверов, перенос и синхронизация |
 | **Ядра** | Сохранённые контроллеры, проверка доступности и массовые действия с результатом по каждому профилю |
-| **Приложение** | Установка как PWA, офлайн-оболочка, проверка обновлений, восстановление потоков и экономный режим |
+| **Приложение** | Установка как PWA, офлайн-оболочка, обновление панели через mihomo, восстановление потоков и экономный режим |
 
 > [!NOTE]
 > История собирается только во время наблюдения открытой панелью. PWA не добавляет круглосуточный сбор: без связи или в экономном режиме возможны пропуски. Оболочку можно открыть без сети, но живым данным и командам нужен доступ к ядру.
@@ -76,10 +76,10 @@ MIBoard — статическая панель для существующег�
 
 ## Скачать
 
-| Архив 0.2.1 | Когда выбирать | Проверка |
+| Архив 0.2.2 | Когда выбирать | Проверка |
 | --- | --- | --- |
-| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip) | Основной вариант: шрифты и GeoDB включены, внешний CDN не нужен | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip.sha256) |
-| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist-cdn-fonts.zip) | Меньший архив; шрифты загружаются с `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist-cdn-fonts.zip.sha256) |
+| [**dist.zip**](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist.zip) | Основной вариант: шрифты и GeoDB включены, внешний CDN не нужен | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist.zip.sha256) |
+| [dist-cdn-fonts.zip](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist-cdn-fonts.zip) | Меньший архив; шрифты загружаются с `unpkg.com` | [SHA-256](https://github.com/blagodaren/miboard/releases/download/v0.2.2/dist-cdn-fonts.zip.sha256) |
 
 Функции в обоих архивах одинаковые. Если CDN недоступен, второй вариант использует системные шрифты; цветные флаги на Windows могут не отображаться.
 
@@ -92,10 +92,10 @@ external-controller: 127.0.0.1:9090
 secret: "замените-на-длинный-случайный-secret"
 external-ui: ui
 external-ui-name: miboard
-external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.2.1/dist.zip"
+external-ui-url: "https://github.com/blagodaren/miboard/releases/latest/download/dist.zip"
 ```
 
-Если ядро работает на роутере, укажите его адрес в доверенной локальной сети вместо `127.0.0.1` и ограничьте доступ межсетевым экраном. `external-ui-url` закреплён на версии 0.2.1; для последнего обычного релиза можно использовать `releases/latest/download/dist.zip`.
+Если ядро работает на роутере, укажите его адрес в доверенной локальной сети вместо `127.0.0.1` и ограничьте доступ межсетевым экраном. Адрес `external-ui-url` указывает на последний стабильный релиз. Если в конфигурации закреплена старая версия, замените её адрес на этот и примените конфигурацию. Для сборки со шрифтами из CDN используйте `dist-cdn-fonts.zip` вместо `dist.zip`.
 
 **2. Примените конфигурацию и откройте панель.**
 
@@ -103,7 +103,7 @@ external-ui-url: "https://github.com/blagodaren/miboard/releases/download/v0.2.1
 http://127.0.0.1:9090/ui/miboard/
 ```
 
-Для роутера замените адрес на его IP. Панель предложит ввести `secret`. Профили серверов сохраняются в этом браузере. Ссылка в формате zashboard (`#/setup?hostname=…&port=…&secret=…`) подключает панель сразу; [параметры ссылки](docs/FEATURES.ru.md#подключение-к-mihomo).
+Для роутера замените адрес на его IP. Панель предложит ввести `secret`. Профили серверов сохраняются в этом браузере. Ссылка `#/setup?hostname=…&port=…&secret=…` подключает панель сразу. [Параметры ссылки](docs/FEATURES.ru.md#подключение-к-mihomo).
 
 **3. Выберите язык и оформление.** В **Settings → Appearance** доступны русский язык, тема и размер карточек. Язык интерфейса по умолчанию — английский.
 
@@ -125,9 +125,9 @@ GitHub Pages отдаёт только интерфейс; API остаётся 
 
 ## Установка приложения и обновления
 
-В **Настройки → Приложение и обслуживание** доступны версия, установка PWA и проверка обновлений. Для установки и офлайн-оболочки нужен HTTPS или localhost. Новая сборка применяется по кнопке; работающая панель не перезагружается внезапно.
+Откройте **Настройки → Приложение и обслуживание → Приложение → Обновления**. Когда доступен новый стабильный релиз, нажмите **Обновить MIBoard** в панели, открытой из `/ui/` выбранного mihomo. Подтвердите, что `external-ui-url` указывает на последний архив MIBoard. Ядро скачает файлы. Панель проверит версию по своему адресу и перезагрузит вкладку.
 
-Уведомление о релизе GitHub не заменяет файлы собственной установки. Обновите файлы UI через новый архив или настроенный `external-ui-url`, затем примените загруженную сборку в панели. [Подробности обновлений и хранения](docs/FEATURES.ru.md#установка-приложения-и-обновления).
+В этом же блоке можно включить автоматическую загрузку релизов. Выбор сохраняется в браузере для этой установки, а вкладка перезагружается по вашей команде. На отдельном хостинге сначала замените файлы на сервере, затем примените новую сборку в панели. Для установки PWA и офлайн-оболочки нужен HTTPS или localhost. [Подробности обновлений и хранения](docs/FEATURES.ru.md#установка-приложения-и-обновления).
 
 ## Документация и разработка
 
@@ -151,4 +151,4 @@ npm run dev
 
 MIBoard — [MIT](LICENSE). Лицензии зависимостей, Geist и Twemoji включены в [`public/licenses/`](public/licenses/). База DB-IP Country Lite распространяется под [CC BY 4.0](public/geodb/NOTICE.md); контуры Natural Earth — [public domain](src/lib/data/NOTICE.md).
 
-Идеи представления трафика и оформления этой страницы вдохновлены [Neko Master](https://github.com/foru17/neko-master); поведение проверок прокси сверялось с [zashboard](https://github.com/Zephyruso/zashboard). Скриншоты показывают собственный интерфейс MIBoard.
+На представление трафика и оформление этой страницы повлиял Neko Master. Скриншоты показывают собственный интерфейс MIBoard. [Neko Master](https://github.com/foru17/neko-master).

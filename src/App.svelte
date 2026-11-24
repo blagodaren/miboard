@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { core, router } from './lib/core.svelte'
   import { t } from './lib/i18n.svelte'
   import RoutePage from './components/RoutePage.svelte'
@@ -10,6 +10,12 @@
 
   onMount(() => core.boot())
   onMount(() => pwa.start())
+
+  $effect(() => {
+    if (core.status === 'ok' && pwa.hostedAuto && pwa.hostedAvailable && !pwa.checking && !pwa.hostedUpdating && !pwa.applying) {
+      untrack(() => void pwa.updateHosted(false))
+    }
+  })
 
   // Hash routes share a document. A new screen starts at its heading instead
   // of inheriting the scroll position of the previous table or settings form.

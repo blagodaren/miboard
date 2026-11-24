@@ -36,6 +36,7 @@ export const ru: Record<keyof typeof en, Message> = {
   'coreManagement.upgradesHint': 'Ядро скачивает обновления из настроенных источников. Доступность зависит от сборки ядра и прав на запись файлов.',
   'coreManagement.upgrade.core': 'Обновить ядро',
   'coreManagement.upgrade.ui': 'Обновить панель на ядре',
+  'coreManagement.upgradeBusy': 'Это ядро уже обновляет панель. Дождитесь завершения.',
   'coreManagement.upgrade.geo': 'Обновить GeoIP / GeoSite',
   'coreManagement.upgradeDescription.core': 'Обновить исполняемый файл на {name}. Ядро может перезапуститься и прервать соединения. После запроса будет проверена его версия.',
   'coreManagement.upgradeDescription.ui': 'Заменить файлы панели на {name} версией из источника UI, настроенного в ядре. Может установиться другая панель. Перезагрузите страницу после завершения.',

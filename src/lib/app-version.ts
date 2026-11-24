@@ -1,6 +1,7 @@
 export type AppVersion = { version: string; buildId: string }
 export type AppRelease = { version: string; url: string }
 export const RELEASE_API_URL = 'https://api.github.com/repos/blagodaren/miboard/releases/latest'
+export const LATEST_DASHBOARD_URL = 'https://github.com/blagodaren/miboard/releases/latest/download/dist.zip'
 export const RELEASE_CACHE_MS = 6 * 60 * 60 * 1000
 export const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000
 
@@ -83,6 +84,17 @@ export function parseReleaseCache(value: unknown, now: number): AppRelease | nul
 export function canUpdateTo(current: AppVersion, candidate: AppVersion): boolean {
   const order = compareAppVersions(candidate.version, current.version)
   return order !== null && order >= 0 && (order > 0 || candidate.buildId !== current.buildId)
+}
+
+export function hostedDashboardPath(pageUrl: string, controllerUrl: string): string | null {
+  try {
+    const page = new URL(pageUrl), controller = new URL(controllerUrl)
+    if (!['http:', 'https:'].includes(page.protocol) || page.origin !== controller.origin ||
+        controller.username || controller.password || controller.search || controller.hash) return null
+    const prefix = `${controller.pathname.replace(/\/+$/, '')}/ui/`
+    const path = new URL('.', page).pathname
+    return path.startsWith(prefix) ? path : null
+  } catch { return null }
 }
 
 /** The deadline includes reading the response body and works even if a test/host ignores abort. */
